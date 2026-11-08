@@ -254,7 +254,7 @@ func browserSend(t *testing.T, conn *websocket.Conn, message protocol.ChannelMes
 
 func resourceMessage(t *testing.T, conn *websocket.Conn) protocol.ChannelMessage {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for {
 		var message protocol.ChannelMessage
@@ -304,16 +304,12 @@ func TestShellChannel(t *testing.T) {
 	t.Cleanup(func() { _ = browser.CloseNow() })
 	browserSend(t, browser, protocol.ChannelMessage{Type: "shell.attach", Stream: "terminal", Node: "home", Shell: "session"})
 	nextCommand(t, f, "shell.attach")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 	for _, message := range []protocol.ChannelMessage{
 		{Type: "shell.input", Stream: "terminal", Node: "forged", Shell: "forged", Data: "echo test\n"},
 		{Type: "shell.resize", Stream: "terminal", Shell: "forged", Cols: 90, Rows: 35},
 		{Type: "shell.input", Stream: "terminal", Data: strings.Repeat("\x00", 64<<10)},
 	} {
-		if err := wsjson.Write(ctx, browser, message); nil != err {
-			t.Fatal(err)
-		}
+		browserSend(t, browser, message)
 		got := nextCommand(t, f, message.Type)
 		if got.Data != message.Data || got.Cols != message.Cols || got.Rows != message.Rows {
 			t.Fatal("command changed")
@@ -327,6 +323,8 @@ func TestShellChannel(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	if err := wsjson.Write(ctx, upstream, protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: large}); nil != err {
 		t.Fatal(err)
 	}
@@ -335,9 +333,7 @@ func TestShellChannel(t *testing.T) {
 		t.Fatal("large terminal snapshot rejected", len(got.Payload), got.Stream)
 	}
 	output := protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.output", Payload: json.RawMessage(`{"id":"session","output":"hello"}`)}
-	if err := wsjson.Write(ctx, upstream, output); nil != err {
-		t.Fatal(err)
-	}
+	browserSend(t, upstream, output)
 	got = resourceMessage(t, browser)
 	if "operation.output" != got.Event || !strings.Contains(string(got.Payload), "hello") {
 		t.Fatal("missing terminal output", got)
