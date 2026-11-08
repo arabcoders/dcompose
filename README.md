@@ -25,7 +25,7 @@ Only `dagent` needs access to Docker or Podman.
 On Linux, run the installer and choose server, node, or both:
 
 ```sh
-curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/master/install.sh -o install.sh
+curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/HEAD/install.sh -o install.sh
 bash install.sh
 ```
 

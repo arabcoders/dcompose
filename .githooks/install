@@ -23,7 +23,7 @@ source_hook="$repo_root/.githooks/pre-commit"
 installed_hook="$hooks_dir/pre-commit"
 
 mkdir -p "$hooks_dir"
-mkdir -p "$hooks_dir/pre-commit.d/backend" "$hooks_dir/pre-commit.d/frontend"
+mkdir -p "$hooks_dir/pre-commit.d"
 if [ -e "$installed_hook" ] || [ -L "$installed_hook" ]; then
   if [ -L "$installed_hook" ] && [ "$(readlink "$installed_hook")" = "$source_hook" ]; then
     echo "Pre-commit hook is already installed."

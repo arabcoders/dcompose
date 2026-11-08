@@ -99,7 +99,7 @@ EOF
 
 if [ "$frontend_changed" -eq 1 ]; then
   echo "Preparing frontend..." >&2
-  NODE_ENV=development bun --cwd="$PWD/frontend/" run postinstall --envName=development
+  NODE_ENV=development bun --cwd="$PWD/frontend/" run nuxt prepare --envName=development
   echo "Frontend preparation passed." >&2
 fi
 
@@ -110,10 +110,10 @@ if [ "$go_changed" -eq 1 ]; then
 fi
 
 if [ "$frontend_changed" -eq 1 ]; then
-  run_step "Frontend: Formatter" bun --cwd="$PWD/frontend/" format:check
-  run_step "Frontend: Linter" bun --cwd="$PWD/frontend/" lint
-  run_step "Frontend: Tests" bun --cwd="$PWD/frontend/" run test
-  run_step "Frontend: TSC" bun --cwd="$PWD/frontend/" lint:tsc
+  run_step "Frontend: Formatter" bun --cwd="$PWD/frontend/" run format:check
+  run_step "Frontend: Linter" bun --cwd="$PWD/frontend/" run lint
+  run_step "Frontend: Tests" bun --cwd="$PWD/frontend/" test
+  run_step "Frontend: TSC" bun --cwd="$PWD/frontend/" run lint:tsc
 fi
 
 extra_dir=$(git rev-parse --git-path hooks)/pre-commit.d

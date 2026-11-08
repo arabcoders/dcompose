@@ -48,8 +48,9 @@ Install the local pre-commit hook once per clone:
 .githooks/pre-commit --all       # all tracked files
 ```
 
-The installer preserves an existing pre-commit hook unless you pass `--force`. To keep local checks, place executable
-files in `.git/hooks/pre-commit.d/` (always run), `backend/` (Go changes), or `frontend/` (frontend changes).
+The installer preserves an existing pre-commit hook unless you pass `--force`. Put executable local checks in
+`.git/hooks/pre-commit.d/` to run them for all changes. Create `backend/` or `frontend/` subdirectories there for
+Go-only or frontend-only checks.
 
 ## Check changes
 
