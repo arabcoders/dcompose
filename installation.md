@@ -21,14 +21,12 @@ curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/master/install.sh
 bash install.sh
 ```
 
-The installer defaults to `--dry-run`: it prints the commands and generated files without installing anything.
-Review the output, then run `bash install.sh --execute` to install. To save the commands for manual execution:
+Running without flags previews the installation. To install:
 
 ```sh
-bash install.sh --dry-run > install-commands.sh
+bash install.sh --execute
 ```
 
-Review `install-commands.sh` before running it with Bash. Prompts and warnings stay in the terminal.
 Use `bash install.sh --help` to see all options.
 
 ## Choose the deployment
@@ -38,15 +36,13 @@ Use `bash install.sh --help` to see all options.
 - **Node only:** manage this host from a DCompose server you already have.
 
 Choose **Compose** or **native systemd**. Both Docker and Podman are supported, including rootless and rootful Podman.
-Choose where to store your stacks and, for Compose, where to install DCompose. The user running the node needs write access to your stacks.
-The installer creates these directories before starting containers. New Docker Compose installation and stack
-directories belong to your account. Existing stack ownership isn't changed.
+Choose your stack and installation directories when prompted.
 
 Compose uses `ghcr.io/arabcoders/dcompose:latest` by default. Native installs use the latest
 [GitHub Release](https://github.com/arabcoders/dcompose/releases). To choose a specific version:
 
 ```sh
-bash install.sh --version TAG
+bash install.sh --execute --version TAG
 ```
 
 Replace `TAG` with a published release tag. For Compose, use `--version dev` to install the development image.
