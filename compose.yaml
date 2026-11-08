@@ -2,7 +2,7 @@ name: dcompose
 
 services:
   dcompose:
-    image: arabcoders/dcompose:master
+    image: ghcr.io/arabcoders/dcompose:latest
     user: '${DCOMPOSE_UID:-1000}:${DCOMPOSE_GID:-1000}'
     environment:
       # Optional override. If unset, use global.log_level from TOML.
@@ -18,7 +18,7 @@ services:
       - ./config/dcompose:/config
 
   dagent:
-    image: arabcoders/dcompose:master
+    image: ghcr.io/arabcoders/dcompose:latest
     hostname: dagent
     command: ['dagent']
     labels:

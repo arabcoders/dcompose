@@ -13,6 +13,7 @@ NODE_PORT=9077
 HOST=
 SERVER_SOURCE=any
 TEMP_DIR=
+DRY_RUN=true
 
 fail() {
     printf 'Error: %s\n' "$*" >&2
@@ -23,11 +24,45 @@ need() {
     command -v "$1" >/dev/null || fail "Install $1 and run the installer again."
 }
 
+print_args() {
+    local argument
+    for argument in "$@"; do
+        if [[ '$TEMP_DIR' == "$TEMP_DIR" && $argument == "$TEMP_DIR"* ]]; then
+            printf '"$TEMP_DIR"%q ' "${argument#"$TEMP_DIR"}"
+        else
+            printf '%q ' "$argument"
+        fi
+    done
+}
+
+run() {
+    if [[ true == $DRY_RUN ]]; then
+        print_args "$@"
+        printf '\n'
+    else
+        "$@"
+    fi
+}
+
+write_file() {
+    local path=$1
+    shift
+    if [[ true == $DRY_RUN ]]; then
+        printf "cat <<'DCOMPOSE_INSTALL_FILE' > "
+        print_args "$path"
+        printf '\n'
+        "$@"
+        printf 'DCOMPOSE_INSTALL_FILE\n'
+    else
+        "$@" >"$path"
+    fi
+}
+
 as_root() {
     if [[ $EUID == 0 ]]; then
-        "$@"
+        run "$@"
     else
-        sudo "$@"
+        run sudo "$@"
     fi
 }
 
@@ -35,7 +70,7 @@ as_user() {
     local user=$1
     shift
     if [[ $(id -un) == "$user" ]]; then
-        "$@"
+        run "$@"
     else
         as_root runuser -u "$user" -- "$@"
     fi
@@ -47,10 +82,10 @@ docker_cli() {
         if [[ $PODMAN_MODE == rootful ]]; then
             as_root "${connection[@]}" docker "$@"
         else
-            "${connection[@]}" docker "$@"
+            run "${connection[@]}" docker "$@"
         fi
     else
-        docker "$@"
+        run docker "$@"
     fi
 }
 
@@ -58,14 +93,18 @@ prepare_podman_socket() {
     need systemctl
     if [[ $PODMAN_MODE == rootless ]]; then
         as_root loginctl enable-linger "$(id -un)"
-        systemctl --user enable --now podman.socket
-        systemctl --user enable podman-restart.service
+        run systemctl --user enable --now podman.socket
+        run systemctl --user enable podman-restart.service
     else
         as_root systemctl enable --now podman.socket
         as_root systemctl enable podman-restart.service
     fi
     as_root test -S "$PODMAN_SOCKET" || fail "No Podman socket at $PODMAN_SOCKET. Start that socket before installing."
-    docker_cli info >/dev/null
+    if [[ true == $DRY_RUN ]]; then
+        docker_cli info
+    else
+        docker_cli info >/dev/null
+    fi
 }
 
 ask() {
@@ -89,6 +128,10 @@ choose() {
 }
 
 set_admin_password() {
+    if [[ true == $DRY_RUN ]]; then
+        "$@"
+        return
+    fi
     local retry
     until "$@" </dev/tty; do
         choose retry 'Retry password setup (yes/no)' yes yes no
@@ -125,6 +168,13 @@ port() {
 refuse_existing() {
     local path
     for path in "$@"; do
+        if [[ true == $DRY_RUN ]]; then
+            printf 'if %s || %s; then\n' "$(as_root test -e "$path")" "$(as_root test -L "$path")"
+            run printf '%s\n' "$path already exists. Installation stopped."
+            run exit 1
+            printf 'fi\n'
+            continue
+        fi
         if as_root test -e "$path" || as_root test -L "$path"; then
             fail "$path already exists. This installer doesn't replace existing installations."
         fi
@@ -138,11 +188,26 @@ create_account() {
 }
 
 prepare_stacks() {
+    local access_user=$NODE_USER
+    if [[ compose == $METHOD && docker == $ENGINE ]]; then
+        # The Docker node runs as root even when the host directories belong to the installer user.
+        access_user=root
+    fi
+    if [[ true == $DRY_RUN ]]; then
+        printf 'if ! %s; then\n' "$(as_root test -d "$STACKS_DIR")"
+        as_root install -d -m 0750 -o "$NODE_USER" -g "$NODE_GROUP" "$STACKS_DIR"
+        printf 'fi\n'
+        printf 'if ! %s || ! %s || ! %s; then\n' "$(as_user "$access_user" test -r "$STACKS_DIR")" "$(as_user "$access_user" test -w "$STACKS_DIR")" "$(as_user "$access_user" test -x "$STACKS_DIR")"
+        run printf '%s\n' "Give $access_user read/write access to $STACKS_DIR. Installation stopped."
+        run exit 1
+        printf 'fi\n'
+        return
+    fi
     if ! as_root test -d "$STACKS_DIR"; then
         as_root install -d -m 0750 -o "$NODE_USER" -g "$NODE_GROUP" "$STACKS_DIR"
     fi
-    if ! as_user "$NODE_USER" test -r "$STACKS_DIR" || ! as_user "$NODE_USER" test -w "$STACKS_DIR" || ! as_user "$NODE_USER" test -x "$STACKS_DIR"; then
-        fail "Give $NODE_USER read/write access to $STACKS_DIR, then run the installer again. Existing file ownership wasn't changed."
+    if ! as_user "$access_user" test -r "$STACKS_DIR" || ! as_user "$access_user" test -w "$STACKS_DIR" || ! as_user "$access_user" test -x "$STACKS_DIR"; then
+        fail "Give $access_user read/write access to $STACKS_DIR, then run the installer again. Existing file ownership wasn't changed."
     fi
 }
 
@@ -187,7 +252,7 @@ write_compose() {
     if [[ $ROLE != node ]]; then
         cat <<EOF
   dcompose:
-    image: arabcoders/dcompose:$VERSION
+    image: ghcr.io/arabcoders/dcompose:$VERSION
     user: '$server_identity'
     restart: unless-stopped
     init: true
@@ -202,7 +267,7 @@ EOF
     if [[ $ROLE != server ]]; then
         cat <<EOF
   dagent:
-    image: arabcoders/dcompose:$VERSION
+    image: ghcr.io/arabcoders/dcompose:$VERSION
     hostname: dagent
     command: [dagent]
     labels:
@@ -268,13 +333,23 @@ EOF
 
 download_binary() {
     local binary=$1 package="$1-linux-$ARCH-$VERSION"
-    curl -fsSL "$RELEASES/download/$VERSION/$package.zip" -o "$TEMP_DIR/$package.zip" ||
-        fail "Couldn't download $package. Choose a published release with --version, or use the Compose installation."
-    unzip -q "$TEMP_DIR/$package.zip" -d "$TEMP_DIR" || fail "Couldn't unpack $package."
-    (cd "$TEMP_DIR/$package" && sha256sum --check SHA256SUMS) || fail "Checksum verification failed for $binary."
+    run curl -fsSL "$RELEASES/download/$VERSION/$package.zip" -o "$TEMP_DIR/$package.zip" ||
+        fail "Couldn't download $package. Choose a published release with --version."
+    run unzip -q "$TEMP_DIR/$package.zip" -d "$TEMP_DIR" || fail "Couldn't unpack $package."
+    if [[ true == $DRY_RUN ]]; then
+        printf '(cd '
+        print_args "$TEMP_DIR/$package"
+        printf '&& sha256sum --check SHA256SUMS)\n'
+    else
+        (cd "$TEMP_DIR/$package" && sha256sum --check SHA256SUMS) || fail "Checksum verification failed for $binary."
+    fi
 }
 
 fingerprint() {
+    if [[ true == $DRY_RUN ]]; then
+        printf '%s | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A' "$(as_root openssl x509 -in "$NODE_DIR/node.crt" -pubkey -noout)"
+        return
+    fi
     as_root openssl x509 -in "$NODE_DIR/node.crt" -pubkey -noout |
         openssl pkey -pubin -outform DER |
         openssl dgst -sha256 -binary |
@@ -283,36 +358,65 @@ fingerprint() {
 
 save_configs() {
     if [[ $ROLE != server ]]; then
-        write_agent_config >"$TEMP_DIR/agent.toml"
+        write_file "$TEMP_DIR/agent.toml" write_agent_config
         as_root install -m 0600 -o "$NODE_USER" -g "$NODE_GROUP" "$TEMP_DIR/agent.toml" "$NODE_CONFIG"
     fi
     if [[ $ROLE != node ]]; then
         if [[ $ROLE == both ]]; then
             FINGERPRINT=$(fingerprint)
+            if [[ true == $DRY_RUN ]]; then
+                printf 'FINGERPRINT=$(%s)\n' "$FINGERPRINT"
+                FINGERPRINT=
+            fi
             as_root install -m 0600 -o "$SERVER_USER" -g "$SERVER_GROUP" "$NODE_DIR/secrets/token" "$SERVER_DIR/secrets/local-node.token"
         fi
-        write_server_config >"$TEMP_DIR/dcompose.toml"
+        write_file "$TEMP_DIR/dcompose.toml" write_server_config
+        if [[ true == $DRY_RUN && both == $ROLE ]]; then
+            printf '%s' 'sed -i "s|^fingerprint = \"\"$|fingerprint = \"$FINGERPRINT\"|" '
+            print_args "$TEMP_DIR/dcompose.toml"
+            printf '\n'
+        fi
         as_root install -m 0600 -o "$SERVER_USER" -g "$SERVER_GROUP" "$TEMP_DIR/dcompose.toml" "$SERVER_CONFIG"
     fi
 }
 
 compose_install() {
-    if as_root test -d "$INSTALL_DIR" && [[ -n $(as_root find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
+    if [[ true == $DRY_RUN ]]; then
+        printf 'if %s && [[ -n $(%s) ]]; then\n' "$(as_root test -d "$INSTALL_DIR")" "$(as_root find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit)"
+        run printf '%s\n' "$INSTALL_DIR isn't empty. Installation stopped."
+        run exit 1
+        printf 'fi\n'
+    elif as_root test -d "$INSTALL_DIR" && [[ -n $(as_root find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
         fail "$INSTALL_DIR isn't empty. Choose a new installation directory."
     fi
     if [[ $ENGINE == podman ]]; then
         prepare_podman_socket
     fi
-    if [[ -n $(docker_cli ps --all --filter label=com.docker.compose.project=dcompose --format '{{.ID}}') ]]; then
+    if [[ true == $DRY_RUN ]]; then
+        printf 'if [[ -n $(%s) ]]; then\n' "$(docker_cli ps --all --filter label=com.docker.compose.project=dcompose --format '{{.ID}}')"
+        run printf '%s\n' 'A dcompose Compose project already exists. Installation stopped.'
+        run exit 1
+        printf 'fi\n'
+    elif [[ -n $(docker_cli ps --all --filter label=com.docker.compose.project=dcompose --format '{{.ID}}') ]]; then
         fail 'A dcompose Compose project already exists. Use its current installation directory to manage it.'
     fi
-    if [[ $ROLE != server && -n $(docker_cli ps --all --filter label=DCOMPOSE_AGENT=true --format '{{.ID}}') ]]; then
-        fail 'A DCompose node container already exists on this host.'
+    if [[ server != $ROLE ]]; then
+        if [[ true == $DRY_RUN ]]; then
+            printf 'if [[ -n $(%s) ]]; then\n' "$(docker_cli ps --all --filter label=DCOMPOSE_AGENT=true --format '{{.ID}}')"
+            run printf '%s\n' 'A DCompose node container already exists on this host. Installation stopped.'
+            run exit 1
+            printf 'fi\n'
+        elif [[ -n $(docker_cli ps --all --filter label=DCOMPOSE_AGENT=true --format '{{.ID}}') ]]; then
+            fail 'A DCompose node container already exists on this host.'
+        fi
     fi
-    docker_cli pull "arabcoders/dcompose:$VERSION"
+    docker_cli pull "ghcr.io/arabcoders/dcompose:$VERSION"
     NODE_USER=root
     NODE_GROUP=root
-    if [[ $ENGINE == podman && $PODMAN_MODE == rootless ]]; then
+    if [[ docker == $ENGINE ]]; then
+        NODE_USER=$(id -un "$INSTALL_UID")
+        NODE_GROUP=$INSTALL_GID
+    elif [[ rootless == $PODMAN_MODE ]]; then
         NODE_USER=$(id -un)
         NODE_GROUP=$(id -gn)
     fi
@@ -321,7 +425,7 @@ compose_install() {
     if [[ $ROLE != server ]]; then
         prepare_stacks
     fi
-    as_root install -d -m 0750 -o "$INSTALL_UID" -g "$INSTALL_GID" "$INSTALL_DIR"
+    as_root install -d -m 0750 -o "$INSTALL_UID" -g "$INSTALL_GID" "$INSTALL_DIR" "$INSTALL_DIR/config"
     local compose=(docker_cli compose --project-directory "$INSTALL_DIR" -f "$INSTALL_DIR/compose.yaml")
     NODE_DIR=$INSTALL_DIR/config/dagent
     SERVER_DIR=$INSTALL_DIR/config/dcompose
@@ -330,7 +434,7 @@ compose_install() {
     AGENT_LISTEN=0.0.0.0:9077
     SERVER_LISTEN=0.0.0.0:8080
     NODE_URL=https://dagent:9077
-    write_compose >"$TEMP_DIR/compose.yaml"
+    write_file "$TEMP_DIR/compose.yaml" write_compose
     as_root install -m 0644 -o "$INSTALL_UID" -g "$INSTALL_GID" "$TEMP_DIR/compose.yaml" "$INSTALL_DIR/compose.yaml"
     if [[ $ROLE != node ]]; then
         as_root install -d -m 0700 -o "$SERVER_USER" -g "$SERVER_GROUP" "$SERVER_DIR" "$SERVER_DIR/secrets"
@@ -346,6 +450,9 @@ compose_install() {
         set_admin_password "${compose[@]}" run --rm --no-deps dcompose dcompose --set-password --username "$ADMIN_USER"
     fi
     "${compose[@]}" up -d
+    if [[ true == $DRY_RUN ]]; then
+        return
+    fi
     printf '\nCompose file: %s/compose.yaml\n' "$INSTALL_DIR"
     if [[ $ENGINE == podman ]]; then
         if [[ $PODMAN_MODE == rootful ]]; then
@@ -364,9 +471,9 @@ native_install() {
     need unzip
     need sha256sum
     need runuser
-    if [[ $ROLE != server && $ENGINE == docker ]]; then
+    if [[ false == $DRY_RUN && $ROLE != server && $ENGINE == docker ]]; then
         systemctl cat docker.service >/dev/null || fail 'The native Docker node needs docker.service.'
-    elif [[ $ROLE != server && $PODMAN_MODE == rootful ]]; then
+    elif [[ false == $DRY_RUN && $ROLE != server && $PODMAN_MODE == rootful ]]; then
         as_root podman --remote=false info >/dev/null
     fi
     local server_unit=/etc/systemd/system/dcompose.service node_unit=/etc/systemd/system/dagent.service
@@ -377,7 +484,9 @@ native_install() {
     NODE_HOME=/var/lib/dagent
     if [[ $ENGINE == podman && $PODMAN_MODE == rootless && $ROLE != server ]]; then
         [[ $EUID != 0 ]] || fail 'Run the installer without sudo for a rootless Podman node.'
-        systemctl --user show-environment >/dev/null || fail 'Run this from a login session with a systemd user service manager.'
+        if [[ false == $DRY_RUN ]]; then
+            systemctl --user show-environment >/dev/null || fail 'Run this from a login session with a systemd user service manager.'
+        fi
         NODE_USER=$(id -un)
         NODE_HOME=$HOME
         local user_config=$HOME/.config
@@ -399,7 +508,7 @@ native_install() {
     fi
     if [[ -z $VERSION ]]; then
         local latest
-        latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$RELEASES/latest") || fail 'No latest native release is available. Use --version with a published release, or choose Compose.'
+        latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$RELEASES/latest") || fail "Couldn't resolve the latest native release. Use --version with a published release."
         VERSION=${latest##*/}
     fi
     [[ $VERSION =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || fail 'Native installations need a published v* release tag.'
@@ -421,12 +530,17 @@ native_install() {
         if [[ $NODE_USER == dagent ]]; then
             create_account dagent "$NODE_HOME"
         fi
-        NODE_GROUP=$(id -gn "$NODE_USER")
+        NODE_GROUP=$NODE_USER
+        if id "$NODE_USER" >/dev/null 2>&1; then
+            NODE_GROUP=$(id -gn "$NODE_USER")
+        fi
         prepare_stacks
     fi
     if [[ $ROLE != node ]]; then
         create_account dcompose "$SERVER_DIR"
-        SERVER_GROUP=$(id -gn dcompose)
+        if id dcompose >/dev/null 2>&1; then
+            SERVER_GROUP=$(id -gn dcompose)
+        fi
         as_root install -d -m 0700 -o dcompose -g "$SERVER_GROUP" "$SERVER_DIR" "$SERVER_DIR/secrets"
         as_root install -d -m 0755 -o root -g root /usr/local/bin
         as_root install -m 0755 -o root -g root "$TEMP_DIR/dcompose-linux-$ARCH-$VERSION/dcompose" /usr/local/bin/dcompose
@@ -435,7 +549,7 @@ native_install() {
     if [[ $ROLE != server ]]; then
         as_root install -d -m 0755 -o root -g root /opt/dagent
         if [[ $ENGINE == podman && $PODMAN_MODE == rootless ]]; then
-            mkdir -p "$NODE_DIR"
+            run mkdir -p "$NODE_DIR"
         fi
         as_root install -d -m 0700 -o "$NODE_USER" -g "$NODE_GROUP" "$NODE_DIR" "$NODE_DIR/secrets"
         as_root install -m 0755 -o root -g root "$TEMP_DIR/dagent-linux-$ARCH-$VERSION/dagent" /opt/dagent/dagent
@@ -443,10 +557,10 @@ native_install() {
         if [[ $ENGINE == docker ]]; then
             as_root install -m 0644 -o root -g root "$TEMP_DIR/dagent-linux-$ARCH-$VERSION/packaging/systemd/dagent.service" "$node_unit"
         else
-            write_podman_unit >"$TEMP_DIR/dagent.service"
+            write_file "$TEMP_DIR/dagent.service" write_podman_unit
             if [[ $PODMAN_MODE == rootless ]]; then
-                mkdir -p "$(dirname "$node_unit")"
-                install -m 0644 "$TEMP_DIR/dagent.service" "$node_unit"
+                run mkdir -p "$(dirname "$node_unit")"
+                run install -m 0644 "$TEMP_DIR/dagent.service" "$node_unit"
             else
                 as_root install -m 0644 -o root -g root "$TEMP_DIR/dagent.service" "$node_unit"
             fi
@@ -460,9 +574,9 @@ native_install() {
     if [[ $ROLE != server ]]; then
         if [[ $ENGINE == podman && $PODMAN_MODE == rootless ]]; then
             as_root loginctl enable-linger "$NODE_USER"
-            systemctl --user daemon-reload
-            systemctl --user enable --now podman.socket dagent.service
-            systemctl --user enable podman-restart.service
+            run systemctl --user daemon-reload
+            run systemctl --user enable --now podman.socket dagent.service
+            run systemctl --user enable podman-restart.service
         else
             if [[ $ENGINE == podman ]]; then
                 as_root systemctl enable --now podman.socket
@@ -473,6 +587,9 @@ native_install() {
     fi
     if [[ $ROLE != node ]]; then
         as_root systemctl enable --now dcompose.service
+    fi
+    if [[ true == $DRY_RUN ]]; then
+        return
     fi
     printf '\n'
     if [[ $ROLE != node ]]; then
@@ -492,7 +609,9 @@ main() {
     while [[ $# != 0 ]]; do
         case $1 in
             --version) [[ $# -ge 2 ]] || fail '--version needs a tag.'; VERSION=$2; shift 2 ;;
-            -h|--help) printf 'Usage: bash install.sh [--version TAG]\n\nInstall the server, a node, or both using Docker Compose or native systemd services.\nRequires Linux, Bash, curl, sudo/root and an installed container runtime for nodes.\nExisting installations are not overwritten.\n'; return ;;
+            --dry-run) DRY_RUN=true; shift ;;
+            --execute) DRY_RUN=false; shift ;;
+            -h|--help) printf 'Usage: bash install.sh [--dry-run | --execute] [--version TAG]\n\nPreview installation commands by default. Use --execute to install.\nInstall the server, a node, or both using Docker Compose or native systemd services.\nRequires Linux, Bash, curl, sudo/root and an installed container runtime for nodes.\nExisting installations are not overwritten.\n'; return ;;
             *) fail "Unknown option: $1" ;;
         esac
     done
@@ -505,13 +624,16 @@ main() {
     [[ -z $VERSION || $VERSION =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || fail 'Use a release tag or image tag without slashes.'
     need curl
     need realpath
-    if [[ $EUID != 0 ]]; then
+    if [[ false == $DRY_RUN && $EUID != 0 ]]; then
         need sudo
     fi
     [[ -r /dev/tty ]] || fail 'Run the installer in an interactive terminal.'
     INSTALL_UID=${SUDO_UID:-$(id -u)}
     INSTALL_GID=${SUDO_GID:-$(id -g)}
-    printf 'DCompose installation\nRuntime packages must already be installed. Existing installations are left untouched.\n\n'
+    printf 'DCompose installation\nRuntime packages must already be installed. Existing installations are left untouched.\n\n' >&2
+    if [[ true == $DRY_RUN ]]; then
+        printf 'DRY RUN: no changes will be made. Use --execute to install.\nCommands and generated files will be printed to stdout.\n\n' >&2
+    fi
     choose ROLE 'Install (both/server/node)' both both server node
     choose METHOD 'Deployment (compose/native)' compose compose native
     if [[ $METHOD == compose || $ROLE != server ]]; then
@@ -541,7 +663,7 @@ main() {
             ask SERVER_SOURCE 'Server IP, CIDR or hostname allowed to reach this node (any allows all)' any
         fi
     fi
-    if [[ $ROLE == both ]]; then
+    if [[ false == $DRY_RUN && $ROLE == both ]]; then
         need openssl
     fi
     if [[ $METHOD == compose || $ROLE != server ]]; then
@@ -553,12 +675,16 @@ main() {
         need podman
         if [[ $PODMAN_MODE == rootless ]]; then
             [[ $EUID != 0 ]] || fail 'Run the installer without sudo for rootless Podman.'
-            [[ $(podman --remote=false info --format '{{.Host.Security.Rootless}}') == true ]] || fail 'Select the user who owns the rootless Podman containers.'
+            if [[ false == $DRY_RUN ]]; then
+                [[ $(podman --remote=false info --format '{{.Host.Security.Rootless}}') == true ]] || fail 'Select the user who owns the rootless Podman containers.'
+            fi
         fi
     fi
     if [[ $METHOD == compose ]]; then
         if [[ $ENGINE == docker ]]; then
-            docker info >/dev/null
+            if [[ false == $DRY_RUN ]]; then
+                docker info >/dev/null
+            fi
             local endpoint
             if [[ -n ${DOCKER_CONTEXT:-} ]]; then
                 endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
@@ -575,34 +701,45 @@ main() {
             ask PODMAN_SOCKET 'Host Podman Unix socket' "$socket"
             PODMAN_SOCKET=$(absolute_path "$PODMAN_SOCKET")
         fi
-        VERSION=${VERSION:-master}
+        VERSION=${VERSION:-latest}
         local directory=/opt/dcompose
         if [[ $ROLE != server ]]; then
             directory=$STACKS_DIR/dcompose
         fi
         ask INSTALL_DIR 'Compose installation directory' "$directory"
         INSTALL_DIR=$(absolute_path "$INSTALL_DIR")
-    elif [[ $ROLE != server && $ENGINE == docker ]]; then
+    elif [[ false == $DRY_RUN && $ROLE != server && $ENGINE == docker ]]; then
         as_root docker --host unix:///var/run/docker.sock info >/dev/null
         getent group docker >/dev/null || fail 'The native Docker node needs the docker group.'
     fi
-    printf '\nInstall: %s, %s' "$ROLE" "$METHOD"
+    printf '\nInstall: %s, %s' "$ROLE" "$METHOD" >&2
     if [[ $ROLE != server ]]; then
-        printf ', %s node; stacks: %s' "$ENGINE" "$STACKS_DIR"
+        printf ', %s node; stacks: %s' "$ENGINE" "$STACKS_DIR" >&2
     fi
-    printf '\n'
-    local confirm
-    choose confirm 'Continue (yes/no)' no yes no
-    [[ $confirm == yes ]] || return 0
-    TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dcompose-install.XXXXXX")
-    trap 'rm -rf -- "$TEMP_DIR"' EXIT
-    umask 077
+    printf '\n' >&2
+    if [[ true == $DRY_RUN ]]; then
+        TEMP_DIR='$TEMP_DIR'
+        printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+            'TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dcompose-install.XXXXXX")' \
+            "trap 'rm -rf -- \"\$TEMP_DIR\"' EXIT" 'umask 077'
+    else
+        local confirm
+        choose confirm 'Continue (yes/no)' no yes no
+        [[ $confirm == yes ]] || return 0
+        TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dcompose-install.XXXXXX")
+        trap 'rm -rf -- "$TEMP_DIR"' EXIT
+        umask 077
+    fi
     PAIRED=false
     [[ $ROLE != both ]] || PAIRED=true
     if [[ $METHOD == compose ]]; then
         compose_install
     else
         native_install
+    fi
+    if [[ true == $DRY_RUN ]]; then
+        printf '\nDry run complete. Review the commands above or run bash install.sh --execute to install.\n' >&2
+        return
     fi
     local address=$HOST
     if [[ $address == *:* && $address != \[*\] ]]; then

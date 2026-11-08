@@ -7,9 +7,9 @@ review.
 
 ## Before you start
 
-Report vulnerabilities privately through [SECURITY.md](SECURITY.md). For a bug fix or small feature, open a GitHub issue.
-Use a discussion for larger changes or general questions. Explain what you want to change, why, your proposed approach
-and which existing behavior or use cases it affects.
+Report vulnerabilities privately through [SECURITY.md](SECURITY.md). For bugs, proposed changes or general questions,
+open a GitHub issue. Explain what you want to change, why, your proposed approach and which existing behavior or use
+cases it affects.
 
 Bug fixes, functional improvements and measurable performance work take priority. An interface change needs more than
 personal preference. I will decline a proposal or ask for a different scope or approach.
@@ -21,6 +21,14 @@ it against the existing code, test it and be able to explain how it works and wh
 documentation will be rejected. Write tests that check behavior, not just increase coverage.
 
 ## Development setup
+
+Branch from `dev`:
+
+```sh
+git switch dev
+git pull origin dev
+git switch -c feature/descriptive-name
+```
 
 You'll need Go 1.27.3+ and Bun 1.4+. Run commands from the repository root. Install frontend dependencies with:
 
@@ -113,6 +121,12 @@ go build -o dist/dagent ./cmd/dagent
 
 The deployed server includes the web interface and doesn't need Go or Bun.
 
+## Pull requests
+
+Every pull request must target `dev`, never `master`. Reference the approved issue, explain what changed
+and why, and include any breaking changes or setup steps. Run the checks that apply to your changes and update the
+documentation where needed. Pull requests targeting `master` will be closed without review.
+
 ## API versions
 
 `GET /api/version` returns the server's application version, API version and supported node API version. A node's
@@ -127,5 +141,5 @@ The image includes both binaries, Docker Compose and the Podman remote client. I
 the command with `dagent` for a node. To build it:
 
 ```sh
-docker build -t arabcoders/dcompose .
+docker build -t ghcr.io/arabcoders/dcompose .
 ```
