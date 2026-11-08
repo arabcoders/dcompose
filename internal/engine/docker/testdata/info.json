@@ -1,0 +1,1 @@
+{"Name":"docker-home","ServerVersion":"27.5.1","OperatingSystem":"Ubuntu 24.04.1 LTS","Architecture":"x86_64","KernelVersion":"6.8.0-51-generic","NCPU":8,"MemTotal":16777216000,"Containers":5,"ContainersRunning":2,"ContainersStopped":2,"ContainersPaused":1,"Images":12,"Driver":"overlay2","DockerRootDir":"/var/lib/docker","RegistryConfig":{"secret":"do-not-expose"}}

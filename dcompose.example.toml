@@ -1,0 +1,65 @@
+# Use the file selected by --config first, then $DCOMPOSE_CONFIG_DIR/dcompose.toml.
+# The supplied image sets DCOMPOSE_CONFIG_DIR to /config.
+# Otherwise, look in $XDG_CONFIG_HOME/dcompose, using $HOME/.config if unset or relative.
+# Then check dcompose/ under absolute $XDG_CONFIG_DIRS entries (default /etc/xdg),
+# followed by /etc/dcompose/. Use the first existing file.
+# If none exists, create one at the first applicable location.
+# --config and DCOMPOSE_CONFIG_DIR select their path even if the file is missing.
+# Keep this directory writable for account and node changes. Back it up with its secrets.
+# Restart after editing TOML or external secrets. Web interface changes apply immediately.
+# Secret fields accept inline values or file: paths relative to this TOML's directory.
+# Absolute file: paths stay absolute. ~ and environment variables aren't expanded.
+[global]
+# debug, info, warn or error. Defaults to info.
+# Precedence: --log-level > nonempty DCOMPOSE_LOG_LEVEL > this value.
+log_level = "info"
+listen = "0.0.0.0:8080"
+# Set the browser-facing HTTP(S) origin without a path, query or fragment.
+# This is the return address after OIDC sign-in.
+origin = ""
+# Exact browser origins allowed to redeem one-use WebSocket tickets; no wildcards or paths.
+# Empty by default. This does not enable cross-origin REST access.
+# Tickets grant full WebSocket access. Only issue them to trusted users.
+# websocket_origins = ["https://integration.example"]
+# Set true when the browser uses HTTPS, including behind a reverse proxy.
+secure_cookie = false
+# Node IDs in manual display order; unlisted nodes follow alphabetically by name.
+# node_order = ["6d35ad08fe3547fc"]
+
+[auth]
+# Leave both empty for first-run account creation in the web interface.
+username = ""
+# Otherwise, supply a bcrypt hash, never plaintext. file:secrets/password.hash also works.
+password = ""
+# The server generates this key if absent. Keep it private and stable with the configuration.
+# Use a 32-byte key encoded as 64 hexadecimal characters. Rotation signs out all sessions.
+# session_key = "file:secrets/session-key"
+# Generated automatically at startup. Read the secret file and send Authorization: Bearer <key>.
+# Grants full administrator access after account setup. Never share it or put it in URLs.
+# Use a 32-byte key encoded as 64 hexadecimal characters. Restart after rotation.
+# api_key = "file:secrets/api-key"
+
+# To use OIDC, configure a confidential client. Every accepted identity becomes the local administrator.
+# Create the local account first and restrict access at your provider.
+# Register redirect_uri as the callback URL using your browser-facing hostname.
+# Set global.origin to that browser-facing origin. If empty, redirect_uri's origin is used.
+# [auth.oidc]
+# issuer = "https://id.example.com"
+# client_id = "dcompose"
+# client_secret = "file:secrets/oidc-client-secret"
+# redirect_uri = "https://dcompose.example.com/api/auth/oidc/callback"
+
+# Pair nodes in Nodes > Add node to fill these entries, or add them manually.
+# Each node needs a unique table key. The display name defaults to that key.
+# [nodes.6d35ad08fe3547fc]
+# name = "Home"
+# Use an HTTPS endpoint reachable from DCompose.
+# url = "https://dagent:9077"
+# token = "file:secrets/node-6d35ad08fe3547fc.token"
+# Supply the base64-encoded SHA-256 TLS public-key fingerprint, not the certificate hash.
+# fingerprint = "REPLACE_WITH_AGENT_FINGERPRINT"
+# Set a hostname or address for container port links. If omitted, url's hostname is used.
+# public_host = "node.example.com"
+# Disable node connections and requests without stopping containers or removing credentials.
+# Set false or resume in the web interface to reconnect. Defaults to false.
+# paused = false

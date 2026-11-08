@@ -1,0 +1,63 @@
+# Use the file selected by --config first, then $DCOMPOSE_CONFIG_DIR/agent.toml.
+# The supplied image sets DCOMPOSE_CONFIG_DIR to /config.
+# Otherwise, look in $XDG_CONFIG_HOME/dcompose, using $HOME/.config if unset or relative.
+# Then check dcompose/ under absolute $XDG_CONFIG_DIRS entries (default /etc/xdg),
+# followed by /etc/dcompose/. Use the first existing file.
+# If none exists, create one at the first applicable location.
+# --config and DCOMPOSE_CONFIG_DIR select their path even if the file is missing.
+# Without agent.toml, startup creates the config, token, TLS credentials and /opt/stacks.
+# An existing file needs valid credentials and an existing stacks_dir. Restart after edits.
+# While unpaired, startup prints a temporary, single-use Pairing token to stderr.
+# Read it in the service or container logs.
+# Enter this node's address and the token in Nodes > Add node. A display name is optional.
+# The server connects to the node and saves its API key and TLS fingerprint.
+[global]
+# debug, info, warn or error. Defaults to info.
+# Precedence: --log-level > nonempty DCOMPOSE_LOG_LEVEL > this value.
+log_level = "info"
+# docker (default), or podman on Linux. See packaging/README.md for native and container setup.
+# Both use Docker Compose 2.35+; Podman uses a Unix socket, not a Docker daemon.
+# Containerized Podman: mount the host socket and set CONTAINER_HOST=unix:///run/podman/podman.sock.
+# Podman CLI and Compose use that same socket. TCP and SSH endpoints aren't supported.
+engine = "docker"
+# Listen address. Defaults to 127.0.0.1:9077 when unset; use 0.0.0.0 to accept remote connections.
+listen = "0.0.0.0:9077"
+# When supplying agent.toml, use an absolute path to an existing directory.
+# Containerized nodes must mount stack storage at this same absolute path on the host and inside dagent.
+# Custom example: /backup/docker/compose:/backup/docker/compose in compose.yaml,
+# with stacks_dir = "/backup/docker/compose" under [global] in config/dagent/agent.toml.
+stacks_dir = "/opt/stacks"
+
+# Startup generates this ID if absent. Keep it with the configuration.
+# node_id = "6d35ad08fe3547fc"
+# Successful pairing consumes the temporary token and saves true here.
+# To pair again after disconnecting or losing server config, set global.paired to false and restart.
+# Keep node_id, the API key and TLS credentials intact.
+paired = false
+# Saving the generated ID or paired state rewrites TOML and removes comments.
+
+# Manage registry logins in Settings > Registries. Nodes receive changes automatically.
+# Enable background checks on logins used by the global checker.
+# Server-scheduled image-check interval for this node (default 6h, minimum 1m).
+image_check_interval = "6h"
+# Own-stack update helpers use $XDG_CACHE_HOME/dcompose or $HOME/.cache/dcompose.
+# The supplied image uses /cache/dcompose. Keep the cache writable and persistent.
+
+[auth]
+# Set a private token inline or use a file: path relative to this TOML's directory.
+# Absolute file: paths stay absolute. ~ and environment variables aren't expanded.
+token = "file:secrets/token"
+# Server IPs, CIDRs or hostnames. Defaults allow all sources; [] denies normal API access.
+# Docker aliases require a shared network. DNS results are cached for 60s.
+allowed_ips = ["0.0.0.0/0", "::/0"]
+# Example: allowed_ips = ["dcompose"]
+
+# Node proxies allowed to supply X-Forwarded-For. Accepts IPs, CIDRs or hostnames.
+# Trust only proxies you control. See FAQ.md for proxy setup.
+trusted_proxies = []
+# Example: trusted_proxies = ["node-proxy"]
+
+[tls]
+# Supply a valid certificate and key pair. Relative paths start at this TOML's directory.
+cert_file = "node.crt"
+key_file = "node.key"

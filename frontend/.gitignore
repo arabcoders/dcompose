@@ -1,0 +1,12 @@
+.output/
+.data/
+.nuxt/
+.nitro/
+.cache/
+dist/
+exported/*
+!exported/.gitkeep
+node_modules/
+*.log
+.env
+.env.*

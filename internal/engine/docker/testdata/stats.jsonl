@@ -1,0 +1,2 @@
+{"ID":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Name":"demo-web-1","CPUPerc":"2.50%","MemUsage":"12MiB / 1GiB","MemPerc":"1.17%","NetIO":"1.2MB / 300kB","BlockIO":"8.19kB / 0B","PIDs":"4","Container":"ignored"}
+{"ID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Name":"other-worker-1","CPUPerc":"0.00%","MemUsage":"20MiB / 15.63GiB","MemPerc":"0.12%","NetIO":"0B / 0B","BlockIO":"0B / 4.1kB","PIDs":"2"}

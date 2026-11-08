@@ -1,0 +1,23 @@
+[Unit]
+Description=DCompose node service
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=dagent
+Group=dagent
+SupplementaryGroups=docker
+Environment=HOME=/var/lib/dagent
+Environment=DCOMPOSE_CONFIG_DIR=/var/lib/dagent/.config/dcompose
+StateDirectory=dagent
+ExecStart=/opt/dagent/dagent
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+UMask=0027
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

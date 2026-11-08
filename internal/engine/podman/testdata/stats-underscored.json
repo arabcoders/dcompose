@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9b97115e97f8",
+    "name": "test-podman-app-1",
+    "cpu_time": "208.047ms",
+    "cpu_percent": "0.08%",
+    "avg_cpu": "0.08%",
+    "mem_usage": "13.47MB / 16.07GB",
+    "mem_percent": "0.08%",
+    "net_io": "1.92kB / 978B",
+    "block_io": "0B / 0B",
+    "pids": "17"
+  }
+]

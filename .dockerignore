@@ -1,0 +1,15 @@
+AGENTS.md
+**/AGENTS.md
+.env
+.env.*
+.git
+**/node_modules
+frontend/.nuxt
+frontend/.output
+dist
+*.token
+*.key
+**/*.token
+**/*.key
+config.toml
+config/

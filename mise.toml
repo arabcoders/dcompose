@@ -1,0 +1,18 @@
+[tools]
+air = "1.62.0"
+bun = "latest"
+go = "1.27.3"
+
+[tasks."dev:server"]
+description = "Live reload: dcompose"
+run = """
+mkdir -p ./dist/dev/server
+exec air -c .air.dcompose.toml --
+"""
+
+[tasks."dev:agent"]
+description = "Live reload: dagent"
+run = """
+mkdir -p ./dist/dev/agent
+exec air -c .air.dagent.toml --
+"""

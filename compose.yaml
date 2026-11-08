@@ -1,0 +1,45 @@
+name: dcompose
+
+services:
+  dcompose:
+    image: arabcoders/dcompose:master
+    user: '${DCOMPOSE_UID:-1000}:${DCOMPOSE_GID:-1000}'
+    environment:
+      # Optional override. If unset, use global.log_level from TOML.
+      - DCOMPOSE_LOG_LEVEL
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - '0.0.0.0:8080:8080'
+    volumes:
+      - ./config/dcompose:/config
+
+  dagent:
+    image: arabcoders/dcompose:master
+    hostname: dagent
+    command: ['dagent']
+    labels:
+      DCOMPOSE_AGENT: 'true'
+    environment:
+      # Optional override. If unset, use global.log_level from TOML.
+      - DCOMPOSE_LOG_LEVEL
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./config/dagent:/config
+      - dagent_cache:/cache
+      - /var/run/docker.sock:/var/run/docker.sock
+      # REQUIRED: host path, container path and global.stacks_dir must be identical absolute paths.
+      # Compose resolves relative binds inside dagent; Docker uses those paths on the host.
+      # Mismatches can create empty host directories instead of mounting your existing data.
+      # For a custom path example, see stacks_dir in dagent.example.toml.
+      - /opt/stacks:/opt/stacks
+
+volumes:
+  dagent_cache:

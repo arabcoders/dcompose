@@ -1,0 +1,25 @@
+[Unit]
+Description=DCompose web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dcompose
+Group=dcompose
+Environment=DCOMPOSE_CONFIG_DIR=/etc/dcompose
+ReadWritePaths=/etc/dcompose
+ExecStart=/usr/local/bin/dcompose
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

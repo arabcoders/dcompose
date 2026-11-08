@@ -1,0 +1,1 @@
+{"runtime":{"name":"home","cpus":8,"memory_bytes":16777216000},"containers":[{"id":"container","name":"web","cpu":"2.50%","memory":"12MiB / 1GiB"}],"checked_at":"2026-10-25T12:00:00Z"}
