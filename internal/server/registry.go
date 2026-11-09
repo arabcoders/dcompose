@@ -18,12 +18,12 @@ import (
 )
 
 type RegistryConfig struct {
-	ID               string            `toml:"id" json:"id"`
-	Registry         string            `toml:"registry" json:"registry"`
-	Label            string            `toml:"label" json:"label"`
-	Auth             map[string]string `toml:"auth,omitempty" json:"-"`
+	ID               string            `toml:"id"                  json:"id"`
+	Registry         string            `toml:"registry"            json:"registry"`
+	Label            string            `toml:"label"               json:"label"`
+	Auth             map[string]string `toml:"auth,omitempty"      json:"-"`
 	AuthFile         string            `toml:"auth_file,omitempty" json:"-"`
-	BackgroundChecks bool              `toml:"background_checks" json:"background_checks"`
+	BackgroundChecks bool              `toml:"background_checks"   json:"background_checks"`
 	auth             map[string]string
 }
 
@@ -65,7 +65,18 @@ func publicRegistries(registries []RegistryConfig) any {
 				username = decoded
 			}
 		}
-		rows = append(rows, safeRegistry{ID: registry.ID, Registry: registry.Registry, Label: registry.Label, Auth: auth, BackgroundChecks: registry.BackgroundChecks, HasAuth: 0 < len(registry.auth), Username: username})
+		rows = append(
+			rows,
+			safeRegistry{
+				ID:               registry.ID,
+				Registry:         registry.Registry,
+				Label:            registry.Label,
+				Auth:             auth,
+				BackgroundChecks: registry.BackgroundChecks,
+				HasAuth:          0 < len(registry.auth),
+				Username:         username,
+			},
+		)
 	}
 	return struct {
 		Registries []safeRegistry `json:"registries"`
@@ -101,7 +112,8 @@ func validateRegistries(rows []RegistryConfig, path string) ([]RegistryConfig, e
 				}
 			}
 		}
-		if "" == registry.auth["auth"] && "" == registry.auth["password"] && "" == registry.auth["identitytoken"] && "" == registry.auth["registrytoken"] {
+		if "" == registry.auth["auth"] && "" == registry.auth["password"] && "" == registry.auth["identitytoken"] &&
+			"" == registry.auth["registrytoken"] {
 			return nil, fmt.Errorf("registry authentication is required")
 		}
 		if "" != registry.AuthFile {
@@ -115,7 +127,16 @@ func validateRegistries(rows []RegistryConfig, path string) ([]RegistryConfig, e
 func registrySnapshot(registries []RegistryConfig) protocol.RegistrySync {
 	rows := make([]protocol.RegistryCredential, 0, len(registries))
 	for _, registry := range registries {
-		rows = append(rows, protocol.RegistryCredential{ID: registry.ID, Registry: registry.Registry, Label: registry.Label, Auth: maps.Clone(registry.auth), BackgroundChecks: registry.BackgroundChecks})
+		rows = append(
+			rows,
+			protocol.RegistryCredential{
+				ID:               registry.ID,
+				Registry:         registry.Registry,
+				Label:            registry.Label,
+				Auth:             maps.Clone(registry.auth),
+				BackgroundChecks: registry.BackgroundChecks,
+			},
+		)
 	}
 	data, _ := json.Marshal(rows)
 	revision := sha256.Sum256(data)
@@ -151,7 +172,13 @@ func (s *Server) saveRegistries(w http.ResponseWriter, r *http.Request) {
 			row.ID = hex.EncodeToString(id[:])
 		}
 		old := existing[row.ID]
-		registry := RegistryConfig{ID: row.ID, Registry: row.Registry, Label: row.Label, auth: maps.Clone(row.Auth), BackgroundChecks: row.BackgroundChecks}
+		registry := RegistryConfig{
+			ID:               row.ID,
+			Registry:         row.Registry,
+			Label:            row.Label,
+			auth:             maps.Clone(row.Auth),
+			BackgroundChecks: row.BackgroundChecks,
+		}
 		for field, value := range registry.auth {
 			if "" == value && registrySecretField(field) {
 				registry.auth[field] = old.auth[field]

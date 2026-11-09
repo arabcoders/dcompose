@@ -30,7 +30,12 @@ func shellFixture(t *testing.T) (*agent, string) {
 }
 
 func shellInspect(stack string, running bool) string {
-	return fmt.Sprintf(`[{"Id":%q,"State":{"Running":%t},"Config":{"Labels":{"com.docker.compose.project":%q}}}]`, strings.Repeat("a", 64), running, stack)
+	return fmt.Sprintf(
+		`[{"Id":%q,"State":{"Running":%t},"Config":{"Labels":{"com.docker.compose.project":%q}}}]`,
+		strings.Repeat("a", 64),
+		running,
+		stack,
+	)
 }
 
 func createdShell(t *testing.T, a *agent, body string) *shellSession {
@@ -87,7 +92,10 @@ func TestShellTerminal(t *testing.T) {
 		t.Fatal("readiness marker leaked")
 	}
 	argv, _ := os.ReadFile(filepath.Join(fake, "argv"))
-	if !strings.Contains(string(argv), "<exec><-it><--detach-keys=><--env><DOCKER_NODE_SHELL_ID="+s.op.ID+"><--env><TERM=xterm-256color><"+s.container+"><sh><-c>") {
+	if !strings.Contains(
+		string(argv),
+		"<exec><-it><--detach-keys=><--env><DOCKER_NODE_SHELL_ID="+s.op.ID+"><--env><TERM=xterm-256color><"+s.container+"><sh><-c>",
+	) {
 		t.Fatalf("exec not pinned to ID: %s", argv)
 	}
 	for i := 0; 2 > i; i++ {
@@ -295,7 +303,8 @@ func TestShellNaturalExit(t *testing.T) {
 	s := createdShell(t, a, `{"container":"web"}`)
 	shellInput(t, a, s, "printf 'final-output\\n'; exit 7\n")
 	eventually(t, func() bool { return "running" != s.op.snapshot().Status })
-	if op := s.op.snapshot(); "failed" != op.Status || nil == op.ExitCode || 7 != *op.ExitCode || !strings.Contains(op.Output, "final-output") {
+	if op := s.op.snapshot(); "failed" != op.Status || nil == op.ExitCode || 7 != *op.ExitCode ||
+		!strings.Contains(op.Output, "final-output") {
 		t.Fatalf("shell exit lost: %+v", op)
 	}
 	<-s.done
@@ -375,7 +384,8 @@ func TestShellOutputTail(t *testing.T) {
 		t.Fatal("live output stopped at cap")
 	}
 	output := op.snapshot().Output
-	if 1<<20 < len(output) || !utf8.ValidString(output) || strings.HasPrefix(output, "old-prefix") || !strings.HasSuffix(output, "new-output") {
+	if 1<<20 < len(output) || !utf8.ValidString(output) || strings.HasPrefix(output, "old-prefix") ||
+		!strings.HasSuffix(output, "new-output") {
 		t.Fatal("shell snapshot is not bounded UTF-8 suffix")
 	}
 }

@@ -46,7 +46,12 @@ func serve(t *testing.T, handler http.HandlerFunc) (*Client, engine.ImageKey) {
 	t.Helper()
 	server := httptest.NewTLSServer(handler)
 	t.Cleanup(server.Close)
-	return NewClient(server.Client()), engine.ImageKey{Ref: strings.TrimPrefix(server.URL, "https://") + "/team/app:latest", ImagePlatform: linuxAMD64}
+	return NewClient(
+		server.Client(),
+	), engine.ImageKey{
+		Ref:           strings.TrimPrefix(server.URL, "https://") + "/team/app:latest",
+		ImagePlatform: linuxAMD64,
+	}
 }
 
 func respond(w http.ResponseWriter, r *http.Request, data []byte) {
@@ -92,7 +97,11 @@ func TestIndex(t *testing.T) {
 					t.Fatalf("image: %+v", got)
 				}
 			}
-			want := map[string]int{"HEAD /v2/team/app/manifests/latest": 2, "GET /v2/team/app/manifests/latest": 1, "GET /v2/team/app/manifests/" + contentDigest(child): 1}
+			want := map[string]int{
+				"HEAD /v2/team/app/manifests/latest":                 2,
+				"GET /v2/team/app/manifests/latest":                  1,
+				"GET /v2/team/app/manifests/" + contentDigest(child): 1,
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if !reflect.DeepEqual(want, requests) {
@@ -240,7 +249,17 @@ func TestSharedIndex(t *testing.T) {
 	arm := engine.ImagePlatform{OS: "linux", Architecture: "arm64"}
 	amdManifest, _ := imageManifest(t, linuxAMD64, ociManifest)
 	armManifest, _ := imageManifest(t, arm, ociManifest)
-	root := encode(t, manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Digest: contentDigest(amdManifest), Platform: &linuxAMD64}, {Digest: contentDigest(armManifest), Platform: &arm}}})
+	root := encode(
+		t,
+		manifest{
+			SchemaVersion: 2,
+			MediaType:     ociIndex,
+			Manifests: []descriptor{
+				{Digest: contentDigest(amdManifest), Platform: &linuxAMD64},
+				{Digest: contentDigest(armManifest), Platform: &arm},
+			},
+		},
+	)
 	var mu sync.Mutex
 	var heads, roots, children int
 	client, key := serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -325,7 +344,17 @@ func TestObservationFailure(t *testing.T) {
 	arm := engine.ImagePlatform{OS: "linux", Architecture: "arm64"}
 	amdManifest, _ := imageManifest(t, linuxAMD64, ociManifest)
 	armManifest, _ := imageManifest(t, arm, ociManifest)
-	root := encode(t, manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Digest: contentDigest(amdManifest), Platform: &linuxAMD64}, {Digest: contentDigest(armManifest), Platform: &arm}}})
+	root := encode(
+		t,
+		manifest{
+			SchemaVersion: 2,
+			MediaType:     ociIndex,
+			Manifests: []descriptor{
+				{Digest: contentDigest(amdManifest), Platform: &linuxAMD64},
+				{Digest: contentDigest(armManifest), Platform: &arm},
+			},
+		},
+	)
 	var requests atomic.Int32
 	client, key := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -361,7 +390,17 @@ func TestConcurrentRoot(t *testing.T) {
 	arm := engine.ImagePlatform{OS: "linux", Architecture: "arm64"}
 	amdManifest, _ := imageManifest(t, linuxAMD64, ociManifest)
 	armManifest, _ := imageManifest(t, arm, ociManifest)
-	root := encode(t, manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Digest: contentDigest(amdManifest), Platform: &linuxAMD64}, {Digest: contentDigest(armManifest), Platform: &arm}}})
+	root := encode(
+		t,
+		manifest{
+			SchemaVersion: 2,
+			MediaType:     ociIndex,
+			Manifests: []descriptor{
+				{Digest: contentDigest(amdManifest), Platform: &linuxAMD64},
+				{Digest: contentDigest(armManifest), Platform: &arm},
+			},
+		},
+	)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var heads, roots, children atomic.Int32
 	client, key := serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +457,10 @@ func TestRootChange(t *testing.T) {
 	var mu sync.Mutex
 	current := child
 	rootFor := func(data []byte) []byte {
-		return encode(t, manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Digest: contentDigest(data), Platform: &linuxAMD64}}})
+		return encode(
+			t,
+			manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Digest: contentDigest(data), Platform: &linuxAMD64}}},
+		)
 	}
 	roots, children := 0, 0
 	client, key := serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -462,7 +504,14 @@ func TestInvalidMetadata(t *testing.T) {
 			case "config_digest":
 				root = []byte(`{"schemaVersion":2,"mediaType":"` + ociManifest + `","config":{"digest":"bad"}}`)
 			case "child_digest":
-				root = encode(t, manifest{SchemaVersion: 2, MediaType: ociIndex, Manifests: []descriptor{{Platform: &linuxAMD64, Digest: "sha256:" + strings.Repeat("a", 64)}}})
+				root = encode(
+					t,
+					manifest{
+						SchemaVersion: 2,
+						MediaType:     ociIndex,
+						Manifests:     []descriptor{{Platform: &linuxAMD64, Digest: "sha256:" + strings.Repeat("a", 64)}},
+					},
+				)
 			case "blob_digest":
 				config = []byte("wrong bytes")
 			case "platform_missing":
@@ -520,7 +569,8 @@ func TestAuth(t *testing.T) {
 						if err := r.ParseForm(); nil != err {
 							t.Error(err)
 						}
-						if http.MethodPost != r.Method || "refresh_token" != r.Form.Get("grant_type") || "refresh-secret" != r.Form.Get("refresh_token") {
+						if http.MethodPost != r.Method || "refresh_token" != r.Form.Get("grant_type") ||
+							"refresh-secret" != r.Form.Get("refresh_token") {
 							t.Errorf("refresh grant: %s %#v", r.Method, r.Form)
 						}
 					} else {
@@ -649,7 +699,12 @@ func TestCredentialIsolation(t *testing.T) {
 	host := strings.TrimPrefix(server.URL, "https://")
 	key := engine.ImageKey{Ref: host + "/team/app:latest", ImagePlatform: linuxAMD64}
 	for _, password := range []string{"full-secret", "limited-secret", "full-secret"} {
-		if got := client.InspectConfig(context.Background(), key, authConfig(host, credentials{Username: "same-user", Password: password}), time.Hour); "" != got.Status {
+		if got := client.InspectConfig(
+			context.Background(),
+			key,
+			authConfig(host, credentials{Username: "same-user", Password: password}),
+			time.Hour,
+		); "" != got.Status {
 			t.Fatalf("image: %+v", got)
 		}
 	}
@@ -702,7 +757,9 @@ func TestTokenExpiry(t *testing.T) {
 }
 
 func TestNativeAuthKeys(t *testing.T) {
-	data := []byte(`{"auths":{"https://index.docker.io/v1/":{"auth":"dXNlcjpwYXNz"},"https://index.docker.io/v1/access-token":{"identitytoken":"access-secret"},"https://index.docker.io/v1/refresh-token":{"registrytoken":"refresh-secret"},"https://private.test":{"registrytoken":"private-secret"}}}`)
+	data := []byte(
+		`{"auths":{"https://index.docker.io/v1/":{"auth":"dXNlcjpwYXNz"},"https://index.docker.io/v1/access-token":{"identitytoken":"access-secret"},"https://index.docker.io/v1/refresh-token":{"registrytoken":"refresh-secret"},"https://private.test":{"registrytoken":"private-secret"}}}`,
+	)
 	for _, host := range []string{"docker.io", "index.docker.io", "registry-1.docker.io"} {
 		login, err := resolveCredentials(data, canonicalHost(host))
 		if nil != err || "user" != login.Username || "pass" != login.Password || "" != login.IdentityToken || "" != login.RegistryToken {
@@ -762,7 +819,9 @@ func TestRateLimit(t *testing.T) {
 			})
 			client.Now = func() time.Time { return now }
 			got := client.InspectConfig(context.Background(), key, []byte("{}"))
-			if "error" != got.Status || "registry_error" != got.Reason || nil == got.Cooldown || now.Add(test.delay) != got.Cooldown.Until || 1 != got.Cooldown.Attempts {
+			if "error" != got.Status || "registry_error" != got.Reason || nil == got.Cooldown ||
+				now.Add(test.delay) != got.Cooldown.Until ||
+				1 != got.Cooldown.Attempts {
 				t.Fatalf("cooldown: %+v", got.Cooldown)
 			}
 			key.Ref = strings.Replace(key.Ref, "/team/app:", "/other/image:", 1)
@@ -789,7 +848,11 @@ func TestCooldownAccounts(t *testing.T) {
 	client.Now = func() time.Time { return now }
 	host, _, _ := strings.Cut(key.Ref, "/")
 	for _, username := range []string{"one", "two", "one"} {
-		if got := client.InspectConfig(context.Background(), key, authConfig(host, credentials{Username: username, Password: "secret"})); nil == got.Cooldown {
+		if got := client.InspectConfig(
+			context.Background(),
+			key,
+			authConfig(host, credentials{Username: username, Password: "secret"}),
+		); nil == got.Cooldown {
 			t.Fatalf("missing cooldown: %+v", got)
 		}
 	}
@@ -902,7 +965,9 @@ func TestCooldownLogs(t *testing.T) {
 	if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 		t.Fatal(err)
 	}
-	if nil == got.Cooldown || "WARN" != record.Level || key.Ref != record.Image || got.Cooldown.Registry != record.Registry || !got.Cooldown.Until.Equal(record.RetryAt) || !strings.Contains(record.Error, fmt.Sprint(http.StatusTooManyRequests)) {
+	if nil == got.Cooldown || "WARN" != record.Level || key.Ref != record.Image || got.Cooldown.Registry != record.Registry ||
+		!got.Cooldown.Until.Equal(record.RetryAt) ||
+		!strings.Contains(record.Error, fmt.Sprint(http.StatusTooManyRequests)) {
 		t.Fatalf("cooldown warning: %s", first)
 	}
 	if !strings.Contains(record.Message, key.Ref) {
@@ -963,7 +1028,12 @@ func TestTransportFailure(t *testing.T) {
 	for _, status := range []int{401, 403, 404, 429, 500} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			client, key := serve(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
-			if got := client.InspectConfig(context.Background(), key, []byte("{}")); "error" != got.Status || "registry_error" != got.Reason {
+			if got := client.InspectConfig(
+				context.Background(),
+				key,
+				[]byte("{}"),
+			); "error" != got.Status ||
+				"registry_error" != got.Reason {
 				t.Fatalf("registry HTTP error: %+v", got)
 			}
 		})
@@ -1025,7 +1095,10 @@ func TestDiagnostics(t *testing.T) {
 	if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 		t.Fatal(err)
 	}
-	if "WARN" != record.Level || key.Ref != record.Image || !strings.Contains(record.Error, fmt.Sprint(http.StatusForbidden)) || !strings.Contains(record.Error, "login rejected") || !strings.Contains(record.Message, key.Ref) || !strings.Contains(record.Message, "login rejected") {
+	if "WARN" != record.Level || key.Ref != record.Image || !strings.Contains(record.Error, fmt.Sprint(http.StatusForbidden)) ||
+		!strings.Contains(record.Error, "login rejected") ||
+		!strings.Contains(record.Message, key.Ref) ||
+		!strings.Contains(record.Message, "login rejected") {
 		t.Fatalf("missing human diagnostics: %s", &logs)
 	}
 	logs.Reset()
@@ -1062,7 +1135,11 @@ func TestConcurrent(t *testing.T) {
 }
 
 func TestAuthChallenge(t *testing.T) {
-	challenge := findChallenge([]string{`Basic realm="basic, realm", Bearer realm="https://auth.test/token?a=b", service="registry.test",scope="repository:team/app:pull"`})
+	challenge := findChallenge(
+		[]string{
+			`Basic realm="basic, realm", Bearer realm="https://auth.test/token?a=b", service="registry.test",scope="repository:team/app:pull"`,
+		},
+	)
 	if "bearer" != challenge.scheme || "https://auth.test/token?a=b" != challenge.params["realm"] {
 		t.Fatalf("challenge: %+v", challenge)
 	}

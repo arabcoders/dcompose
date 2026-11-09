@@ -30,7 +30,10 @@ func TestLogLevel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("DCOMPOSE_LOG_LEVEL", test.environment)
 			path := filepath.Join(t.TempDir(), "dcompose.toml")
-			data := fmt.Sprintf("[global]\nunknown = true\nlog_level = %q\n[auth]\nusername = 'admin'\npassword = 'invalid'\n", test.configured)
+			data := fmt.Sprintf(
+				"[global]\nunknown = true\nlog_level = %q\n[auth]\nusername = 'admin'\npassword = 'invalid'\n",
+				test.configured,
+			)
 			if err := os.WriteFile(path, []byte(data), 0600); nil != err {
 				t.Fatal(err)
 			}
@@ -39,7 +42,8 @@ func TestLogLevel(t *testing.T) {
 				args = append(args, "--log-level", test.override)
 			}
 			output, err := exec.Command(binary, args...).CombinedOutput()
-			if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") || !strings.Contains(string(output), "config="+path) {
+			if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") ||
+				!strings.Contains(string(output), "config="+path) {
 				t.Fatalf("startup error: %v: %s", err, output)
 			}
 			if test.warn != strings.Contains(string(output), " WARN ") {

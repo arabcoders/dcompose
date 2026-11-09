@@ -62,7 +62,10 @@ func relayRegistry(ctx context.Context, input protocol.RegistryRequest, transpor
 	}
 	output.Body, err = io.ReadAll(io.LimitReader(response.Body, registryResponseLimit+1))
 	if nil != err {
-		return protocol.RegistryResponse{}, fault(http.StatusBadGateway, "Could not read registry response: "+registryTransportError(err, input))
+		return protocol.RegistryResponse{}, fault(
+			http.StatusBadGateway,
+			"Could not read registry response: "+registryTransportError(err, input),
+		)
 	}
 	if registryResponseLimit < len(output.Body) {
 		return protocol.RegistryResponse{}, fault(http.StatusBadGateway, "Registry response body exceeds 8 MiB.")

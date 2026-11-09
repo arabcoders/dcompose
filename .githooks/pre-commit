@@ -64,15 +64,6 @@ run_extra_dir() {
   done
 }
 
-check_go_format() {
-  local files
-  files=$(mise exec -- gofmt -l cmd internal) || return 1
-  if [ -n "$files" ]; then
-    printf '%s\n' "$files" >&2
-    return 1
-  fi
-}
-
 echo "Running pre-commit checks ($mode_label)... ${REPO_ROOT}" >&2
 go_changed=0
 frontend_changed=0
@@ -104,7 +95,7 @@ if [ "$frontend_changed" -eq 1 ]; then
 fi
 
 if [ "$go_changed" -eq 1 ]; then
-  run_step "Go: Formatter" check_go_format
+  run_step "Go: Formatter" mise exec -- golangci-lint fmt --diff ./cmd/... ./internal/...
   run_step "Go: Tests" mise exec -- go test -race ./cmd/... ./internal/...
   run_step "Go: Linter" mise exec -- golangci-lint run ./cmd/... ./internal/...
 fi

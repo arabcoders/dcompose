@@ -146,7 +146,8 @@ func TestImageAvailableExpiry(t *testing.T) {
 			work := s.imageWorkLocked(imageStackKey{"home", "demo"}, state)
 			retained := state.checked["web"]
 			s.hubMu.Unlock()
-			if work || "available" != retained.update.Status || !checked.update.CheckedAt.Equal(*retained.update.CheckedAt) || 3 != imageRequests(f) {
+			if work || "available" != retained.update.Status || !checked.update.CheckedAt.Equal(*retained.update.CheckedAt) ||
+				3 != imageRequests(f) {
 				t.Fatal("known availability expired or scheduled another lookup", work, imageRequests(f))
 			}
 		})
@@ -179,7 +180,8 @@ func TestImageManualMixed(t *testing.T) {
 			s.hubMu.Lock()
 			retained := s.images.stacks[imageStackKey{"home", "demo"}].checked["web"]
 			s.hubMu.Unlock()
-			if "available" != retained.update.Status || !checked.update.CheckedAt.Equal(*retained.update.CheckedAt) || 4 != imageRequests(f) {
+			if "available" != retained.update.Status || !checked.update.CheckedAt.Equal(*retained.update.CheckedAt) ||
+				4 != imageRequests(f) {
 				t.Fatal("mixed check replaced known availability or skipped the current image", retained.update, imageRequests(f))
 			}
 		})
@@ -215,7 +217,11 @@ func TestImageInspectFailure(t *testing.T) {
 	state := newImageStack()
 	state.services = []engine.Service{imageService("web"), imageService("worker")}
 	at := time.Now().UTC()
-	state.checked["web"] = checkedImage{id: "web-id", image: state.services[0].Image, update: engine.ImageUpdate{Status: "available", CheckedAt: &at}}
+	state.checked["web"] = checkedImage{
+		id:     "web-id",
+		image:  state.services[0].Image,
+		update: engine.ImageUpdate{Status: "available", CheckedAt: &at},
+	}
 	s.images.stacks[key] = state
 	s.imageCheckFailed(key, state.revision, context.DeadlineExceeded)
 	if "available" != state.checked["web"].update.Status || "error" != state.checked["worker"].update.Status {
@@ -475,8 +481,15 @@ func TestImageCooldownAccount(t *testing.T) {
 	}
 	s := imageServer(t, f, false)
 	lookup := func(username string) engine.RegistryImage {
-		data, _ := json.Marshal(map[string]any{"auths": map[string]any{"docker.io": map[string]string{"username": username, "password": "secret"}}})
-		return s.registryClient.InspectConfig(registryNodeContext(context.Background(), "home"), engine.ImageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64"}, data, 0)
+		data, _ := json.Marshal(
+			map[string]any{"auths": map[string]any{"docker.io": map[string]string{"username": username, "password": "secret"}}},
+		)
+		return s.registryClient.InspectConfig(
+			registryNodeContext(context.Background(), "home"),
+			engine.ImageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64"},
+			data,
+			0,
+		)
 	}
 	first := lookup("one")
 	second := lookup("one")
@@ -508,7 +521,12 @@ func TestImagePurposes(t *testing.T) {
 	}
 	s := imageServer(t, f, true)
 	s.config.Registries = []RegistryConfig{
-		{ID: "background", Registry: "docker.io", BackgroundChecks: true, auth: map[string]string{"username": "background", "password": "background-secret"}},
+		{
+			ID:               "background",
+			Registry:         "docker.io",
+			BackgroundChecks: true,
+			auth:             map[string]string{"username": "background", "password": "background-secret"},
+		},
 		{ID: "pull", Registry: "docker.io", auth: map[string]string{"username": "pull", "password": "pull-secret"}},
 	}
 	s.registrySync = registrySnapshot(s.config.Registries)
@@ -535,7 +553,12 @@ func TestImageNodeFailure(t *testing.T) {
 	one, two := imageNode(t), imageNode(t)
 	one.metadata = func(r *http.Request) *http.Response { return metadataResponse(r, 503, "node route unavailable") }
 	s := imageServer(t, one, false)
-	node := NodeConfig{Name: "away", URL: two.channel.server.URL, token: "agent-test-token", Fingerprint: testFingerprint(two.channel.server)}
+	node := NodeConfig{
+		Name:        "away",
+		URL:         two.channel.server.URL,
+		token:       "agent-test-token",
+		Fingerprint: testFingerprint(two.channel.server),
+	}
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
 	config, _ := json.Marshal(registry.DockerConfig{Auths: map[string]map[string]string{}})
@@ -578,7 +601,12 @@ func TestImageFleetCooldown(t *testing.T) {
 		return response
 	}
 	s := imageServer(t, one, false)
-	node := NodeConfig{Name: "away", URL: two.channel.server.URL, token: "agent-test-token", Fingerprint: testFingerprint(two.channel.server)}
+	node := NodeConfig{
+		Name:        "away",
+		URL:         two.channel.server.URL,
+		token:       "agent-test-token",
+		Fingerprint: testFingerprint(two.channel.server),
+	}
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
 	config, _ := json.Marshal(registry.DockerConfig{Auths: map[string]map[string]string{}})

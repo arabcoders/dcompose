@@ -94,7 +94,17 @@ func main() {
 	defer stop()
 	app := server.New(config, frontend.Assets(), version)
 	if err := app.StartLogHistory(); nil != err {
-		slog.Error(fmt.Sprintf("Could not open operational log history for configuration %q: %v. Make the configuration logs directory writable by the runtime user.", path, err), "config", path, "error", err)
+		slog.Error(
+			fmt.Sprintf(
+				"Could not open operational log history for configuration %q: %v. Make the configuration logs directory writable by the runtime user.",
+				path,
+				err,
+			),
+			"config",
+			path,
+			"error",
+			err,
+		)
 		os.Exit(1)
 	}
 	app.Start(ctx)
@@ -110,13 +120,33 @@ func main() {
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdown); nil != err {
-			slog.Warn(fmt.Sprintf("Could not finish shutting down DCompose at %s: %v. Closing active connections.", config.Global.Listen, err), "address", config.Global.Listen, "error", err)
+			slog.Warn(
+				fmt.Sprintf("Could not finish shutting down DCompose at %s: %v. Closing active connections.", config.Global.Listen, err),
+				"address",
+				config.Global.Listen,
+				"error",
+				err,
+			)
 			_ = httpServer.Close()
 		}
 	}()
-	slog.Info(fmt.Sprintf("Starting DCompose %s at http://%s with configuration %q.", version, config.Global.Listen, path), "version", version, "address", "http://"+config.Global.Listen, "config", path)
+	slog.Info(
+		fmt.Sprintf("Starting DCompose %s at http://%s with configuration %q.", version, config.Global.Listen, path),
+		"version",
+		version,
+		"address",
+		"http://"+config.Global.Listen,
+		"config",
+		path,
+	)
 	if err := httpServer.ListenAndServe(); nil != err && http.ErrServerClosed != err {
-		slog.Error(fmt.Sprintf("DCompose could not serve HTTP requests at %s: %v", config.Global.Listen, err), "address", config.Global.Listen, "error", err)
+		slog.Error(
+			fmt.Sprintf("DCompose could not serve HTTP requests at %s: %v", config.Global.Listen, err),
+			"address",
+			config.Global.Listen,
+			"error",
+			err,
+		)
 		app.Close()
 		os.Exit(1)
 	}

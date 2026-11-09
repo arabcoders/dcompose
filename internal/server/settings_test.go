@@ -101,7 +101,13 @@ func TestSettingsRefs(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = New(loaded, nil, "v2.3")
-	w := perform(t, s, "PUT", "/api/settings/nodes/home", fmt.Sprintf(`{"name":"Home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)))
+	w := perform(
+		t,
+		s,
+		"PUT",
+		"/api/settings/nodes/home",
+		fmt.Sprintf(`{"name":"Home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)),
+	)
 	if 200 != w.Code {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -136,7 +142,8 @@ func TestNodeCRUD(t *testing.T) {
 	s := persistedServer(t, nil)
 	body := fmt.Sprintf(`{"name":"Home","url":%q,"token":"new-secret-token","fingerprint":%q}`, up.URL, testFingerprint(up))
 	w := perform(t, s, "POST", "/api/settings/nodes", body)
-	if 200 != w.Code || !strings.Contains(w.Body.String(), `"token":"new-secret-token"`) || !strings.Contains(w.Body.String(), `"has_token":true`) {
+	if 200 != w.Code || !strings.Contains(w.Body.String(), `"token":"new-secret-token"`) ||
+		!strings.Contains(w.Body.String(), `"has_token":true`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	var created safeNode
@@ -160,7 +167,13 @@ func TestNodeCRUD(t *testing.T) {
 	}
 	oldConfig, oldClients := s.snapshot()
 	oldClient := oldClients[created.ID]
-	w = perform(t, s, "PUT", "/api/settings/nodes/"+created.ID, fmt.Sprintf(`{"name":"Updated","url":"https://127.0.0.1:9088","token":"","fingerprint":%q}`, testFingerprint(up)))
+	w = perform(
+		t,
+		s,
+		"PUT",
+		"/api/settings/nodes/"+created.ID,
+		fmt.Sprintf(`{"name":"Updated","url":"https://127.0.0.1:9088","token":"","fingerprint":%q}`, testFingerprint(up)),
+	)
 	if 200 != w.Code {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -194,7 +207,8 @@ func TestDisconnectNode(t *testing.T) {
 			var calls atomic.Int32
 			up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
-				if http.MethodPost != r.Method || "/unpair" != r.URL.Path || "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
+				if http.MethodPost != r.Method || "/unpair" != r.URL.Path || "Bearer agent-test-token" != r.Header.Get("Authorization") ||
+					strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
 					t.Error("incorrect unpair request")
 				}
 				switch mode {
@@ -221,7 +235,8 @@ func TestDisconnectNode(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &result); nil != err || http.StatusOK != w.Code || "ok" != result.Status {
 				t.Fatal("disconnect failed", w.Code, w.Body.String(), err)
 			}
-			if ("reset" != mode) != ("" != result.Warning) || strings.Contains(w.Body.String(), "private reset failure") || strings.Contains(w.Body.String(), "agent-test-token") {
+			if ("reset" != mode) != ("" != result.Warning) || strings.Contains(w.Body.String(), "private reset failure") ||
+				strings.Contains(w.Body.String(), "agent-test-token") {
 				t.Fatal("incorrect reset result", w.Body.String())
 			}
 			expected := int32(1)
@@ -287,13 +302,20 @@ func TestAccount(t *testing.T) {
 	if 401 != w.Code {
 		t.Fatal(w.Code)
 	}
-	w = perform(t, s, "POST", "/api/settings/account", `{"username":"new-admin","password":"new-password","current_password":"test-password"}`)
+	w = perform(
+		t,
+		s,
+		"POST",
+		"/api/settings/account",
+		`{"username":"new-admin","password":"new-password","current_password":"test-password"}`,
+	)
 	if 200 != w.Code || 1 != len(w.Result().Cookies()) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	currentSession := w.Result().Cookies()[0]
 	c, err := LoadConfig(s.config.path)
-	if nil != err || "new-admin" != c.Auth.Username || "file:secrets/password.hash" != c.Auth.Password || nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("new-password")) {
+	if nil != err || "new-admin" != c.Auth.Username || "file:secrets/password.hash" != c.Auth.Password ||
+		nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("new-password")) {
 		t.Fatal("credentials not persisted", err)
 	}
 	r := httptest.NewRequest("GET", "/api/auth/user", nil)
@@ -338,7 +360,13 @@ func TestAccountRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(s.config.path)
-	w := perform(t, s, "POST", "/api/settings/account", `{"username":"changed","password":"new-password","current_password":"test-password"}`)
+	w := perform(
+		t,
+		s,
+		"POST",
+		"/api/settings/account",
+		`{"username":"changed","password":"new-password","current_password":"test-password"}`,
+	)
 	after, _ := os.ReadFile(s.config.path)
 	if 500 != w.Code || !bytes.Equal(before, after) || "admin" != s.config.Auth.Username {
 		t.Fatal("failed secret write changed credentials", w.Code)
@@ -369,7 +397,8 @@ func TestSetPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err = LoadConfig(path)
-	if nil != err || "file:custom.hash" != c.Auth.Password || "inline-secret" != c.Nodes["home"].Token || nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("second-password")) {
+	if nil != err || "file:custom.hash" != c.Auth.Password || "inline-secret" != c.Nodes["home"].Token ||
+		nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("second-password")) {
 		t.Fatal("set-password lost config or reference", err)
 	}
 	stat, _ := os.Stat(path)
@@ -432,7 +461,8 @@ func TestNodeTest(t *testing.T) {
 	var requests atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) || "/health" != r.URL.Path {
+		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) ||
+			"/health" != r.URL.Path {
 			t.Error("incorrect health probe")
 		}
 		testHealth(w, r)
@@ -440,9 +470,16 @@ func TestNodeTest(t *testing.T) {
 	defer up.Close()
 	s := persistedServer(t, up)
 	before, _ := os.ReadFile(s.config.path)
-	w := perform(t, s, "POST", "/api/settings/nodes/test", fmt.Sprintf(`{"id":"home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)))
+	w := perform(
+		t,
+		s,
+		"POST",
+		"/api/settings/nodes/test",
+		fmt.Sprintf(`{"id":"home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)),
+	)
 	after, _ := os.ReadFile(s.config.path)
-	if 200 != w.Code || 1 != requests.Load() || !bytes.Equal(before, after) || fmt.Sprintf(`{"version":"test","api_version":%d}`, protocol.AgentAPI) != strings.TrimSpace(w.Body.String()) {
+	if 200 != w.Code || 1 != requests.Load() || !bytes.Equal(before, after) ||
+		fmt.Sprintf(`{"version":"test","api_version":%d}`, protocol.AgentAPI) != strings.TrimSpace(w.Body.String()) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
@@ -483,7 +520,11 @@ func TestProtocol(t *testing.T) {
 							Message string `json:"message"`
 						} `json:"error"`
 					}
-					if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || status != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "private protocol refusal") {
+					if err := json.Unmarshal(
+						w.Body.Bytes(),
+						&response,
+					); nil != err || status != response.Error.Code || "" == response.Error.Message ||
+						strings.Contains(w.Body.String(), "private protocol refusal") {
 						t.Fatal("missing protocol error", w.Body.String())
 					}
 				}
@@ -513,14 +554,24 @@ func TestNodeTestVersion(t *testing.T) {
 			}))
 			defer up.Close()
 			s := testServer(t, up)
-			w := perform(t, s, "POST", "/api/settings/nodes/test", fmt.Sprintf(`{"id":"home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)))
+			w := perform(
+				t,
+				s,
+				"POST",
+				"/api/settings/nodes/test",
+				fmt.Sprintf(`{"id":"home","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)),
+			)
 			var response struct {
 				Error struct {
 					Code    int    `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 426 != w.Code || 426 != response.Error.Code || "" == response.Error.Message || 1 != requests.Load() || strings.Contains(w.Body.String(), "private protocol refusal") {
+			if err := json.Unmarshal(
+				w.Body.Bytes(),
+				&response,
+			); nil != err || 426 != w.Code || 426 != response.Error.Code || "" == response.Error.Message || 1 != requests.Load() ||
+				strings.Contains(w.Body.String(), "private protocol refusal") {
 				t.Fatal(w.Code, w.Body.String(), requests.Load())
 			}
 		})
@@ -529,7 +580,8 @@ func TestNodeTestVersion(t *testing.T) {
 
 func TestProtocolEvents(t *testing.T) {
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if "/channel" != r.URL.Path || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) || "Bearer agent-test-token" != r.Header.Get("Authorization") {
+		if "/channel" != r.URL.Path || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) ||
+			"Bearer agent-test-token" != r.Header.Get("Authorization") {
 			t.Error("incorrect channel handshake")
 		}
 		w.WriteHeader(http.StatusUpgradeRequired)
@@ -561,7 +613,8 @@ func TestProtocolEvents(t *testing.T) {
 			State   string `json:"state"`
 			Message string `json:"message"`
 		}
-		if "event" != event.Type || nil != json.Unmarshal(event.Payload, &state) || "home" != state.Node || "unavailable" != state.State || "" == state.Message {
+		if "event" != event.Type || nil != json.Unmarshal(event.Payload, &state) || "home" != state.Node || "unavailable" != state.State ||
+			"" == state.Message {
 			t.Fatal("missing protocol state", string(data))
 		}
 		states++
@@ -587,7 +640,13 @@ func TestConfigRace(t *testing.T) {
 		})
 	}
 	for i := 0; 12 > i; i++ {
-		if 200 != perform(t, s, "PUT", "/api/settings/nodes/home", fmt.Sprintf(`{"name":"Home %d","url":%q,"fingerprint":%q}`, i, up.URL, testFingerprint(up))).Code {
+		if 200 != perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/nodes/home",
+			fmt.Sprintf(`{"name":"Home %d","url":%q,"fingerprint":%q}`, i, up.URL, testFingerprint(up)),
+		).Code {
 			t.Fatal("concurrent write failed")
 		}
 	}

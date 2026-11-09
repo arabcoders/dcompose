@@ -17,7 +17,11 @@ func executionFixture(t *testing.T) (*agent, string) {
 
 func TestServiceUpdateStopped(t *testing.T) {
 	a, fake := executionFixture(t)
-	write(t, filepath.Join(fake, "ps"), `[{"Name":"web-1","Service":"web","State":"exited"},{"Name":"worker-1","Service":"worker","State":"running"}]`)
+	write(
+		t,
+		filepath.Join(fake, "ps"),
+		`[{"Name":"web-1","Service":"web","State":"exited"},{"Name":"worker-1","Service":"worker","State":"running"}]`,
+	)
 	op := completed(t, a, request(a, "POST", "/stacks/demo/actions", `{"action":"update","service":"web"}`))
 	argv, err := os.ReadFile(filepath.Join(fake, "argv"))
 	if nil != err || "succeeded" != op.Status || strings.Contains(string(argv), "<pull>") || strings.Contains(string(argv), "<up>") {
@@ -34,7 +38,11 @@ func TestHelperRegistryService(t *testing.T) {
 		t.Fatal(err)
 	}
 	a = restarted
-	write(t, filepath.Join(fake, "ps"), `[{"Name":"web-1","Service":"web","State":"running"},{"Name":"worker-1","Service":"worker","State":"running"}]`)
+	write(
+		t,
+		filepath.Join(fake, "ps"),
+		`[{"Name":"web-1","Service":"web","State":"running"},{"Name":"worker-1","Service":"worker","State":"running"}]`,
+	)
 	dir, err := a.stackPath("demo", false)
 	if nil != err {
 		t.Fatal(err)
@@ -53,7 +61,9 @@ func TestHelperRegistryService(t *testing.T) {
 		t.Fatal(err)
 	}
 	argv, err := os.ReadFile(filepath.Join(fake, "argv"))
-	if nil != err || !strings.Contains(string(argv), "<pull><--><web>") || !strings.Contains(string(argv), "<up><-d><--no-deps><--><web>") || strings.Contains(string(argv), "secret") {
+	if nil != err || !strings.Contains(string(argv), "<pull><--><web>") ||
+		!strings.Contains(string(argv), "<up><-d><--no-deps><--><web>") ||
+		strings.Contains(string(argv), "secret") {
 		t.Fatalf("helper arguments: %s %v", argv, err)
 	}
 	env, err := os.ReadFile(filepath.Join(fake, "pull-config"))

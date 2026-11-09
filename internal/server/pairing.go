@@ -115,7 +115,10 @@ func (s *Server) pairNode(w http.ResponseWriter, r *http.Request) {
 			// Without a supplied pin, pairing obtains it for subsequent connections.
 			InsecureSkipVerify: true,
 		}}
-		client = &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		client = &http.Client{
+			Transport:     transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	client.Timeout = 15 * time.Second
 	defer client.CloseIdleConnections()
@@ -125,7 +128,11 @@ func (s *Server) pairNode(w http.ResponseWriter, r *http.Request) {
 		detail := safeTransportError(err)
 		slog.Error(fmt.Sprintf("Could not pair with %s: %s", label, detail), "node", label, "operation", "pair", "error", detail)
 		if errors.Is(err, errFingerprint) {
-			apiError(w, http.StatusBadGateway, "Node TLS fingerprint does not match. Copy the fingerprint from the node console and try again.")
+			apiError(
+				w,
+				http.StatusBadGateway,
+				"Node TLS fingerprint does not match. Copy the fingerprint from the node console and try again.",
+			)
 			return
 		}
 		apiError(w, http.StatusBadGateway, "Could not pair with the node. Check its address and network connection.")
@@ -134,7 +141,17 @@ func (s *Server) pairNode(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = response.Body.Close() }()
 	if http.StatusOK != response.StatusCode {
 		err := readNodeHTTPError(response, "pair")
-		slog.Error(fmt.Sprintf("Could not pair with %s: %s", label, err.Error()), "node", label, "operation", "pair", "status", response.StatusCode, "error", err.Error())
+		slog.Error(
+			fmt.Sprintf("Could not pair with %s: %s", label, err.Error()),
+			"node",
+			label,
+			"operation",
+			"pair",
+			"status",
+			response.StatusCode,
+			"error",
+			err.Error(),
+		)
 		message := "Could not pair with the node. Try again."
 		switch response.StatusCode {
 		case http.StatusUnauthorized:
@@ -151,7 +168,17 @@ func (s *Server) pairNode(w http.ResponseWriter, r *http.Request) {
 	}
 	var paired protocol.PairingResponse
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&paired); nil != err {
-		slog.Error(fmt.Sprintf("Could not pair with %s: invalid JSON response (HTTP %d): %v", label, response.StatusCode, err), "node", label, "operation", "pair", "status", response.StatusCode, "error", err)
+		slog.Error(
+			fmt.Sprintf("Could not pair with %s: invalid JSON response (HTTP %d): %v", label, response.StatusCode, err),
+			"node",
+			label,
+			"operation",
+			"pair",
+			"status",
+			response.StatusCode,
+			"error",
+			err,
+		)
 		apiError(w, http.StatusBadGateway, "Could not pair with the node. Try again.")
 		return
 	}

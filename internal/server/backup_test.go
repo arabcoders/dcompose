@@ -40,8 +40,28 @@ func TestBackupExport(t *testing.T) {
 	s.config.Auth.apiKey = strings.Repeat("cd", 32)
 	s.config.Auth.OIDC = &OIDCConfig{ClientSecret: "file:oidc-secret", clientSecret: "oidc-secret"}
 	s.config.Registries = []RegistryConfig{
-		{ID: "registry", Registry: "https://index.docker.io/v1/", Label: "Personal", AuthFile: "file:registry-auth", auth: map[string]string{"username": "alice", "password": "registry-password", "auth": "native-encoded", "identitytoken": "native-identity", "registrytoken": "native-registry", "email": "alice@example.com", "serveraddress": "docker.io"}, BackgroundChecks: true},
-		{ID: "refresh", Registry: "https://index.docker.io/v1/refresh-token", AuthFile: "file:refresh-auth", auth: map[string]string{"username": "<token>", "password": "refresh-secret:client-id"}},
+		{
+			ID:       "registry",
+			Registry: "https://index.docker.io/v1/",
+			Label:    "Personal",
+			AuthFile: "file:registry-auth",
+			auth: map[string]string{
+				"username":      "alice",
+				"password":      "registry-password",
+				"auth":          "native-encoded",
+				"identitytoken": "native-identity",
+				"registrytoken": "native-registry",
+				"email":         "alice@example.com",
+				"serveraddress": "docker.io",
+			},
+			BackgroundChecks: true,
+		},
+		{
+			ID:       "refresh",
+			Registry: "https://index.docker.io/v1/refresh-token",
+			AuthFile: "file:refresh-auth",
+			auth:     map[string]string{"username": "<token>", "password": "refresh-secret:client-id"},
+		},
 	}
 	for _, nodes := range [][]string{{"home"}, {"home", "other"}} {
 		body, err := json.Marshal(map[string]any{"nodes": nodes, "password": "backup-password"})
@@ -85,20 +105,27 @@ func TestBackupExport(t *testing.T) {
 		if _, err := toml.Decode(files["dcompose.toml"], &config); nil != err {
 			t.Fatal(err)
 		}
-		if s.config.Auth.passwordHash != config.Auth.Password || strings.Repeat("ab", 32) != config.Auth.SessionKey || "oidc-secret" != config.Auth.OIDC.ClientSecret || "agent-test-token" != config.Nodes["home"].Token {
+		if s.config.Auth.passwordHash != config.Auth.Password || strings.Repeat("ab", 32) != config.Auth.SessionKey ||
+			"oidc-secret" != config.Auth.OIDC.ClientSecret ||
+			"agent-test-token" != config.Nodes["home"].Token {
 			t.Fatal("backup did not resolve configuration secrets")
 		}
 		if s.config.Auth.apiKey != config.Auth.APIKey {
 			t.Fatal("backup did not resolve API key")
 		}
-		if 2 != len(config.Registries) || !reflect.DeepEqual(s.config.Registries[0].auth, config.Registries[0].Auth) || "" != config.Registries[0].AuthFile || "Personal" != config.Registries[0].Label || !config.Registries[0].BackgroundChecks {
+		if 2 != len(config.Registries) || !reflect.DeepEqual(s.config.Registries[0].auth, config.Registries[0].Auth) ||
+			"" != config.Registries[0].AuthFile ||
+			"Personal" != config.Registries[0].Label ||
+			!config.Registries[0].BackgroundChecks {
 			t.Fatal("encrypted backup did not resolve registry credentials")
 		}
 		registries, err := validateRegistries(config.Registries, "")
 		if nil != err || !reflect.DeepEqual(s.config.Registries[0].auth, registries[0].auth) {
 			t.Fatal("backup registry credentials cannot be restored", err)
 		}
-		if "refresh-secret:client-id" != registries[1].auth["password"] || "refresh-secret:client-id" != config.Registries[1].Auth["password"] || "https://index.docker.io/v1/refresh-token" != config.Registries[1].Registry {
+		if "refresh-secret:client-id" != registries[1].auth["password"] ||
+			"refresh-secret:client-id" != config.Registries[1].Auth["password"] ||
+			"https://index.docker.io/v1/refresh-token" != config.Registries[1].Registry {
 			t.Fatal("backup did not preserve independent OAuth auth records")
 		}
 		delete(files, "dcompose.toml")
@@ -111,10 +138,12 @@ func TestBackupExport(t *testing.T) {
 			t.Fatal("backup included wrong nodes or modified stack files")
 		}
 	}
-	if "file:node-token" != s.config.Nodes["home"].Token || "file:oidc-secret" != s.config.Auth.OIDC.ClientSecret || "file:api-key" != s.config.Auth.APIKey {
+	if "file:node-token" != s.config.Nodes["home"].Token || "file:oidc-secret" != s.config.Auth.OIDC.ClientSecret ||
+		"file:api-key" != s.config.Auth.APIKey {
 		t.Fatal("backup modified server configuration")
 	}
-	if "file:registry-auth" != s.config.Registries[0].AuthFile || "file:refresh-auth" != s.config.Registries[1].AuthFile || nil != s.config.Registries[0].Auth {
+	if "file:registry-auth" != s.config.Registries[0].AuthFile || "file:refresh-auth" != s.config.Registries[1].AuthFile ||
+		nil != s.config.Registries[0].Auth {
 		t.Fatal("backup modified registry configuration")
 	}
 }
@@ -146,7 +175,11 @@ func TestBackupFailure(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "broken") || "application/zip" == w.Header().Get("Content-Type") {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&response,
+	); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "broken") ||
+		"application/zip" == w.Header().Get("Content-Type") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	var record struct {
@@ -160,10 +193,13 @@ func TestBackupFailure(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &record); nil != err {
 		t.Fatal(err, output.String())
 	}
-	if !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) || "" == record.Operation || 500 != record.Status || !strings.Contains(record.Error, "stack broken: cannot read .env") {
+	if !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) || "" == record.Operation || 500 != record.Status ||
+		!strings.Contains(record.Error, "stack broken: cannot read .env") {
 		t.Fatal("missing private backup failure details", output.String())
 	}
-	if "ERROR" != record.Level || !strings.Contains(record.Message, record.Node) || !strings.Contains(record.Message, record.Error) || strings.Contains(output.String(), "backup-password") || strings.Contains(output.String(), "agent-test-token") {
+	if "ERROR" != record.Level || !strings.Contains(record.Message, record.Node) || !strings.Contains(record.Message, record.Error) ||
+		strings.Contains(output.String(), "backup-password") ||
+		strings.Contains(output.String(), "agent-test-token") {
 		t.Fatal("backup message hides failure context or leaks credentials", output.String())
 	}
 	w = httptest.NewRecorder()
@@ -190,7 +226,11 @@ func TestBackupPath(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "../compose.yml") || "application/zip" == w.Header().Get("Content-Type") {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&response,
+	); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "../compose.yml") ||
+		"application/zip" == w.Header().Get("Content-Type") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	var record struct {
@@ -199,7 +239,11 @@ func TestBackupPath(t *testing.T) {
 		Node      string `json:"node"`
 		Operation string `json:"operation"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &record); nil != err || "ERROR" != record.Level || !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) || "" == record.Operation {
+	if err := json.Unmarshal(
+		output.Bytes(),
+		&record,
+	); nil != err || "ERROR" != record.Level || !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) ||
+		"" == record.Operation {
 		t.Fatal("missing backup diagnostic", output.String())
 	}
 	if !strings.Contains(record.Message, "Home") || !strings.Contains(record.Message, up.URL) {

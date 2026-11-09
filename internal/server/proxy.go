@@ -196,8 +196,22 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 					proxyError(w, err)
 					return
 				}
-				slog.Error(fmt.Sprintf("Could not %s on %s: %v", operation, label, err), "node", label, "operation", operation, "status", http.StatusServiceUnavailable, "error", err)
-				apiError(w, http.StatusServiceUnavailable, "Registry credentials are not synchronized with this node. Check registry settings or reconnect the node.")
+				slog.Error(
+					fmt.Sprintf("Could not %s on %s: %v", operation, label, err),
+					"node",
+					label,
+					"operation",
+					operation,
+					"status",
+					http.StatusServiceUnavailable,
+					"error",
+					err,
+				)
+				apiError(
+					w,
+					http.StatusServiceUnavailable,
+					"Registry credentials are not synchronized with this node. Check registry settings or reconnect the node.",
+				)
 				return
 			}
 		}
@@ -221,7 +235,17 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		if nil != err {
 			detail = safeTransportError(err)
 		}
-		slog.Error(fmt.Sprintf("Could not %s on %s: invalid JSON response (HTTP %d): %s", operation, label, response.StatusCode, detail), "node", label, "operation", operation, "status", response.StatusCode, "error", detail)
+		slog.Error(
+			fmt.Sprintf("Could not %s on %s: invalid JSON response (HTTP %d): %s", operation, label, response.StatusCode, detail),
+			"node",
+			label,
+			"operation",
+			operation,
+			"status",
+			response.StatusCode,
+			"error",
+			detail,
+		)
 		apiError(w, 502, "Could not load data from this node. Try again.")
 		return
 	}
@@ -230,7 +254,15 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		if nil != err {
 			detail = safeTransportError(err)
 		}
-		slog.Error(fmt.Sprintf("Could not %s on %s: extra or invalid response data (HTTP %d): %s", operation, label, response.StatusCode, detail), "node", label, "operation", operation, "status", response.StatusCode)
+		slog.Error(
+			fmt.Sprintf("Could not %s on %s: extra or invalid response data (HTTP %d): %s", operation, label, response.StatusCode, detail),
+			"node",
+			label,
+			"operation",
+			operation,
+			"status",
+			response.StatusCode,
+		)
 		apiError(w, 502, "Could not load data from this node. Try again.")
 		return
 	}
@@ -240,7 +272,17 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		if "" == detail {
 			detail = http.StatusText(response.StatusCode)
 		}
-		slog.Error(fmt.Sprintf("Could not %s on %s (HTTP %d): %s", operation, label, response.StatusCode, detail), "node", label, "operation", operation, "status", response.StatusCode, "error", detail)
+		slog.Error(
+			fmt.Sprintf("Could not %s on %s (HTTP %d): %s", operation, label, response.StatusCode, detail),
+			"node",
+			label,
+			"operation",
+			operation,
+			"status",
+			response.StatusCode,
+			"error",
+			detail,
+		)
 	}
 	if 200 > response.StatusCode || 300 <= response.StatusCode {
 		message := safeMessage
@@ -281,7 +323,13 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 			_ = json.Unmarshal(payload["status"], &status)
 			_ = json.Unmarshal(payload["relay"], &relay)
 			if "accepted" != status || ("" != relay && !identity.MatchString(relay)) {
-				slog.Error(fmt.Sprintf("Could not %s on %s: invalid action acceptance response", operation, label), "node", label, "operation", operation)
+				slog.Error(
+					fmt.Sprintf("Could not %s on %s: invalid action acceptance response", operation, label),
+					"node",
+					label,
+					"operation",
+					operation,
+				)
 				apiError(w, http.StatusBadGateway, "Could not run the stack action. Check the node logs.")
 				return
 			}
@@ -449,7 +497,11 @@ func proxyBody(w http.ResponseWriter, r *http.Request, p []string) ([]byte, bool
 			Container *string `json:"container,omitempty"`
 		}{}
 		if 0 != len(input.Container) {
-			if err := json.Unmarshal(input.Container, &request.Container); nil != err || nil == request.Container || "" == strings.TrimSpace(*request.Container) {
+			if err := json.Unmarshal(
+				input.Container,
+				&request.Container,
+			); nil != err || nil == request.Container ||
+				"" == strings.TrimSpace(*request.Container) {
 				apiError(w, 400, "Specify a nonempty container name.")
 				return nil, false
 			}
@@ -496,7 +548,8 @@ func proxyBody(w http.ResponseWriter, r *http.Request, p []string) ([]byte, bool
 			apiError(w, 400, "Invalid stack action.")
 			return nil, false
 		}
-		if "" != input.Service && (!serviceName.MatchString(input.Service) || ("start" != input.Action && "stop" != input.Action && "restart" != input.Action && "update" != input.Action)) {
+		if "" != input.Service &&
+			(!serviceName.MatchString(input.Service) || ("start" != input.Action && "stop" != input.Action && "restart" != input.Action && "update" != input.Action)) {
 			apiError(w, 400, "Use a valid service name with start, stop, restart or update only.")
 			return nil, false
 		}
@@ -511,7 +564,9 @@ func proxyBody(w http.ResponseWriter, r *http.Request, p []string) ([]byte, bool
 		if !decodeBody(w, r, &input, 16<<10) {
 			return nil, false
 		}
-		if "" == strings.TrimSpace(input.Container) || ("sh" != input.Shell && "bash" != input.Shell && "ash" != input.Shell && "dash" != input.Shell) || !validSize(input.Cols, input.Rows) {
+		if "" == strings.TrimSpace(input.Container) ||
+			("sh" != input.Shell && "bash" != input.Shell && "ash" != input.Shell && "dash" != input.Shell) ||
+			!validSize(input.Cols, input.Rows) {
 			apiError(w, 400, "Specify a container, an allowed shell (sh, bash, ash or dash), and 1-500 columns and rows.")
 			return nil, false
 		}

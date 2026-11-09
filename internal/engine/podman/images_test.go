@@ -36,7 +36,10 @@ func TestImageChanged(t *testing.T) {
 					return nil, []byte("inspect failed"), errors.New("inspect failed")
 				}
 				if "container" == cmd.Args[0] {
-					if !reflect.DeepEqual(cmd.Args, []string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .ImageName}}}`, "web"}) {
+					if !reflect.DeepEqual(
+						cmd.Args,
+						[]string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .ImageName}}}`, "web"},
+					) {
 						t.Fatalf("container: %+v", cmd)
 					}
 					return []byte(test.container), nil, nil
@@ -56,7 +59,12 @@ func TestImageChanged(t *testing.T) {
 
 func TestInspectImage(t *testing.T) {
 	fixture := readFixture(t, "image-inspect.json")
-	ambiguous := strings.Replace(fixture, `"RepoDigests":`, `"RepoTags":["quay.io/team/app:latest","example.com/app:latest"],"RepoDigests":`, 1)
+	ambiguous := strings.Replace(
+		fixture,
+		`"RepoDigests":`,
+		`"RepoTags":["quay.io/team/app:latest","example.com/app:latest"],"RepoDigests":`,
+		1,
+	)
 	ambiguous = strings.Replace(ambiguous, "quay.io/team/app@sha256:123", "example.com/app@sha256:123", 1)
 	id := strings.Repeat("a", 64)
 	for _, test := range []struct {
@@ -82,7 +90,10 @@ func TestInspectImage(t *testing.T) {
 					t.Fatalf("runtime credentials changed: %+v", cmd)
 				}
 				if 1 == calls {
-					if !reflect.DeepEqual(cmd.Args, []string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .ImageName}}}`, "demo"}) {
+					if !reflect.DeepEqual(
+						cmd.Args,
+						[]string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .ImageName}}}`, "demo"},
+					) {
 						t.Fatalf("container command: %+v", cmd)
 					}
 					data, err := json.Marshal(map[string]string{"id": id, "ref": test.ref})
@@ -185,10 +196,13 @@ func TestImageDiagnostics(t *testing.T) {
 			if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 				t.Fatalf("decode logs: %v", err)
 			}
-			if "WARN" != record.Level || "podman" != record.Runtime || "demo" != record.Container || "quay.io/team/app:edge" != record.Image || "" == record.Error {
+			if "WARN" != record.Level || "podman" != record.Runtime || "demo" != record.Container ||
+				"quay.io/team/app:edge" != record.Image ||
+				"" == record.Error {
 				t.Fatalf("missing diagnostics: %s", &logs)
 			}
-			if test.commandError && ("sentinel command failure" != record.Error || "sentinel command stderr" != record.Stderr || "podman "+test.fail+" inspect" != record.Command) {
+			if test.commandError &&
+				("sentinel command failure" != record.Error || "sentinel command stderr" != record.Stderr || "podman "+test.fail+" inspect" != record.Command) {
 				t.Fatalf("missing command details: %s", &logs)
 			}
 			details := []string{record.Container, record.Image, record.Stderr}

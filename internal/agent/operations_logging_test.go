@@ -49,7 +49,10 @@ func checkFailureLog(t *testing.T, logs *automaticLogBuffer, a *agent, op *opera
 		t.Fatalf("failure records: %+v", records)
 	}
 	record := records[0]
-	if "ERROR" != record.Level || op.ID != record.Operation || op.Action != record.Action || op.Stack != record.Stack || op.service != record.Service || a.config.Global.NodeID != record.Node || code != record.ExitCode {
+	if "ERROR" != record.Level || op.ID != record.Operation || op.Action != record.Action || op.Stack != record.Stack ||
+		op.service != record.Service ||
+		a.config.Global.NodeID != record.Node ||
+		code != record.ExitCode {
 		t.Fatalf("failure context: %+v", record)
 	}
 	for _, detail := range []string{op.ID, op.Action, op.Stack, op.service, a.config.Global.NodeID, fmt.Sprint(code), cause} {

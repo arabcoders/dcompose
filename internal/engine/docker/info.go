@@ -14,9 +14,27 @@ import (
 
 func nodeInfoError(command string, err error, stderr []byte) error {
 	if detail := bytes.TrimSpace(stderr); 0 < len(detail) {
-		slog.Error(fmt.Sprintf("Could not read Docker node information with %s: %v: %s", command, err, detail), "runtime", "docker", "command", command, "error", err, "stderr", string(detail))
+		slog.Error(
+			fmt.Sprintf("Could not read Docker node information with %s: %v: %s", command, err, detail),
+			"runtime",
+			"docker",
+			"command",
+			command,
+			"error",
+			err,
+			"stderr",
+			string(detail),
+		)
 	} else {
-		slog.Error(fmt.Sprintf("Could not read Docker node information with %s: %v", command, err), "runtime", "docker", "command", command, "error", err)
+		slog.Error(
+			fmt.Sprintf("Could not read Docker node information with %s: %v", command, err),
+			"runtime",
+			"docker",
+			"command",
+			command,
+			"error",
+			err,
+		)
 	}
 	return &engine.Error{Code: 502, Message: "Could not load node information. Try again."}
 }

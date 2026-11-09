@@ -38,7 +38,13 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
 		if err := agent.RunOperation(ctx, *operationFile); nil != err {
-			slog.Error(fmt.Sprintf("Detached stack operation from request %q failed: %v", *operationFile, err), "request", *operationFile, "error", err)
+			slog.Error(
+				fmt.Sprintf("Detached stack operation from request %q failed: %v", *operationFile, err),
+				"request",
+				*operationFile,
+				"error",
+				err,
+			)
 			os.Exit(1)
 		}
 		return
@@ -51,10 +57,21 @@ func main() {
 		if "" != *certDir {
 			fingerprint, err := agent.GenerateCert(*certDir)
 			if nil != err {
-				slog.Error(fmt.Sprintf("Could not create the node TLS certificate and private key in %q: %v", *certDir, err), "directory", *certDir, "error", err)
+				slog.Error(
+					fmt.Sprintf("Could not create the node TLS certificate and private key in %q: %v", *certDir, err),
+					"directory",
+					*certDir,
+					"error",
+					err,
+				)
 				os.Exit(1)
 			}
-			fmt.Fprintf(os.Stderr, "Created the node TLS certificate at %s and private key at %s.\n", filepath.Join(*certDir, "node.crt"), filepath.Join(*certDir, "node.key"))
+			fmt.Fprintf(
+				os.Stderr,
+				"Created the node TLS certificate at %s and private key at %s.\n",
+				filepath.Join(*certDir, "node.crt"),
+				filepath.Join(*certDir, "node.key"),
+			)
 			fmt.Printf("TLS fingerprint: %s\n", fingerprint)
 		}
 		if "" != *tokenPath {

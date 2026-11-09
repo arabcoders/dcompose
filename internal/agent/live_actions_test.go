@@ -50,7 +50,8 @@ func TestActionOutputUTF8(t *testing.T) {
 		for _, expected := range []string{"日", large, "\uFFFD"} {
 			e := <-subscriber.events
 			var delta protocol.StackOutput
-			if "stack.output" != e.name || nil != json.Unmarshal(e.data, &delta) || "demo" != delta.Name || expected != delta.Output || !utf8.ValidString(delta.Output) {
+			if "stack.output" != e.name || nil != json.Unmarshal(e.data, &delta) || "demo" != delta.Name || expected != delta.Output ||
+				!utf8.ValidString(delta.Output) {
 				t.Fatalf("invalid output chunk: %s (%d bytes)", e.name, len(e.data))
 			}
 		}
@@ -106,7 +107,8 @@ func TestChannelRelay(t *testing.T) {
 		} `json:"relays"`
 	}
 	w := request(a, "GET", "/relays", "")
-	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &listed) || 1 != len(listed.Relays) || op.ID != listed.Relays[0].ID || strings.Contains(w.Body.String(), "output") {
+	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &listed) || 1 != len(listed.Relays) || op.ID != listed.Relays[0].ID ||
+		strings.Contains(w.Body.String(), "output") {
 		t.Fatalf("recoverable relays: %s", w.Body)
 	}
 	reconnected := openChannel(t, server)

@@ -57,7 +57,17 @@ type Server struct {
 }
 
 func New(config Config, assets fs.FS, versions ...string) *Server {
-	s := &Server{config: cloneConfig(config), assets: assets, version: "dev", nodes: make(map[string]*http.Client), oidcPending: make(map[string]oidcLogin), tickets: make(map[string]websocketTicket), channels: make(map[string]*nodeChannel), runtime: make(map[string]*nodeRuntime), watchers: make(map[chan []byte]struct{})}
+	s := &Server{
+		config:      cloneConfig(config),
+		assets:      assets,
+		version:     "dev",
+		nodes:       make(map[string]*http.Client),
+		oidcPending: make(map[string]oidcLogin),
+		tickets:     make(map[string]websocketTicket),
+		channels:    make(map[string]*nodeChannel),
+		runtime:     make(map[string]*nodeRuntime),
+		watchers:    make(map[chan []byte]struct{}),
+	}
 	s.registrySync = registrySnapshot(config.Registries)
 	s.registryClient = registry.NewClient(&http.Client{Transport: registryTransport{server: s}, Timeout: 30 * time.Second})
 	s.images = newImageChecks()
@@ -103,7 +113,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	if "/api/version" == path && "GET" == r.Method {
-		jsonResponse(w, 200, map[string]any{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI})
+		jsonResponse(
+			w,
+			200,
+			map[string]any{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI},
+		)
 		return
 	}
 	if "/api/auth/login" == path && "POST" == r.Method {
@@ -174,7 +188,10 @@ func sameOrigin(r *http.Request) bool {
 		return true
 	}
 	parsed, err := url.Parse(origin)
-	if nil != err || ("http" != parsed.Scheme && "https" != parsed.Scheme) || "" == parsed.Host || "" != parsed.Path || "" != parsed.RawQuery || "" != parsed.Fragment || nil != parsed.User {
+	if nil != err || ("http" != parsed.Scheme && "https" != parsed.Scheme) || "" == parsed.Host || "" != parsed.Path ||
+		"" != parsed.RawQuery ||
+		"" != parsed.Fragment ||
+		nil != parsed.User {
 		return false
 	}
 	return strings.EqualFold(parsed.Host, r.Host)
@@ -253,7 +270,10 @@ func credentialRevision(auth AuthConfig) string {
 }
 
 func sessionToken(auth AuthConfig, expires time.Time) (string, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: []byte(auth.sessionKey)}, (&jose.SignerOptions{}).WithType("JWT"))
+	signer, err := jose.NewSigner(
+		jose.SigningKey{Algorithm: jose.HS256, Key: []byte(auth.sessionKey)},
+		(&jose.SignerOptions{}).WithType("JWT"),
+	)
 	if nil != err {
 		return "", err
 	}
@@ -274,13 +294,35 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request, config Co
 		apiError(w, 500, "Could not sign you in. Try again.")
 		return false
 	}
-	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", HttpOnly: true, Secure: secure || nil != r.TLS, SameSite: http.SameSiteStrictMode, MaxAge: 86400, Expires: expires})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "session",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure || nil != r.TLS,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400,
+			Expires:  expires,
+		},
+	)
 	return true
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	config, _ := s.snapshot()
-	http.SetCookie(w, &http.Cookie{Name: "session", Path: "/", HttpOnly: true, Secure: config.Global.SecureCookie || nil != r.TLS, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "session",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   config.Global.SecureCookie || nil != r.TLS,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   -1,
+		},
+	)
 	jsonResponse(w, 200, map[string]bool{"authenticated": false})
 }
 

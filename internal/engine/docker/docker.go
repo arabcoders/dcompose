@@ -63,7 +63,18 @@ func (d *Docker) Probe(ctx context.Context) error {
 }
 
 func (d *Docker) Events(since time.Time) engine.Command {
-	return command("", "events", "--since", fmt.Sprintf("%d.%09d", since.Unix(), since.Nanosecond()), "--format", "{{json .}}", "--filter", "type=container", "--filter", "label=com.docker.compose.project")
+	return command(
+		"",
+		"events",
+		"--since",
+		fmt.Sprintf("%d.%09d", since.Unix(), since.Nanosecond()),
+		"--format",
+		"{{json .}}",
+		"--filter",
+		"type=container",
+		"--filter",
+		"label=com.docker.compose.project",
+	)
 }
 
 func (d *Docker) EventStack(line []byte) string {

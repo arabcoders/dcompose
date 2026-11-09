@@ -81,7 +81,10 @@ func ticketOrigin(r *http.Request, origins []string) bool {
 
 func validWebsocketOrigin(value string) (*url.URL, bool) {
 	u, err := url.Parse(value)
-	if nil != err || ("http" != u.Scheme && "https" != u.Scheme) || "" == u.Hostname() || nil != u.User || "" != u.Path || "" != u.RawQuery || "" != u.Fragment || strings.ContainsAny(value, "*?#") {
+	if nil != err || ("http" != u.Scheme && "https" != u.Scheme) || "" == u.Hostname() || nil != u.User || "" != u.Path ||
+		"" != u.RawQuery ||
+		"" != u.Fragment ||
+		strings.ContainsAny(value, "*?#") {
 		return nil, false
 	}
 	if strings.HasPrefix(u.Host, "[") {

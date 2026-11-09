@@ -199,7 +199,15 @@ func (h *logHistory) writeRecord(data []byte, rendered string) (int, error) {
 	if err := json.Unmarshal(data, &record); nil != err {
 		return 0, err
 	}
-	entry := logEntry{Timestamp: record.Time, Level: logLevelName(record.Level), Logger: "server", Message: record.Message, Rendered: rendered, Fields: record.Fields, Source: record.Source}
+	entry := logEntry{
+		Timestamp: record.Time,
+		Level:     logLevelName(record.Level),
+		Logger:    "server",
+		Message:   record.Message,
+		Rendered:  rendered,
+		Fields:    record.Fields,
+		Source:    record.Source,
+	}
 	if nil == entry.Fields {
 		entry.Fields = make(map[string]json.RawMessage)
 	}
@@ -322,11 +330,23 @@ func (h *historyHandler) Handle(ctx context.Context, record slog.Record) error {
 }
 
 func (h *historyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &historyHandler{local: h.local.WithAttrs(attrs), render: h.render.WithAttrs(attrs), store: h.store.WithAttrs(attrs), output: h.output, history: h.history}
+	return &historyHandler{
+		local:   h.local.WithAttrs(attrs),
+		render:  h.render.WithAttrs(attrs),
+		store:   h.store.WithAttrs(attrs),
+		output:  h.output,
+		history: h.history,
+	}
 }
 
 func (h *historyHandler) WithGroup(name string) slog.Handler {
-	return &historyHandler{local: h.local.WithGroup(name), render: h.render.WithGroup(name), store: h.store.WithGroup(name), output: h.output, history: h.history}
+	return &historyHandler{
+		local:   h.local.WithGroup(name),
+		render:  h.render.WithGroup(name),
+		store:   h.store.WithGroup(name),
+		output:  h.output,
+		history: h.history,
+	}
 }
 
 // Records written before rendered text was captured still expose a complete

@@ -103,13 +103,18 @@ func TestRuntimeSchedulingLabels(t *testing.T) {
 					t.Fatalf("label inspection: %+v", cmd)
 				}
 				inspected = true
-				return []byte(`{"labels":{"io.dcompose.check-interval":"30m","io.dcompose.auto-update":"true","private.label":"private-label-value"}}`), nil, nil
+				return []byte(
+					`{"labels":{"io.dcompose.check-interval":"30m","io.dcompose.auto-update":"true","private.label":"private-label-value"}}`,
+				), nil, nil
 			}
 			var driver engine.Driver = docker.New(run)
 			if "podman" == name {
 				driver = podman.New(run)
 			}
-			services, err := driver.Containers(context.Background(), engine.Stack{Name: "demo", Dir: "/stacks/demo", ComposeFile: "/stacks/demo/compose.yaml", EnvFile: "/dev/null"})
+			services, err := driver.Containers(
+				context.Background(),
+				engine.Stack{Name: "demo", Dir: "/stacks/demo", ComposeFile: "/stacks/demo/compose.yaml", EnvFile: "/dev/null"},
+			)
 			if nil != err || !inspected || 1 != len(services) || "30m" != services[0].CheckInterval || !services[0].AutoUpdate {
 				t.Fatalf("runtime labels: %+v %v", services, err)
 			}
@@ -131,9 +136,12 @@ func TestRuntimeExitCode(t *testing.T) {
 			run := func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 				calls++
 				if strings.Contains(strings.Join(cmd.Args, " "), "ps --all --format json") {
-					return []byte(`[{"Name":"failed","State":"exited","ExitCode":7},{"Name":"success","State":"exited","ExitCode":0},{"Name":"unknown","State":"exited"}]`), nil, nil
+					return []byte(
+						`[{"Name":"failed","State":"exited","ExitCode":7},{"Name":"success","State":"exited","ExitCode":0},{"Name":"unknown","State":"exited"}]`,
+					), nil, nil
 				}
-				if name != cmd.Program || !strings.Contains(strings.Join(cmd.Args, " "), "container inspect --format "+compose.ContainerInfoFormat) {
+				if name != cmd.Program ||
+					!strings.Contains(strings.Join(cmd.Args, " "), "container inspect --format "+compose.ContainerInfoFormat) {
 					t.Fatalf("unexpected runtime command: %+v", cmd)
 				}
 				return []byte(`{}`), nil, nil
@@ -148,7 +156,8 @@ func TestRuntimeExitCode(t *testing.T) {
 					Status   string                       `json:"status"`
 					Services []map[string]json.RawMessage `json:"services"`
 				}
-				if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &payload) || 3 != len(payload.Services) || "stopped" != payload.Status {
+				if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &payload) || 3 != len(payload.Services) ||
+					"stopped" != payload.Status {
 					t.Fatalf("runtime response: %d %s", w.Code, w.Body)
 				}
 				for i, want := range []string{"7", "0", ""} {
@@ -174,12 +183,16 @@ func TestRuntimeTiming(t *testing.T) {
 			run := func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 				calls++
 				if strings.Contains(strings.Join(cmd.Args, " "), "ps --all --format json") {
-					return []byte(`[{"Name":"web","State":"running","CreatedAt":"stale Compose date","RunningFor":"38 seconds ago"}]`), nil, nil
+					return []byte(
+						`[{"Name":"web","State":"running","CreatedAt":"stale Compose date","RunningFor":"38 seconds ago"}]`,
+					), nil, nil
 				}
 				if name != cmd.Program || 5 != len(cmd.Args) || compose.ContainerInfoFormat != cmd.Args[3] || "web" != cmd.Args[4] {
 					t.Fatalf("unexpected inspection: %+v", cmd)
 				}
-				return []byte(`{"labels":null,"created_at":"2026-11-03T02:39:58.237+02:00","started_at":"2026-11-03T05:45:00.123456789+02:00"}`), nil, nil
+				return []byte(
+					`{"labels":null,"created_at":"2026-11-03T02:39:58.237+02:00","started_at":"2026-11-03T05:45:00.123456789+02:00"}`,
+				), nil, nil
 			}
 			a.engine = docker.New(run)
 			if "podman" == name {
@@ -193,7 +206,8 @@ func TestRuntimeTiming(t *testing.T) {
 				if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &payload) || 1 != len(payload.Services) {
 					t.Fatalf("runtime response: %d %s", w.Code, w.Body)
 				}
-				if "2026-11-03T00:39:58.237Z" != payload.Services[0].CreatedAt || "2026-11-03T03:45:00.123456789Z" != payload.Services[0].StartedAt {
+				if "2026-11-03T00:39:58.237Z" != payload.Services[0].CreatedAt ||
+					"2026-11-03T03:45:00.123456789Z" != payload.Services[0].StartedAt {
 					t.Fatalf("runtime timing: %s", w.Body)
 				}
 			}

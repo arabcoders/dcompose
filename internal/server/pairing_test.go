@@ -23,17 +23,31 @@ func TestPairNode(t *testing.T) {
 		var input struct {
 			Token string `json:"token"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&input); nil != err || "temporary-token" != input.Token || "/pair" != r.URL.Path || http.MethodPost != r.Method || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
+		if err := json.NewDecoder(r.Body).
+			Decode(&input); nil != err || "temporary-token" != input.Token || "/pair" != r.URL.Path || http.MethodPost != r.Method ||
+			strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
 			t.Error("incorrect pairing request", err)
 		}
-		jsonResponse(w, 200, protocol.PairingResponse{ID: "node-id", Name: "node-hostname", Token: "permanent-key", Fingerprint: testFingerprint(up)})
+		jsonResponse(
+			w,
+			200,
+			protocol.PairingResponse{ID: "node-id", Name: "node-hostname", Token: "permanent-key", Fingerprint: testFingerprint(up)},
+		)
 	}))
 	defer up.Close()
 	s := persistedServer(t, nil)
 	frames, _ := s.subscribeWorkspace()
-	w := perform(t, s, http.MethodPost, "/api/settings/nodes/pair", fmt.Sprintf(`{"name":"","url":%q,"pairing_token":"temporary-token"}`, strings.TrimPrefix(up.URL, "https://")))
+	w := perform(
+		t,
+		s,
+		http.MethodPost,
+		"/api/settings/nodes/pair",
+		fmt.Sprintf(`{"name":"","url":%q,"pairing_token":"temporary-token"}`, strings.TrimPrefix(up.URL, "https://")),
+	)
 	var paired safeNode
-	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &paired) || "node-hostname" != paired.Name || "permanent-key" != paired.Token || strings.Contains(w.Body.String(), "temporary-token") {
+	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &paired) || "node-hostname" != paired.Name ||
+		"permanent-key" != paired.Token ||
+		strings.Contains(w.Body.String(), "temporary-token") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	c, err := LoadConfig(s.config.path)
@@ -41,7 +55,8 @@ func TestPairNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	node := c.Nodes["node-id"]
-	if up.URL != node.URL || "node-hostname" != node.Name || "permanent-key" != node.token || testFingerprint(up) != node.Fingerprint || !strings.HasPrefix(node.Token, "file:secrets/") {
+	if up.URL != node.URL || "node-hostname" != node.Name || "permanent-key" != node.token || testFingerprint(up) != node.Fingerprint ||
+		!strings.HasPrefix(node.Token, "file:secrets/") {
 		t.Fatal("paired connection was not saved")
 	}
 	select {
@@ -64,7 +79,11 @@ func TestPairNodePin(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&input); nil != err || "temporary-token" != input.Token {
 			t.Error("incorrect pairing token", err)
 		}
-		jsonResponse(w, http.StatusOK, protocol.PairingResponse{ID: "node-id", Name: "Home", Token: "permanent-key", Fingerprint: "response-pin"})
+		jsonResponse(
+			w,
+			http.StatusOK,
+			protocol.PairingResponse{ID: "node-id", Name: "Home", Token: "permanent-key", Fingerprint: "response-pin"},
+		)
 	}))
 	defer up.Close()
 	for _, test := range []struct {
@@ -129,7 +148,11 @@ func TestPairNodeFailure(t *testing.T) {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), up.URL) || strings.Contains(w.Body.String(), "private sentinel") || 0 != len(s.config.Nodes) {
+		if err := json.Unmarshal(
+			w.Body.Bytes(),
+			&response,
+		); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), up.URL) || strings.Contains(w.Body.String(), "private sentinel") ||
+			0 != len(s.config.Nodes) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 		var record struct {
@@ -143,7 +166,9 @@ func TestPairNodeFailure(t *testing.T) {
 		if err := json.Unmarshal(output.Bytes(), &record); nil != err {
 			t.Fatal(err, output.String())
 		}
-		if !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) || "" == record.Operation || upstreamStatus != record.Status || !strings.Contains(record.Error, "private sentinel: /srv/agent.toml token=secret") {
+		if !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, up.URL) || "" == record.Operation ||
+			upstreamStatus != record.Status ||
+			!strings.Contains(record.Error, "private sentinel: /srv/agent.toml token=secret") {
 			t.Fatal("missing private pairing failure details", output.String())
 		}
 		if "ERROR" != record.Level || !strings.Contains(record.Message, record.Node) || !strings.Contains(record.Message, record.Error) {
@@ -170,7 +195,11 @@ func TestPairNodeFailure(t *testing.T) {
 		Operation string `json:"operation"`
 		Error     string `json:"error"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &record); nil != err || "" == record.Operation || "" == record.Error || !strings.Contains(record.Message, "Home") || !strings.Contains(record.Message, up.URL) || !strings.Contains(record.Message, record.Error) || strings.Contains(w.Body.String(), record.Error) || strings.Contains(output.String(), "wrong") {
+	if err := json.Unmarshal(
+		output.Bytes(),
+		&record,
+	); nil != err || "" == record.Operation || "" == record.Error || !strings.Contains(record.Message, "Home") || !strings.Contains(record.Message, up.URL) || !strings.Contains(record.Message, record.Error) || strings.Contains(w.Body.String(), record.Error) ||
+		strings.Contains(output.String(), "wrong") {
 		t.Fatal("pairing transport message hides context or leaks token", output.String(), err)
 	}
 }
@@ -182,7 +211,13 @@ func TestPairResponseLog(t *testing.T) {
 	}))
 	defer up.Close()
 	s := persistedServer(t, nil)
-	w := perform(t, s, http.MethodPost, "/api/settings/nodes/pair", fmt.Sprintf(`{"name":"Home","url":%q,"pairing_token":"temporary-token"}`, up.URL))
+	w := perform(
+		t,
+		s,
+		http.MethodPost,
+		"/api/settings/nodes/pair",
+		fmt.Sprintf(`{"name":"Home","url":%q,"pairing_token":"temporary-token"}`, up.URL),
+	)
 	if http.StatusBadGateway != w.Code {
 		t.Fatal("invalid pairing response changed public error", w.Code, w.Body.String())
 	}
@@ -194,7 +229,11 @@ func TestPairResponseLog(t *testing.T) {
 			Error   string `json:"error"`
 			Status  int    `json:"status"`
 		}
-		if err := json.Unmarshal(line, &record); nil != err || "ERROR" != record.Level || http.StatusOK != record.Status || "" == record.Error {
+		if err := json.Unmarshal(
+			line,
+			&record,
+		); nil != err || "ERROR" != record.Level || http.StatusOK != record.Status ||
+			"" == record.Error {
 			t.Fatal("missing invalid pairing response diagnostic", string(line), err)
 		}
 		for _, detail := range []string{"Home", up.URL, record.Error, strconv.Itoa(http.StatusOK)} {
@@ -227,7 +266,11 @@ func TestPairNodeRejected(t *testing.T) {
 				if "/pair" != r.URL.Path || "" != r.Header.Get("Authorization") {
 					t.Error("pairing exposed existing node credentials")
 				}
-				jsonResponse(w, http.StatusOK, protocol.PairingResponse{ID: test.id, Name: "new-node", Token: test.token, Fingerprint: testFingerprint(up)})
+				jsonResponse(
+					w,
+					http.StatusOK,
+					protocol.PairingResponse{ID: test.id, Name: "new-node", Token: test.token, Fingerprint: testFingerprint(up)},
+				)
 			}))
 			defer up.Close()
 			s := persistedServer(t, victim)
@@ -236,8 +279,15 @@ func TestPairNodeRejected(t *testing.T) {
 			if nil != err {
 				t.Fatal(err)
 			}
-			w := perform(t, s, http.MethodPost, "/api/settings/nodes/pair", fmt.Sprintf(`{"url":%q,"pairing_token":"temporary-token"}`, up.URL))
-			if test.status != w.Code || strings.Contains(w.Body.String(), existing.token) || strings.Contains(w.Body.String(), "new-node-token") {
+			w := perform(
+				t,
+				s,
+				http.MethodPost,
+				"/api/settings/nodes/pair",
+				fmt.Sprintf(`{"url":%q,"pairing_token":"temporary-token"}`, up.URL),
+			)
+			if test.status != w.Code || strings.Contains(w.Body.String(), existing.token) ||
+				strings.Contains(w.Body.String(), "new-node-token") {
 				t.Fatalf("pairing response: %d %s", w.Code, w.Body.String())
 			}
 			if 1 != len(s.config.Nodes) || existing != s.config.Nodes["home"] {

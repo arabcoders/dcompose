@@ -68,9 +68,12 @@ bun --cwd=$PWD/frontend/ format:check
 For Go changes:
 
 ```sh
+mise exec -- golangci-lint fmt ./cmd/... ./internal/...
 mise exec -- go test -race ./cmd/... ./internal/...
 mise exec -- golangci-lint run ./cmd/... ./internal/...
 ```
+
+Go formatting uses gofmt and golines with a 140-column target. Pre-commit and CI check formatting without rewriting files.
 
 ## Local hot reload
 

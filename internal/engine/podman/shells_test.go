@@ -35,7 +35,9 @@ func TestShellInspectionMessage(t *testing.T) {
 			if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 				t.Fatal(err)
 			}
-			if "ERROR" != record.Level || "podman" != record.Runtime || "demo" != record.Stack || "demo-web" != record.Container || "exit status 1" != record.Error || stderr != record.Stderr {
+			if "ERROR" != record.Level || "podman" != record.Runtime || "demo" != record.Stack || "demo-web" != record.Container ||
+				"exit status 1" != record.Error ||
+				stderr != record.Stderr {
 				t.Fatalf("inspection fields: %+v", record)
 			}
 			for _, detail := range []string{record.Stack, record.Container, record.Error, stderr} {
@@ -54,7 +56,8 @@ func TestShell(t *testing.T) {
 	fixture := readFixture(t, "container-inspect.json")
 	id := strings.Repeat("a", 64)
 	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-		if "podman" != cmd.Program || testStack().Dir != cmd.Dir || !reflect.DeepEqual([]string{"inspect", "--type", "container", "--", "demo-web"}, cmd.Args) {
+		if "podman" != cmd.Program || testStack().Dir != cmd.Dir ||
+			!reflect.DeepEqual([]string{"inspect", "--type", "container", "--", "demo-web"}, cmd.Args) {
 			t.Fatalf("inspect: %+v", cmd)
 		}
 		return []byte(fixture), nil, nil
@@ -64,7 +67,21 @@ func TestShell(t *testing.T) {
 		t.Fatalf("container: %s %v", container, err)
 	}
 	cmd := p.Shell(container, "bash", "session")
-	want := []string{"exec", "-it", "--detach-keys=", "--env", "DCOMPOSE_SHELL_ID=session", "--env", "TERM=xterm-256color", id, "sh", "-c", shellBootstrap, "dcompose-shell", "bash"}
+	want := []string{
+		"exec",
+		"-it",
+		"--detach-keys=",
+		"--env",
+		"DCOMPOSE_SHELL_ID=session",
+		"--env",
+		"TERM=xterm-256color",
+		id,
+		"sh",
+		"-c",
+		shellBootstrap,
+		"dcompose-shell",
+		"bash",
+	}
 	if "podman" != cmd.Program || !reflect.DeepEqual(want, cmd.Args) || !strings.Contains(shellBootstrap, "$DCOMPOSE_SHELL_ID") {
 		t.Fatalf("shell: %+v", cmd)
 	}

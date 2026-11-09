@@ -304,7 +304,11 @@ func TestAPIKeyWebsocket(t *testing.T) {
 			if "" != test.origin {
 				headers.Set("Origin", test.origin)
 			}
-			conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(app.URL, "http")+"/api/events", &websocket.DialOptions{HTTPHeader: headers})
+			conn, response, err := websocket.Dial(
+				ctx,
+				"ws"+strings.TrimPrefix(app.URL, "http")+"/api/events",
+				&websocket.DialOptions{HTTPHeader: headers},
+			)
 			if nil != conn {
 				defer func() { _ = conn.CloseNow() }()
 			}

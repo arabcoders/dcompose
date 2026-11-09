@@ -79,7 +79,11 @@ func TestTicketBody(t *testing.T) {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 400 != w.Code || 400 != response.Error.Code || "" == response.Error.Message {
+		if err := json.Unmarshal(
+			w.Body.Bytes(),
+			&response,
+		); nil != err || 400 != w.Code || 400 != response.Error.Code ||
+			"" == response.Error.Message {
 			t.Fatal("invalid ticket body accepted or incorrect error response", w.Code, err)
 		}
 	}
@@ -263,7 +267,9 @@ func TestWebsocketOrigins(t *testing.T) {
 			}
 			if test.valid {
 				stored, err := readConfig(path)
-				if nil != err || 1 != len(c.Global.WebsocketOrigins) || test.origin != c.Global.WebsocketOrigins[0] || 1 != len(stored.Global.WebsocketOrigins) || test.origin != stored.Global.WebsocketOrigins[0] {
+				if nil != err || 1 != len(c.Global.WebsocketOrigins) || test.origin != c.Global.WebsocketOrigins[0] ||
+					1 != len(stored.Global.WebsocketOrigins) ||
+					test.origin != stored.Global.WebsocketOrigins[0] {
 					t.Fatal("origins not preserved", err)
 				}
 			}

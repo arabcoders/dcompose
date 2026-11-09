@@ -159,7 +159,8 @@ func platformMatches(a, b engine.ImagePlatform) bool {
 		}
 		return p.Variant
 	}
-	return "" != a.OS && "" != a.Architecture && a.OS == b.OS && a.Architecture == b.Architecture && a.OSVersion == b.OSVersion && variant(a) == variant(b)
+	return "" != a.OS && "" != a.Architecture && a.OS == b.OS && a.Architecture == b.Architecture && a.OSVersion == b.OSVersion &&
+		variant(a) == variant(b)
 }
 
 type manifestError struct{ cause string }

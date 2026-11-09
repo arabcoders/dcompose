@@ -106,7 +106,15 @@ func (s *Server) reconcileChannelsLocked(config Config, clients map[string]*http
 			continue
 		}
 		ctx, cancel := context.WithCancel(s.hubContext)
-		channel := &nodeChannel{id: id, node: node, client: clients[id], ctx: ctx, cancel: cancel, shells: make(map[string]map[chan protocol.ChannelMessage]struct{}), streams: make(map[string]*browserSubscription)}
+		channel := &nodeChannel{
+			id:      id,
+			node:    node,
+			client:  clients[id],
+			ctx:     ctx,
+			cancel:  cancel,
+			shells:  make(map[string]map[chan protocol.ChannelMessage]struct{}),
+			streams: make(map[string]*browserSubscription),
+		}
 		s.channels[id] = channel
 		s.runtime[id] = &nodeRuntime{}
 		s.stateLocked(id, "unavailable", "Connecting to node.")
@@ -196,7 +204,11 @@ func (s *Server) runChannel(channel *nodeChannel) {
 			})
 			err = s.syncRegistriesLocked(channel)
 			s.hubMu.Unlock()
-			slog.Debug(fmt.Sprintf("Connected to %s. Authentication succeeded.", nodeLogLabel(channel.node)), "node", nodeLogLabel(channel.node))
+			slog.Debug(
+				fmt.Sprintf("Connected to %s. Authentication succeeded.", nodeLogLabel(channel.node)),
+				"node",
+				nodeLogLabel(channel.node),
+			)
 			stopPing := socketHeartbeat(channel.ctx, conn, nodeLogLabel(channel.node))
 			for nil == err {
 				var message protocol.ChannelMessage
@@ -253,7 +265,20 @@ func (s *Server) runChannel(channel *nodeChannel) {
 		}
 		if warnings.allow(time.Now()) {
 			node, detail := nodeLogLabel(channel.node), safeTransportError(err)
-			slog.Warn(fmt.Sprintf("Connection to %s failed: %s. Retrying in %s.", node, strings.TrimSuffix(strings.TrimSpace(detail), "."), delay.String()), "node", node, "error", detail, "retry_in", delay)
+			slog.Warn(
+				fmt.Sprintf(
+					"Connection to %s failed: %s. Retrying in %s.",
+					node,
+					strings.TrimSuffix(strings.TrimSpace(detail), "."),
+					delay.String(),
+				),
+				"node",
+				node,
+				"error",
+				detail,
+				"retry_in",
+				delay,
+			)
 		}
 		timer := time.NewTimer(delay)
 		select {
@@ -407,8 +432,20 @@ func socketHeartbeat(ctx context.Context, conn *websocket.Conn, label string) fu
 
 func (s *Server) shellEvent(channel *nodeChannel, message protocol.ChannelMessage) {
 	if "shell.error" == message.Type {
-		slog.Error(fmt.Sprintf("Could not use shell %q on %s: %s", message.Shell, nodeLogLabel(channel.node), message.Error), "node", nodeLogLabel(channel.node), "shell", message.Shell, "error", message.Error)
-		message = protocol.ChannelMessage{Type: "shell.error", Shell: message.Shell, Error: "Could not use the shell. Reopen it and try again."}
+		slog.Error(
+			fmt.Sprintf("Could not use shell %q on %s: %s", message.Shell, nodeLogLabel(channel.node), message.Error),
+			"node",
+			nodeLogLabel(channel.node),
+			"shell",
+			message.Shell,
+			"error",
+			message.Error,
+		)
+		message = protocol.ChannelMessage{
+			Type:  "shell.error",
+			Shell: message.Shell,
+			Error: "Could not use the shell. Reopen it and try again.",
+		}
 	} else {
 		switch message.Event {
 		case "operation.snapshot", "operation.output", "operation.done":

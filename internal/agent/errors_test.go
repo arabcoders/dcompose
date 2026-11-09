@@ -39,7 +39,11 @@ func TestErrorResponse(t *testing.T) {
 			var response struct {
 				Error string `json:"error"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || test.code != w.Code || "" == response.Error || strings.Contains(response.Error, "private diagnostic") || strings.Contains(response.Error, "/private/stacks/.env") {
+			if err := json.Unmarshal(
+				w.Body.Bytes(),
+				&response,
+			); nil != err || test.code != w.Code || "" == response.Error || strings.Contains(response.Error, "private diagnostic") ||
+				strings.Contains(response.Error, "/private/stacks/.env") {
 				t.Fatal(w.Code, w.Body.String(), err)
 			}
 			var apiErr *engine.Error
@@ -77,7 +81,11 @@ func TestInventoryFailure(t *testing.T) {
 	var response struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 500 != w.Code || "" == response.Error || strings.Contains(w.Body.String(), a.config.Global.StacksDir) || strings.Contains(w.Body.String(), "private-stacks") {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&response,
+	); nil != err || 500 != w.Code || "" == response.Error || strings.Contains(w.Body.String(), a.config.Global.StacksDir) ||
+		strings.Contains(w.Body.String(), "private-stacks") {
 		t.Fatal("inventory error exposed internals", w.Code, w.Body.String())
 	}
 }
@@ -138,7 +146,8 @@ func TestProxySourceError(t *testing.T) {
 			} else if strings.SplitN(test.peer, ":", 2)[0] != record.Source || !strings.Contains(record.Message, record.Source) {
 				t.Fatal("missing rejected source", logs.String())
 			}
-			if strings.Contains(logs.String(), "wrong-secret") || strings.Contains(logs.String(), "test-secret") || strings.Contains(logs.String(), "malformed") {
+			if strings.Contains(logs.String(), "wrong-secret") || strings.Contains(logs.String(), "test-secret") ||
+				strings.Contains(logs.String(), "malformed") {
 				t.Fatal("rejection logs leaked credentials or forwarding input", logs.String())
 			}
 		})

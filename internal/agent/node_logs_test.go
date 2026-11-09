@@ -16,7 +16,9 @@ import (
 )
 
 func nodeLogger(buffer *nodeLogBuffer, local slog.Handler) *slog.Logger {
-	return slog.New(&nodeLogHandler{local: local, forward: slog.NewJSONHandler(buffer, &slog.HandlerOptions{AddSource: true}).WithGroup("attrs")})
+	return slog.New(
+		&nodeLogHandler{local: local, forward: slog.NewJSONHandler(buffer, &slog.HandlerOptions{AddSource: true}).WithGroup("attrs")},
+	)
 }
 
 func TestNodeLogHandler(t *testing.T) {
@@ -30,7 +32,12 @@ func TestNodeLogHandler(t *testing.T) {
 	logger = logger.With("stack", "demo").WithGroup("request").With("service", "web")
 	stamp := time.Date(2026, 10, 29, 12, 0, 0, 123456789, time.UTC)
 	record := slog.NewRecord(stamp, slog.LevelError, "diagnostic", 0)
-	record.AddAttrs(slog.String("image", "example:latest"), slog.String("stderr", "registry denied"), slog.Any("error", errors.New("manifest failure")), slog.Group("operation", "id", "job", "attempt", 2))
+	record.AddAttrs(
+		slog.String("image", "example:latest"),
+		slog.String("stderr", "registry denied"),
+		slog.Any("error", errors.New("manifest failure")),
+		slog.Group("operation", "id", "job", "attempt", 2),
+	)
 	if err := logger.Handler().Handle(context.Background(), record); nil != err {
 		t.Fatal(err)
 	}
@@ -38,7 +45,8 @@ func TestNodeLogHandler(t *testing.T) {
 	if 2 != len(entries) || slog.LevelDebug != entries[0].Level || slog.LevelError != entries[1].Level || !stamp.Equal(entries[1].Time) {
 		t.Fatalf("record metadata: %+v", entries)
 	}
-	if nil == entries[0].Source || !strings.HasSuffix(entries[0].Source.Function, ".TestNodeLogHandler") || 0 == entries[0].Source.Line || nil != entries[1].Source {
+	if nil == entries[0].Source || !strings.HasSuffix(entries[0].Source.Function, ".TestNodeLogHandler") || 0 == entries[0].Source.Line ||
+		nil != entries[1].Source {
 		t.Fatal("original callsite not preserved", entries)
 	}
 	var attrs struct {
@@ -54,10 +62,15 @@ func TestNodeLogHandler(t *testing.T) {
 	if err := json.Unmarshal(entries[1].Attrs["request"], &attrs); nil != err {
 		t.Fatal(err)
 	}
-	if `"demo"` != string(entries[1].Attrs["stack"]) || "web" != attrs.Service || "example:latest" != attrs.Image || "registry denied" != attrs.Stderr || "manifest failure" != attrs.Error || "job" != attrs.Operation.ID || 2 != attrs.Operation.Attempt {
+	if `"demo"` != string(entries[1].Attrs["stack"]) || "web" != attrs.Service || "example:latest" != attrs.Image ||
+		"registry denied" != attrs.Stderr ||
+		"manifest failure" != attrs.Error ||
+		"job" != attrs.Operation.ID ||
+		2 != attrs.Operation.Attempt {
 		t.Fatalf("structured fields: %+v %+v", entries[1], attrs)
 	}
-	if strings.Contains(local.text(), "phase=filtered") || !strings.Contains(local.text(), "request.stderr=") || !strings.Contains(local.text(), "level=ERROR") {
+	if strings.Contains(local.text(), "phase=filtered") || !strings.Contains(local.text(), "request.stderr=") ||
+		!strings.Contains(local.text(), "level=ERROR") {
 		t.Fatalf("local handler not retained: %s", local.text())
 	}
 }

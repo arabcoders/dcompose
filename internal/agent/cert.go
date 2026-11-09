@@ -55,7 +55,11 @@ func generateCert(dir string) (string, error) {
 	if err := writeNewFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0600); nil != err {
 		return "", err
 	}
-	if err := writeNewFile(filepath.Join(dir, "node.crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0644); nil != err {
+	if err := writeNewFile(
+		filepath.Join(dir, "node.crt"),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		0644,
+	); nil != err {
 		_ = os.Remove(keyPath)
 		return "", err
 	}

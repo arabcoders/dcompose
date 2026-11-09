@@ -57,7 +57,13 @@ func TestNodeOrder(t *testing.T) {
 	up := httptest.NewTLSServer(nil)
 	defer up.Close()
 	s := persistedServer(t, up)
-	w := perform(t, s, "POST", "/api/settings/nodes", fmt.Sprintf(`{"name":"Alpha","url":%q,"token":"new-token","fingerprint":%q}`, up.URL, testFingerprint(up)))
+	w := perform(
+		t,
+		s,
+		"POST",
+		"/api/settings/nodes",
+		fmt.Sprintf(`{"name":"Alpha","url":%q,"token":"new-token","fingerprint":%q}`, up.URL, testFingerprint(up)),
+	)
 	var other safeNode
 	if err := json.Unmarshal(w.Body.Bytes(), &other); nil != err || 200 != w.Code || "" == other.ID {
 		t.Fatal(w.Code, w.Body.String(), err)
@@ -76,12 +82,24 @@ func TestNodeOrder(t *testing.T) {
 	}
 	s = New(loaded, nil)
 	assertNodeOrder(t, s, "home", other.ID)
-	w = perform(t, s, "PUT", "/api/settings/nodes/home", fmt.Sprintf(`{"name":"Zulu","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)))
+	w = perform(
+		t,
+		s,
+		"PUT",
+		"/api/settings/nodes/home",
+		fmt.Sprintf(`{"name":"Zulu","url":%q,"fingerprint":%q}`, up.URL, testFingerprint(up)),
+	)
 	if 200 != w.Code {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	assertNodeOrder(t, s, "home", other.ID)
-	w = perform(t, s, "POST", "/api/settings/nodes", fmt.Sprintf(`{"name":"0 Before","url":%q,"token":"new-token","fingerprint":%q}`, up.URL, testFingerprint(up)))
+	w = perform(
+		t,
+		s,
+		"POST",
+		"/api/settings/nodes",
+		fmt.Sprintf(`{"name":"0 Before","url":%q,"token":"new-token","fingerprint":%q}`, up.URL, testFingerprint(up)),
+	)
 	var added safeNode
 	if err := json.Unmarshal(w.Body.Bytes(), &added); nil != err || 200 != w.Code || "" == added.ID {
 		t.Fatal(w.Code, w.Body.String(), err)
@@ -197,7 +215,16 @@ func TestNodeOrderChannel(t *testing.T) {
 	if !unchanged || clients["home"] != currentClients["home"] || 1 != f.count.Load() {
 		t.Fatal("order changed node connections or runtime")
 	}
-	browserSend(t, node, protocol.ChannelMessage{Type: "stream.event", Stream: attach.Stream, Event: "message", Payload: json.RawMessage(`{"message":"still attached"}`)})
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "stream.event",
+			Stream:  attach.Stream,
+			Event:   "message",
+			Payload: json.RawMessage(`{"message":"still attached"}`),
+		},
+	)
 	if got := resourceMessage(t, browser); "logs" != got.Stream || !strings.Contains(string(got.Payload), "still attached") {
 		t.Fatal("order detached logs", got)
 	}

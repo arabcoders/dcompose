@@ -31,7 +31,16 @@ type safeNode struct {
 }
 
 func publicNode(id string, node NodeConfig) safeNode {
-	return safeNode{ID: id, Name: node.Name, URL: node.URL, Fingerprint: node.Fingerprint, PublicHost: node.PublicHost, HasToken: "" != node.token, Token: node.token, Paused: node.Paused}
+	return safeNode{
+		ID:          id,
+		Name:        node.Name,
+		URL:         node.URL,
+		Fingerprint: node.Fingerprint,
+		PublicHost:  node.PublicHost,
+		HasToken:    "" != node.token,
+		Token:       node.token,
+		Paused:      node.Paused,
+	}
 }
 
 func (s *Server) publicSettings(c Config) any {
@@ -68,7 +77,15 @@ type nodeConnectionRequest struct {
 }
 
 func (input nodeInput) node(existing NodeConfig) NodeConfig {
-	node := NodeConfig{Name: input.Name, URL: input.URL, Fingerprint: input.Fingerprint, PublicHost: input.PublicHost, Token: existing.Token, token: existing.token, Paused: existing.Paused}
+	node := NodeConfig{
+		Name:        input.Name,
+		URL:         input.URL,
+		Fingerprint: input.Fingerprint,
+		PublicHost:  input.PublicHost,
+		Token:       existing.Token,
+		token:       existing.token,
+		Paused:      existing.Paused,
+	}
 	if nil != input.Paused {
 		node.Paused = *input.Paused
 	}
@@ -221,7 +238,15 @@ func (s *Server) saveNode(w http.ResponseWriter, r *http.Request, id string) {
 	if !decodeBody(w, r, &connection, 32<<10) {
 		return
 	}
-	input := nodeInput{ID: id, Name: connection.Name, URL: connection.URL, Token: connection.Token, Fingerprint: connection.Fingerprint, PublicHost: connection.PublicHost, Paused: connection.Paused}
+	input := nodeInput{
+		ID:          id,
+		Name:        connection.Name,
+		URL:         connection.URL,
+		Token:       connection.Token,
+		Fingerprint: connection.Fingerprint,
+		PublicHost:  connection.PublicHost,
+		Paused:      connection.Paused,
+	}
 	if "" == id {
 		var identity [8]byte
 		if _, err := rand.Read(identity[:]); nil != err {
@@ -314,7 +339,13 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request, id string) {
 	if err := resetNodePairing(r.Context(), node, s.nodes[id]); nil != err {
 		detail := strings.TrimSuffix(strings.TrimSpace(safeTransportError(err)), ".")
 		result.Warning = "Node was removed, but pairing could not be reset."
-		slog.Warn(fmt.Sprintf("Removed %s from server configuration, but could not reset its pairing: %s.", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "error", detail)
+		slog.Warn(
+			fmt.Sprintf("Removed %s from server configuration, but could not reset its pairing: %s.", nodeLogLabel(node), detail),
+			"node",
+			nodeLogLabel(node),
+			"error",
+			detail,
+		)
 	} else {
 		slog.Info(fmt.Sprintf("Disconnected %s and reset its pairing.", nodeLogLabel(node)), "node", nodeLogLabel(node))
 	}
@@ -352,7 +383,13 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 	health, err := checkNode(ctx, node, client)
 	if nil != err {
 		detail := safeTransportError(err)
-		slog.Error(fmt.Sprintf("Connection test for %s failed: %s", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "error", detail)
+		slog.Error(
+			fmt.Sprintf("Connection test for %s failed: %s", nodeLogLabel(node), detail),
+			"node",
+			nodeLogLabel(node),
+			"error",
+			detail,
+		)
 		if incompatible, ok := errors.AsType[incompatibleAgent](err); ok {
 			apiError(w, 426, incompatible.Error())
 		} else {

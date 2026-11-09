@@ -67,7 +67,16 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 		return nil, browserError(message.Stream, 502, "Node is unavailable. Try again when it reconnects.")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	subscription := &browserSubscription{id: message.Stream, kind: message.Type, resource: message.Resource, channel: channel, conn: channel.conn, subscriber: make(chan protocol.ChannelMessage, 64), ctx: ctx, cancel: cancel}
+	subscription := &browserSubscription{
+		id:         message.Stream,
+		kind:       message.Type,
+		resource:   message.Resource,
+		channel:    channel,
+		conn:       channel.conn,
+		subscriber: make(chan protocol.ChannelMessage, 64),
+		ctx:        ctx,
+		cancel:     cancel,
+	}
 	command := protocol.ChannelMessage{Type: message.Type, Resource: message.Resource}
 	if "shell.attach" == message.Type {
 		subscription.shell = message.Shell
@@ -91,7 +100,21 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 			view = fmt.Sprintf("shell %q", subscription.shell)
 		}
 		detail := safeTransportError(err)
-		slog.Error(fmt.Sprintf("Could not open %s on %s: %s", view, nodeLogLabel(channel.node), detail), "node", nodeLogLabel(channel.node), "operation", subscription.kind, "resource", subscription.resource, "stream", subscription.stream, "shell", subscription.shell, "error", detail)
+		slog.Error(
+			fmt.Sprintf("Could not open %s on %s: %s", view, nodeLogLabel(channel.node), detail),
+			"node",
+			nodeLogLabel(channel.node),
+			"operation",
+			subscription.kind,
+			"resource",
+			subscription.resource,
+			"stream",
+			subscription.stream,
+			"shell",
+			subscription.shell,
+			"error",
+			detail,
+		)
 		s.detachBrowser(subscription)
 		return nil, browserError(message.Stream, 502, "Could not open the requested view. Try again.")
 	}
@@ -159,7 +182,8 @@ func (subscription *browserSubscription) forward(outgoing chan<- browserDelivery
 			if !send(message, false) {
 				return
 			}
-			if "error" == message.Type || "shell.error" == message.Type || "operation.done" == message.Event || "done" == message.Event || "error" == message.Event {
+			if "error" == message.Type || "shell.error" == message.Type || "operation.done" == message.Event || "done" == message.Event ||
+				"error" == message.Event {
 				send(protocol.ChannelMessage{}, true)
 				return
 			}
@@ -193,7 +217,21 @@ func (s *Server) streamEvent(channel *nodeChannel, message protocol.ChannelMessa
 		} else {
 			detail += "."
 		}
-		slog.Error(detail, "node", nodeLogLabel(channel.node), "operation", subscription.kind, "resource", subscription.resource, "stream", subscription.stream, "status", message.Status, "error", message.Error)
+		slog.Error(
+			detail,
+			"node",
+			nodeLogLabel(channel.node),
+			"operation",
+			subscription.kind,
+			"resource",
+			subscription.resource,
+			"stream",
+			subscription.stream,
+			"status",
+			message.Status,
+			"error",
+			message.Error,
+		)
 		message = protocol.ChannelMessage{Type: "error", Status: status, Error: "Could not load the requested view. Try again."}
 	} else {
 		switch message.Event {

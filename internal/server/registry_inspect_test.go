@@ -29,10 +29,17 @@ func metadataResponse(request *http.Request, status int, body string) *http.Resp
 }
 
 func nativeMetadata(request *http.Request) *http.Response {
-	amd := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"digest":"sha256:` + strings.Repeat("a", 64) + `"},"layers":[]}`
+	amd := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"digest":"sha256:` + strings.Repeat(
+		"a",
+		64,
+	) + `"},"layers":[]}`
 	arm := strings.ReplaceAll(amd, strings.Repeat("a", 64), strings.Repeat("b", 64))
 	amdDigest, armDigest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(amd))), fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(arm)))
-	root := fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"digest":%q,"platform":{"os":"linux","architecture":"amd64"}},{"digest":%q,"platform":{"os":"linux","architecture":"arm64"}}]}`, amdDigest, armDigest)
+	root := fmt.Sprintf(
+		`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"digest":%q,"platform":{"os":"linux","architecture":"amd64"}},{"digest":%q,"platform":{"os":"linux","architecture":"arm64"}}]}`,
+		amdDigest,
+		armDigest,
+	)
 	body := root
 	if strings.HasSuffix(request.URL.Path, "/"+amdDigest) {
 		body = amd
@@ -61,9 +68,16 @@ func imageService(name string) engine.Service {
 
 func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 	t.Helper()
-	f := &imageNodeFixture{channel: fakeChannel(t), services: map[string][]engine.Service{"demo": services}, local: make(map[string]string), metadata: nativeMetadata}
+	f := &imageNodeFixture{
+		channel:  fakeChannel(t),
+		services: map[string][]engine.Service{"demo": services},
+		local:    make(map[string]string),
+		metadata: nativeMetadata,
+	}
 	stacks := []map[string]any{{"name": "demo", "status": "running", "loading": false, "services": services}}
-	f.channel.snapshot, _ = json.Marshal(map[string]any{"health": map[string]string{"status": "ok", "image_check_interval": "6h"}, "stacks": stacks})
+	f.channel.snapshot, _ = json.Marshal(
+		map[string]any{"health": map[string]string{"status": "ok", "image_check_interval": "6h"}, "stacks": stacks},
+	)
 	f.channel.http = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case "/images/inspect" == r.URL.Path:
@@ -83,7 +97,20 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 				if "" != input.Container && input.Container != service.Name {
 					continue
 				}
-				images = append(images, protocol.ImageInspection{ID: service.ID, Service: service, Target: engine.ImageTarget{LocalID: f.local[service.Name], Key: engine.ImageKey{Ref: service.Image, ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}}})
+				images = append(
+					images,
+					protocol.ImageInspection{
+						ID:      service.ID,
+						Service: service,
+						Target: engine.ImageTarget{
+							LocalID: f.local[service.Name],
+							Key: engine.ImageKey{
+								Ref:           service.Image,
+								ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"},
+							},
+						},
+					},
+				)
 			}
 			_ = json.NewEncoder(w).Encode(protocol.ImageInspectResponse{Images: images})
 		case "/registry/request" == r.URL.Path:
@@ -137,7 +164,8 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 		case "/stacks/demo/status" == r.URL.Path || "/stacks/demo" == r.URL.Path:
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo", "status": "running", "services": f.services["demo"], "compose": "services: {}", "env": ""})
+			_ = json.NewEncoder(w).
+				Encode(map[string]any{"name": "demo", "status": "running", "services": f.services["demo"], "compose": "services: {}", "env": ""})
 		default:
 			t.Error("unexpected image-node route", r.URL.Path)
 			w.WriteHeader(404)
@@ -149,7 +177,14 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 func imageServer(t *testing.T, f *imageNodeFixture, background bool) *Server {
 	t.Helper()
 	s := testServer(t, f.channel.server)
-	s.config.Registries = []RegistryConfig{{ID: "login", Registry: "docker.io", BackgroundChecks: background, auth: map[string]string{"username": "test", "password": "test-secret"}}}
+	s.config.Registries = []RegistryConfig{
+		{
+			ID:               "login",
+			Registry:         "docker.io",
+			BackgroundChecks: background,
+			auth:             map[string]string{"username": "test", "password": "test-secret"},
+		},
+	}
 	s.registrySync = registrySnapshot(s.config.Registries)
 	s.registryClient = registry.NewClient(&http.Client{Transport: registryTransport{server: s}})
 	return s
@@ -191,7 +226,12 @@ func imageStatus(s *Server, node, stack, container string) string {
 func TestRegistrySharedMetadata(t *testing.T) {
 	one, two := imageNode(t), imageNode(t)
 	s := imageServer(t, one, false)
-	node := NodeConfig{Name: "away", URL: two.channel.server.URL, token: "agent-test-token", Fingerprint: testFingerprint(two.channel.server)}
+	node := NodeConfig{
+		Name:        "away",
+		URL:         two.channel.server.URL,
+		token:       "agent-test-token",
+		Fingerprint: testFingerprint(two.channel.server),
+	}
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
 	now := time.Now().UTC().Truncate(time.Second)

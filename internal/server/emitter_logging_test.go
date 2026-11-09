@@ -44,16 +44,35 @@ func TestViewWriteLogs(t *testing.T) {
 			s := testServer(t, nil)
 			node := NodeConfig{Name: "Home", URL: "https://user:secret@node.invalid/private?token=secret", token: "agent-test-token"}
 			s.config.Nodes["home"] = node
-			channel := &nodeChannel{node: node, conn: conn, ctx: context.Background(), streams: make(map[string]*browserSubscription), shells: make(map[string]map[chan protocol.ChannelMessage]struct{})}
+			channel := &nodeChannel{
+				node:    node,
+				conn:    conn,
+				ctx:     context.Background(),
+				streams: make(map[string]*browserSubscription),
+				shells:  make(map[string]map[chan protocol.ChannelMessage]struct{}),
+			}
 			s.channels["home"] = channel
-			message := protocol.ChannelMessage{Type: test.kind, Stream: "browser", Node: "home", Resource: test.resource, Shell: test.shell, Data: "secret-shell-input", Cols: 80, Rows: 24}
+			message := protocol.ChannelMessage{
+				Type:     test.kind,
+				Stream:   "browser",
+				Node:     "home",
+				Resource: test.resource,
+				Shell:    test.shell,
+				Data:     "secret-shell-input",
+				Cols:     80,
+				Rows:     24,
+			}
 			var response *protocol.ChannelMessage
 			if "relay.attach" == test.kind {
 				_, response = s.attachNode(context.Background(), message)
 			} else if strings.HasSuffix(test.kind, ".attach") {
 				_, response = s.attachBrowser(context.Background(), message)
 			} else {
-				response = s.browserShellCommand(context.Background(), &browserSubscription{shell: test.shell, channel: channel, conn: conn}, message)
+				response = s.browserShellCommand(
+					context.Background(),
+					&browserSubscription{shell: test.shell, channel: channel, conn: conn},
+					message,
+				)
 			}
 			if nil == response || http.StatusBadGateway != response.Status {
 				t.Fatal("write failure changed browser error", response)
@@ -65,7 +84,11 @@ func TestViewWriteLogs(t *testing.T) {
 				Operation string `json:"operation"`
 				Error     string `json:"error"`
 			}
-			if err := json.Unmarshal(output.Bytes(), &record); nil != err || "ERROR" != record.Level || !strings.Contains(record.Node, node.Name) || !strings.Contains(record.Node, "https://node.invalid") || "" == record.Operation || "" == record.Error {
+			if err := json.Unmarshal(
+				output.Bytes(),
+				&record,
+			); nil != err || "ERROR" != record.Level || !strings.Contains(record.Node, node.Name) || !strings.Contains(record.Node, "https://node.invalid") || "" == record.Operation ||
+				"" == record.Error {
 				t.Fatal("missing write failure diagnostic", output.String(), err)
 			}
 			resource := test.resource
@@ -77,7 +100,8 @@ func TestViewWriteLogs(t *testing.T) {
 					t.Fatal("write message hides context", record.Message)
 				}
 			}
-			if strings.Contains(output.String(), "secret") || strings.Contains(output.String(), "/private") || strings.Contains(response.Error, record.Error) {
+			if strings.Contains(output.String(), "secret") || strings.Contains(output.String(), "/private") ||
+				strings.Contains(response.Error, record.Error) {
 				t.Fatal("write failure leaked private details", output.String(), response)
 			}
 		})
@@ -92,8 +116,16 @@ func TestViewErrorLogs(t *testing.T) {
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
 			t.Cleanup(func() { slog.SetDefault(original) })
 			s := testServer(t, nil)
-			channel := &nodeChannel{node: NodeConfig{Name: "Home", URL: "https://node.invalid"}, streams: make(map[string]*browserSubscription)}
-			subscription := &browserSubscription{kind: kind, resource: "demo", stream: "stream-id", subscriber: make(chan protocol.ChannelMessage, 1)}
+			channel := &nodeChannel{
+				node:    NodeConfig{Name: "Home", URL: "https://node.invalid"},
+				streams: make(map[string]*browserSubscription),
+			}
+			subscription := &browserSubscription{
+				kind:       kind,
+				resource:   "demo",
+				stream:     "stream-id",
+				subscriber: make(chan protocol.ChannelMessage, 1),
+			}
 			channel.streams[subscription.stream] = subscription
 			const cause = "private diagnostic: cannot open /srv/demo/compose.yml"
 			s.streamEvent(channel, protocol.ChannelMessage{Type: "stream.error", Stream: subscription.stream, Status: 404, Error: cause})
@@ -110,7 +142,11 @@ func TestViewErrorLogs(t *testing.T) {
 				Status    int    `json:"status"`
 				Error     string `json:"error"`
 			}
-			if err := json.Unmarshal(output.Bytes(), &record); nil != err || "ERROR" != record.Level || kind != record.Operation || "demo" != record.Resource || "stream-id" != record.Stream || 404 != record.Status || cause != record.Error {
+			if err := json.Unmarshal(
+				output.Bytes(),
+				&record,
+			); nil != err || "ERROR" != record.Level || kind != record.Operation || "demo" != record.Resource || "stream-id" != record.Stream || 404 != record.Status ||
+				cause != record.Error {
 				t.Fatal("missing stream failure diagnostic", output.String(), err)
 			}
 			for _, detail := range []string{channel.node.Name, channel.node.URL, subscription.resource, cause, "404"} {

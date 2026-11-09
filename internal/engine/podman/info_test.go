@@ -51,7 +51,8 @@ func TestNodeInfo(t *testing.T) {
 		t.Fatalf("stats: %+v", info.Containers)
 	}
 	encoded, err := json.Marshal(info)
-	if nil != err || strings.Contains(string(encoded), "do-not-expose") || strings.Contains(string(encoded), "secret-storage") || !strings.Contains(string(encoded), `"runtime":`) {
+	if nil != err || strings.Contains(string(encoded), "do-not-expose") || strings.Contains(string(encoded), "secret-storage") ||
+		!strings.Contains(string(encoded), `"runtime":`) {
 		t.Fatalf("encoded: %s, error: %v", encoded, err)
 	}
 }
@@ -132,7 +133,9 @@ func TestNodeInfoErrors(t *testing.T) {
 			})
 			_, err := p.NodeInfo(context.Background())
 			var apiErr *engine.Error
-			if !errors.As(err, &apiErr) || 502 != apiErr.Code || "" == apiErr.Message || strings.Contains(apiErr.Message, "secret-output") || strings.Contains(apiErr.Message, "permission denied for Podman socket") {
+			if !errors.As(err, &apiErr) || 502 != apiErr.Code || "" == apiErr.Message ||
+				strings.Contains(apiErr.Message, "secret-output") ||
+				strings.Contains(apiErr.Message, "permission denied for Podman socket") {
 				t.Fatalf("error: %v", err)
 			}
 			var record struct {
@@ -146,10 +149,12 @@ func TestNodeInfoErrors(t *testing.T) {
 			if strings.HasPrefix(test.name, "stats ") {
 				command = "podman stats"
 			}
-			if "ERROR" != record.Level || "podman" != record.Runtime || command != record.Command || "" == record.Error || strings.Contains(logs.String(), "secret-") {
+			if "ERROR" != record.Level || "podman" != record.Runtime || command != record.Command || "" == record.Error ||
+				strings.Contains(logs.String(), "secret-") {
 				t.Fatalf("logs: %s", &logs)
 			}
-			if "" != test.fail && (!strings.Contains(record.Error, "exit status 1") || !strings.Contains(record.Error+record.Stderr, "permission denied for Podman socket")) {
+			if "" != test.fail &&
+				(!strings.Contains(record.Error, "exit status 1") || !strings.Contains(record.Error+record.Stderr, "permission denied for Podman socket")) {
 				t.Fatalf("missing failure details: %s", &logs)
 			}
 			if "stats" == test.fail && "permission denied for Podman socket" != record.Stderr {

@@ -63,7 +63,11 @@ func generateToken(path string) error {
 }
 
 func readConfig(path string) (config, error) {
-	c := config{Global: globalConfig{Engine: "docker", Listen: "127.0.0.1:9077", LogLevel: "info", ImageCheckInterval: "6h"}, Auth: authConfig{AllowedIPs: []string{"0.0.0.0/0", "::/0"}}, path: path}
+	c := config{
+		Global: globalConfig{Engine: "docker", Listen: "127.0.0.1:9077", LogLevel: "info", ImageCheckInterval: "6h"},
+		Auth:   authConfig{AllowedIPs: []string{"0.0.0.0/0", "::/0"}},
+		path:   path,
+	}
 	meta, err := toml.DecodeFile(path, &c)
 	if nil != err {
 		return c, err
@@ -189,7 +193,10 @@ func initializeConfig(path string, c *config) error {
 		}
 	}
 	if err := os.MkdirAll(c.Global.StacksDir, 0750); nil != err {
-		return fmt.Errorf("create stacks_dir: %w. Create /opt/stacks and give the runtime user access, or supply agent.toml with a writable global.stacks_dir", err)
+		return fmt.Errorf(
+			"create stacks_dir: %w. Create /opt/stacks and give the runtime user access, or supply agent.toml with a writable global.stacks_dir",
+			err,
+		)
 	}
 	if errors.Is(tokenErr, os.ErrNotExist) {
 		if err := generateToken(tokenPath); nil != err {

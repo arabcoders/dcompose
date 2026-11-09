@@ -18,7 +18,10 @@ func TestCreateForward(t *testing.T) {
 			var requests atomic.Int32
 			up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
-				if http.MethodPost != r.Method || "/stacks/copy" != r.URL.Path || "" != r.URL.RawQuery || "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) || "" != r.Header.Get("Cookie") {
+				if http.MethodPost != r.Method || "/stacks/copy" != r.URL.Path || "" != r.URL.RawQuery ||
+					"Bearer agent-test-token" != r.Header.Get("Authorization") ||
+					strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) ||
+					"" != r.Header.Get("Cookie") {
 					t.Error("incorrect create forwarding", r.Method, r.URL)
 				}
 				var input struct {
@@ -26,7 +29,9 @@ func TestCreateForward(t *testing.T) {
 					Env       string `json:"env"`
 					Overwrite *bool  `json:"overwrite"`
 				}
-				if err := json.NewDecoder(r.Body).Decode(&input); nil != err || "# raw\nservices: {}\n" != input.Compose || "KEY='raw'\n" != input.Env || nil == input.Overwrite || (`,"overwrite":true` == overwrite) != *input.Overwrite {
+				if err := json.NewDecoder(r.Body).
+					Decode(&input); nil != err || "# raw\nservices: {}\n" != input.Compose || "KEY='raw'\n" != input.Env || nil == input.Overwrite ||
+					(`,"overwrite":true` == overwrite) != *input.Overwrite {
 					t.Errorf("forwarded payload: %+v %v", input, err)
 				}
 				jsonResponse(w, http.StatusOK, map[string]string{"name": "copy"})
@@ -36,7 +41,8 @@ func TestCreateForward(t *testing.T) {
 			body := `{"compose":"# raw\nservices: {}\n","env":"KEY='raw'\n"` + overwrite + `}`
 			w := perform(t, s, http.MethodPost, "/api/nodes/home/stacks/copy?token=browser-secret", body)
 			var result map[string]string
-			if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || 1 != len(result) || "copy" != result["name"] || 1 != requests.Load() {
+			if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || 1 != len(result) || "copy" != result["name"] ||
+				1 != requests.Load() {
 				t.Fatalf("create: %d %s", w.Code, w.Body)
 			}
 			w = httptest.NewRecorder()
@@ -63,7 +69,10 @@ func TestCreateError(t *testing.T) {
 					Message string `json:"message"`
 				} `json:"error"`
 			}
-			if status != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || status != result.Error.Code || "" == result.Error.Message || strings.Contains(w.Body.String(), "SECRET") || strings.Contains(w.Body.String(), "/srv/") {
+			if status != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || status != result.Error.Code ||
+				"" == result.Error.Message ||
+				strings.Contains(w.Body.String(), "SECRET") ||
+				strings.Contains(w.Body.String(), "/srv/") {
 				t.Fatalf("unsafe create error: %d %s", w.Code, w.Body)
 			}
 		})

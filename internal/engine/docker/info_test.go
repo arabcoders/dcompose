@@ -112,7 +112,9 @@ func TestNodeInfoErrors(t *testing.T) {
 			})
 			_, err := d.NodeInfo(context.Background())
 			var apiErr *engine.Error
-			if !errors.As(err, &apiErr) || 502 != apiErr.Code || "" == apiErr.Message || strings.Contains(apiErr.Message, "secret-output") || strings.Contains(apiErr.Message, "/var/run/docker.sock") {
+			if !errors.As(err, &apiErr) || 502 != apiErr.Code || "" == apiErr.Message ||
+				strings.Contains(apiErr.Message, "secret-output") ||
+				strings.Contains(apiErr.Message, "/var/run/docker.sock") {
 				t.Fatalf("error: %v", err)
 			}
 			var record struct {
@@ -126,7 +128,8 @@ func TestNodeInfoErrors(t *testing.T) {
 			if strings.HasPrefix(test.name, "stats ") {
 				command = "docker stats"
 			}
-			if "ERROR" != record.Level || "docker" != record.Runtime || command != record.Command || "" == record.Error || strings.Contains(logs.String(), "secret-") {
+			if "ERROR" != record.Level || "docker" != record.Runtime || command != record.Command || "" == record.Error ||
+				strings.Contains(logs.String(), "secret-") {
 				t.Fatalf("logs: %s", &logs)
 			}
 			if "" != test.fail && ("exit status 1" != record.Error || "permission denied for /var/run/docker.sock" != record.Stderr) {

@@ -394,7 +394,8 @@ func runtimePayload(event string, data []byte) (map[string]json.RawMessage, erro
 			nil == json.Unmarshal(payload["phase"], &phase) && ("start" == phase || "exit" == phase)
 		if "exit" == phase {
 			var code int
-			valid = valid && 0 < len(payload["exit_code"]) && "null" != string(payload["exit_code"]) && nil == json.Unmarshal(payload["exit_code"], &code)
+			valid = valid && 0 < len(payload["exit_code"]) && "null" != string(payload["exit_code"]) &&
+				nil == json.Unmarshal(payload["exit_code"], &code)
 		}
 		if message, ok := payload["message"]; ok {
 			valid = valid && isString(message)

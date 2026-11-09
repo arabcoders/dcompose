@@ -11,7 +11,13 @@ import (
 
 func parseLogFilter(r *http.Request, stream bool) (logFilter, error) {
 	query := r.URL.Query()
-	filter := logFilter{limit: 100, node: query.Get("node"), logger: query.Get("logger"), search: strings.ToLower(query.Get("search")), levels: make(map[string]bool)}
+	filter := logFilter{
+		limit:  100,
+		node:   query.Get("node"),
+		logger: query.Get("logger"),
+		search: strings.ToLower(query.Get("search")),
+		levels: make(map[string]bool),
+	}
 	for key, values := range query {
 		switch key {
 		case "limit", "before", "after", "levels", "node", "logger", "search":

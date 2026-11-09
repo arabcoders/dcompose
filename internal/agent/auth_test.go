@@ -34,10 +34,16 @@ func TestHostAuth(t *testing.T) {
 	a.dns.lookup = func(ctx context.Context, network, host string) ([]netip.Addr, error) {
 		calls++
 		deadline, bounded := ctx.Deadline()
-		if "ip" != network || "dash_service.invalid" != host || "agent" != ctx.Value(key) || nil != ctx.Err() || !bounded || 0 >= time.Until(deadline) || 5*time.Second < time.Until(deadline) {
+		if "ip" != network || "dash_service.invalid" != host || "agent" != ctx.Value(key) || nil != ctx.Err() || !bounded ||
+			0 >= time.Until(deadline) ||
+			5*time.Second < time.Until(deadline) {
 			t.Fatalf("lookup did not use bounded agent context: %s %s %v", network, host, ctx.Err())
 		}
-		return []netip.Addr{netip.MustParseAddr("192.0.2.10"), netip.MustParseAddr("2001:db8::10"), netip.MustParseAddr("::ffff:192.0.2.11")}, nil
+		return []netip.Addr{
+			netip.MustParseAddr("192.0.2.10"),
+			netip.MustParseAddr("2001:db8::10"),
+			netip.MustParseAddr("::ffff:192.0.2.11"),
+		}, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -154,7 +160,9 @@ func TestHostNegativeCache(t *testing.T) {
 		}
 	}
 	entry := a.dns.entries["failed.invalid"]
-	if 1 != calls["failed.invalid"] || 1 != calls["other.invalid"] || 0 != len(entry.addresses) || entry.expires.Before(before.Add(time.Minute)) || entry.expires.After(time.Now().Add(time.Minute)) {
+	if 1 != calls["failed.invalid"] || 1 != calls["other.invalid"] || 0 != len(entry.addresses) ||
+		entry.expires.Before(before.Add(time.Minute)) ||
+		entry.expires.After(time.Now().Add(time.Minute)) {
 		t.Fatalf("negative cache: calls=%v entry=%+v", calls, entry)
 	}
 	recovered = true
@@ -169,7 +177,9 @@ func TestHostNegativeCache(t *testing.T) {
 }
 
 func TestTrustedProxy(t *testing.T) {
-	c, err := loadConfig(configFixture(t, "", "allowed_ips = ['192.0.2.10', '2001:db8::10']\ntrusted_proxies = ['198.51.100.0/24', '2001:db8:1::/64']"))
+	c, err := loadConfig(
+		configFixture(t, "", "allowed_ips = ['192.0.2.10', '2001:db8::10']\ntrusted_proxies = ['198.51.100.0/24', '2001:db8:1::/64']"),
+	)
 	if nil != err {
 		t.Fatal(err)
 	}

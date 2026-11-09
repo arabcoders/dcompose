@@ -100,7 +100,21 @@ func respondError(w http.ResponseWriter, r *http.Request, err error) {
 		if context.Canceled == r.Context().Err() {
 			level = slog.LevelDebug
 		}
-		slog.Log(r.Context(), level, fmt.Sprintf("%s %s from peer %s failed (HTTP %d): %v", r.Method, r.URL.Path, r.RemoteAddr, code, err), "peer", r.RemoteAddr, "method", r.Method, "resource", r.URL.Path, "status", code, "error", err)
+		slog.Log(
+			r.Context(),
+			level,
+			fmt.Sprintf("%s %s from peer %s failed (HTTP %d): %v", r.Method, r.URL.Path, r.RemoteAddr, code, err),
+			"peer",
+			r.RemoteAddr,
+			"method",
+			r.Method,
+			"resource",
+			r.URL.Path,
+			"status",
+			code,
+			"error",
+			err,
+		)
 	}
 	respond(w, code, struct {
 		Error string `json:"error"`
@@ -112,7 +126,17 @@ func decodeBody(r *http.Request, target any) error {
 	decoder := json.NewDecoder(io.LimitReader(r.Body, (2<<20)+1))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); nil != err {
-		slog.Warn(fmt.Sprintf("Could not decode %s %s from peer %s: %v", r.Method, r.URL.Path, r.RemoteAddr, err), "peer", r.RemoteAddr, "method", r.Method, "resource", r.URL.Path, "error", err)
+		slog.Warn(
+			fmt.Sprintf("Could not decode %s %s from peer %s: %v", r.Method, r.URL.Path, r.RemoteAddr, err),
+			"peer",
+			r.RemoteAddr,
+			"method",
+			r.Method,
+			"resource",
+			r.URL.Path,
+			"error",
+			err,
+		)
 		return fault(400, "Invalid JSON request.")
 	}
 	var extra json.RawMessage
@@ -176,7 +200,10 @@ func (a *agent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, a.health())
 		return
 	}
-	if supplied := r.Header.Values(protocol.Header); 0 != len(supplied) && (1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
+	if supplied := r.Header.Values(
+		protocol.Header,
+	); 0 != len(supplied) &&
+		(1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
 		respondError(w, r, fault(http.StatusUpgradeRequired, "Node version is incompatible. Update the node and server."))
 		return
 	}

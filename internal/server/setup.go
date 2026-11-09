@@ -36,7 +36,15 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := changeCredentials(cloneConfig(s.config), input.Username, input.Password)
 	if nil != err {
-		slog.Error(fmt.Sprintf("Could not save the first account in configuration %q: %v. Check configuration directory permissions.", s.config.path, err), "error", err)
+		slog.Error(
+			fmt.Sprintf(
+				"Could not save the first account in configuration %q: %v. Check configuration directory permissions.",
+				s.config.path,
+				err,
+			),
+			"error",
+			err,
+		)
 		apiError(w, 500, "Could not save the account. Check the configuration directory's permissions.")
 		return
 	}

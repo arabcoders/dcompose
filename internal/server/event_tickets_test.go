@@ -79,7 +79,11 @@ func rejectEventTicket(t *testing.T, conn *websocket.Conn, allowClose bool) {
 		return
 	}
 	var message protocol.ChannelMessage
-	if err := json.Unmarshal(data, &message); nil != err || "error" != message.Type || http.StatusUnauthorized != message.Status || "" == message.Error || "" != message.Stream {
+	if err := json.Unmarshal(
+		data,
+		&message,
+	); nil != err || "error" != message.Type || http.StatusUnauthorized != message.Status || "" == message.Error ||
+		"" != message.Stream {
 		t.Fatal("unexpected ticket rejection frame")
 	}
 	if _, _, err := conn.Read(ctx); nil == err || nil != ctx.Err() {
@@ -114,7 +118,9 @@ func TestTicketMux(t *testing.T) {
 		browserSend(t, browser, message)
 		commands = append(commands, channelCommand(t, f, message.Type))
 	}
-	if "" == commands[0].Stream || commands[0].Stream == commands[1].Stream || "demo" != commands[0].Resource || "other" != commands[1].Resource || "session" != commands[2].Shell {
+	if "" == commands[0].Stream || commands[0].Stream == commands[1].Stream || "demo" != commands[0].Resource ||
+		"other" != commands[1].Resource ||
+		"session" != commands[2].Shell {
 		t.Fatal("ticket connection changed resource routing")
 	}
 	for _, frame := range []protocol.ChannelMessage{
@@ -345,7 +351,11 @@ func TestTicketOrigins(t *testing.T) {
 			headers.Set("Origin", "https://unlisted.example")
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			rejected, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(app.URL, "http")+"/api/events", &websocket.DialOptions{HTTPHeader: headers})
+			rejected, response, err := websocket.Dial(
+				ctx,
+				"ws"+strings.TrimPrefix(app.URL, "http")+"/api/events",
+				&websocket.DialOptions{HTTPHeader: headers},
+			)
 			if nil != rejected {
 				_ = rejected.CloseNow()
 			}

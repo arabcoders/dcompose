@@ -95,7 +95,8 @@ func (c *imageChecks) interval(node string) time.Duration {
 
 func (s *Server) imageReadyLocked(node string) bool {
 	channel := s.channels[node]
-	if nil == channel || nil == channel.conn || nil != channel.ctx.Err() || channel.registryFailed || channel.registryApplied != s.registrySync.Revision {
+	if nil == channel || nil == channel.conn || nil != channel.ctx.Err() || channel.registryFailed ||
+		channel.registryApplied != s.registrySync.Revision {
 		return false
 	}
 	runtime := s.runtime[node]
@@ -305,7 +306,8 @@ func (s *Server) scheduleImagesLocked() {
 			automatic := available && service.AutoUpdate && "running" == service.State && "" != service.Service
 			if "" != service.CheckInterval {
 				interval, err := time.ParseDuration(service.CheckInterval)
-				if nil == err && time.Minute <= interval && (state.timerIDs[service.Name] != service.ID || !now.Before(state.next[service.Name])) {
+				if nil == err && time.Minute <= interval &&
+					(state.timerIDs[service.Name] != service.ID || !now.Before(state.next[service.Name])) {
 					state.timerIDs[service.Name] = service.ID
 					state.next[service.Name] = now.Add(interval)
 					if !available {
@@ -338,7 +340,8 @@ func (s *Server) imageWorkLocked(key imageStackKey, state *imageStack) bool {
 	}
 	for _, service := range state.services {
 		checked := state.checked[service.Name]
-		if !checked.available(service) && "" == service.CheckInterval && s.backgroundImageLocked(state, service) && ("" != checked.key.purpose || !s.imageFreshLocked(checked, service, s.images.interval(key.node))) {
+		if !checked.available(service) && "" == service.CheckInterval && s.backgroundImageLocked(state, service) &&
+			("" != checked.key.purpose || !s.imageFreshLocked(checked, service, s.images.interval(key.node))) {
 			return true
 		}
 		if "" != service.ID && state.autoPending[service.Service] == service.ID && !s.images.now().Before(state.autoNext[service.Service]) {
@@ -353,7 +356,8 @@ func (s *Server) imageFreshLocked(checked checkedImage, service engine.Service, 
 		return false
 	}
 	if entry := s.images.cache[checked.key]; "" != checked.key.Ref {
-		return nil != entry && nil == entry.done && entry.result.CheckedAt.Equal(*checked.update.CheckedAt) && s.registryFreshLocked(entry.result, maxAge)
+		return nil != entry && nil == entry.done && entry.result.CheckedAt.Equal(*checked.update.CheckedAt) &&
+			s.registryFreshLocked(entry.result, maxAge)
 	}
 	if "error" == checked.update.Status {
 		maxAge = imageErrorRetry
@@ -464,7 +468,14 @@ func (s *Server) refreshImages(key imageStackKey) {
 	if nil != inspection {
 		inspected = *inspection
 	} else {
-		if err := s.imageRequest(ctx, key.node, "POST", "/images/inspect", protocol.ImageInspectRequest{Stack: key.stack}, &inspected); nil != err {
+		if err := s.imageRequest(
+			ctx,
+			key.node,
+			"POST",
+			"/images/inspect",
+			protocol.ImageInspectRequest{Stack: key.stack},
+			&inspected,
+		); nil != err {
 			s.imageCheckFailed(key, revision, err)
 			return
 		}
@@ -485,7 +496,8 @@ func (s *Server) refreshImages(key imageStackKey) {
 		purpose := ""
 		maxAge := interval
 		config := background
-		if manual || custom[service.Name] || ("" != service.CheckInterval && "" != service.ID && autoPending[service.Service] == service.ID) {
+		if manual || custom[service.Name] ||
+			("" != service.CheckInterval && "" != service.ID && autoPending[service.Service] == service.ID) {
 			purpose = "explicit"
 			config = explicit
 			if manual {
@@ -522,7 +534,12 @@ func (s *Server) refreshImages(key imageStackKey) {
 		fresh := !custom[service.Name] && previous.key.purpose == purpose && s.imageFreshLocked(previous, service, age)
 		if !allowed {
 			at := s.images.now().UTC()
-			state.checked[service.Name] = checkedImage{id: service.ID, image: service.Image, key: imageKey{ImageKey: image.Target.Key, node: key.node}, update: engine.ImageUpdate{CheckedAt: &at}}
+			state.checked[service.Name] = checkedImage{
+				id:     service.ID,
+				image:  service.Image,
+				key:    imageKey{ImageKey: image.Target.Key, node: key.node},
+				update: engine.ImageUpdate{CheckedAt: &at},
+			}
 			s.hubMu.Unlock()
 			continue
 		}
@@ -539,7 +556,12 @@ func (s *Server) refreshImages(key imageStackKey) {
 		if fresh {
 			continue
 		}
-		checked := checkedImage{id: service.ID, image: service.Image, localID: image.Target.LocalID, key: imageKey{ImageKey: image.Target.Key, purpose: purpose, node: key.node}}
+		checked := checkedImage{
+			id:      service.ID,
+			image:   service.Image,
+			localID: image.Target.LocalID,
+			key:     imageKey{ImageKey: image.Target.Key, purpose: purpose, node: key.node},
+		}
 		result := engine.RegistryImage{Status: image.Target.Status, Reason: image.Target.Reason, CheckedAt: s.images.now().UTC()}
 		if "" == result.Status {
 			data, _ := json.Marshal(config)
@@ -652,7 +674,11 @@ func (s *Server) imageCheckFailed(key imageStackKey, revision uint64, err error)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		level = slog.LevelDebug
 	}
-	slog.Log(context.Background(), level, fmt.Sprintf("Could not check image updates for stack %q on node %q: %s", key.stack, key.node, safeTransportError(err)))
+	slog.Log(
+		context.Background(),
+		level,
+		fmt.Sprintf("Could not check image updates for stack %q on node %q: %s", key.stack, key.node, safeTransportError(err)),
+	)
 	s.hubMu.Lock()
 	defer s.hubMu.Unlock()
 	state := s.images.stacks[key]
@@ -667,7 +693,11 @@ func (s *Server) imageCheckFailed(key imageStackKey, revision uint64, err error)
 		if state.checked[service.Name].available(service) {
 			continue
 		}
-		state.checked[service.Name] = checkedImage{id: service.ID, image: service.Image, update: engine.ImageUpdate{Status: "error", Reason: "inspect_error", CheckedAt: &now}}
+		state.checked[service.Name] = checkedImage{
+			id:     service.ID,
+			image:  service.Image,
+			update: engine.ImageUpdate{Status: "error", Reason: "inspect_error", CheckedAt: &now},
+		}
 		if state.custom[service.Name] {
 			state.next[service.Name] = now.Add(imageErrorRetry)
 		}
@@ -724,7 +754,11 @@ func (s *Server) requestImageChecks(w http.ResponseWriter, r *http.Request, node
 			if nil != ctx.Err() {
 				level = slog.LevelDebug
 			}
-			slog.Log(ctx, level, fmt.Sprintf("Could not request image updates for stack %q on node %q: %s", stack, node, safeTransportError(err)))
+			slog.Log(
+				ctx,
+				level,
+				fmt.Sprintf("Could not request image updates for stack %q on node %q: %s", stack, node, safeTransportError(err)),
+			)
 			var upstream nodeHTTPError
 			if errors.As(err, &upstream) && 404 == upstream.status {
 				apiError(w, 404, "Stack not found.")
@@ -833,7 +867,10 @@ func (s *Server) rememberAutoUpdatesLocked(state *imageStack, custom map[string]
 	}
 	for _, service := range state.services {
 		checked := state.checked[service.Name]
-		if service.AutoUpdate && "running" == service.State && "" != service.Service && (custom[service.Name] || ("" == service.CheckInterval && "" == checked.key.purpose)) && "available" == checked.update.Status && checked.id == service.ID {
+		if service.AutoUpdate && "running" == service.State && "" != service.Service &&
+			(custom[service.Name] || ("" == service.CheckInterval && "" == checked.key.purpose)) &&
+			"available" == checked.update.Status &&
+			checked.id == service.ID {
 			state.autoPending[service.Service] = service.ID
 		}
 	}
@@ -848,7 +885,9 @@ func (s *Server) startImageUpdate(ctx context.Context, key imageStackKey) {
 	}
 	service := ""
 	for _, candidate := range state.services {
-		if candidate.AutoUpdate && "running" == candidate.State && "" != candidate.Service && state.autoPending[candidate.Service] == candidate.ID && !s.images.now().Before(state.autoNext[candidate.Service]) {
+		if candidate.AutoUpdate && "running" == candidate.State && "" != candidate.Service &&
+			state.autoPending[candidate.Service] == candidate.ID &&
+			!s.images.now().Before(state.autoNext[candidate.Service]) {
 			service = candidate.Service
 			state.autoNext[service] = s.images.now().Add(imageErrorRetry)
 			break
@@ -887,11 +926,34 @@ func (s *Server) startImageUpdate(ctx context.Context, key imageStackKey) {
 		if errors.As(err, &upstream) && 409 == upstream.status {
 			level = slog.LevelDebug
 		}
-		slog.Log(ctx, level, fmt.Sprintf("Automatic update could not start for stack %q, service %q on node %q: %s", key.stack, service, key.node, safeTransportError(err)))
+		slog.Log(
+			ctx,
+			level,
+			fmt.Sprintf(
+				"Automatic update could not start for stack %q, service %q on node %q: %s",
+				key.stack,
+				service,
+				key.node,
+				safeTransportError(err),
+			),
+		)
 		return
 	}
 	if "accepted" != response.Status {
-		slog.Error(fmt.Sprintf("Automatic update for stack %q, service %q on node %q was not accepted: invalid node response", key.stack, service, key.node), "node", key.node, "stack", key.stack, "service", service)
+		slog.Error(
+			fmt.Sprintf(
+				"Automatic update for stack %q, service %q on node %q was not accepted: invalid node response",
+				key.stack,
+				service,
+				key.node,
+			),
+			"node",
+			key.node,
+			"stack",
+			key.stack,
+			"service",
+			service,
+		)
 		return
 	}
 	accepted = true

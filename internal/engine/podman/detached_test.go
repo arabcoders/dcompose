@@ -28,7 +28,26 @@ func TestStartDetached(t *testing.T) {
 	t.Setenv("DCOMPOSE_TEST_SECRET", "not-in-arguments")
 	self := detachedSelf()
 	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-		prefix := []string{"--remote", "--url", host, "run", "--detach", "--name", "dagent-operation-test", "--label", "io.dcompose.operation=test", "--restart=no", "--pull", "never", "--volumes-from", self.ID, "--security-opt", "label=disable", "--user", strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())}
+		prefix := []string{
+			"--remote",
+			"--url",
+			host,
+			"run",
+			"--detach",
+			"--name",
+			"dagent-operation-test",
+			"--label",
+			"io.dcompose.operation=test",
+			"--restart=no",
+			"--pull",
+			"never",
+			"--volumes-from",
+			self.ID,
+			"--security-opt",
+			"label=disable",
+			"--user",
+			strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid()),
+		}
 		if "podman" != cmd.Program || len(prefix) >= len(cmd.Args) || !reflect.DeepEqual(prefix, cmd.Args[:len(prefix)]) {
 			t.Fatalf("run: %+v", cmd)
 		}
@@ -130,7 +149,8 @@ func TestDetachedState(t *testing.T) {
 func TestRemoveDetached(t *testing.T) {
 	t.Setenv("CONTAINER_HOST", "unix:///mounted/podman.sock")
 	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-		if "podman" != cmd.Program || !reflect.DeepEqual([]string{"--remote", "--url", "unix:///mounted/podman.sock", "rm", "--", "helper"}, cmd.Args) {
+		if "podman" != cmd.Program ||
+			!reflect.DeepEqual([]string{"--remote", "--url", "unix:///mounted/podman.sock", "rm", "--", "helper"}, cmd.Args) {
 			t.Fatalf("remove: %+v", cmd)
 		}
 		return nil, nil, nil
@@ -165,7 +185,10 @@ func TestDetachedErrors(t *testing.T) {
 				err = p.RemoveDetached(context.Background(), "helper")
 			}
 			var fault *engine.Error
-			if !errors.As(err, &fault) || 502 != fault.Code || !errors.Is(err, cause) || !strings.Contains(fault.Cause.Error(), "private diagnostic") || strings.Contains(fault.Message, "private") || strings.Contains(err.Error(), "stdout-secret") {
+			if !errors.As(err, &fault) || 502 != fault.Code || !errors.Is(err, cause) ||
+				!strings.Contains(fault.Cause.Error(), "private diagnostic") ||
+				strings.Contains(fault.Message, "private") ||
+				strings.Contains(err.Error(), "stdout-secret") {
 				t.Fatalf("error boundary: %v", err)
 			}
 		})

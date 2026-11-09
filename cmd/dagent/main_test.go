@@ -111,7 +111,8 @@ func TestCLI(t *testing.T) {
 				}
 				cmd := exec.Command(binary, args...)
 				output, err := cmd.CombinedOutput()
-				if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") || !strings.Contains(string(output), "config="+path) {
+				if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") ||
+					!strings.Contains(string(output), "config="+path) {
 					t.Fatalf("startup error: %v: %s", err, output)
 				}
 				if test.warn != strings.Contains(string(output), " WARN ") {
@@ -131,7 +132,8 @@ func TestCLI(t *testing.T) {
 		requestFile := filepath.Join(root, "missing", "request.json")
 		cmd = exec.Command(binary, "--config", missing, "--run-operation", requestFile)
 		output, err := cmd.CombinedOutput()
-		if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "request="+requestFile) || strings.Contains(string(output), "config=") {
+		if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "request="+requestFile) ||
+			strings.Contains(string(output), "config=") {
 			t.Fatalf("operation helper loaded node configuration: %v: %s", err, output)
 		}
 		message := cliMessage(t, output)
@@ -147,7 +149,8 @@ func TestCLI(t *testing.T) {
 		certs := filepath.Join(root, "certs")
 		cmd = exec.Command(binary, "--config", missing, "--log-level", "error", "--generate-token", token, "--generate-cert", certs)
 		output, err = cmd.CombinedOutput()
-		if nil != err || !strings.Contains(string(output), token) || !strings.Contains(string(output), filepath.Join(certs, "node.crt")) || !strings.Contains(string(output), filepath.Join(certs, "node.key")) {
+		if nil != err || !strings.Contains(string(output), token) || !strings.Contains(string(output), filepath.Join(certs, "node.crt")) ||
+			!strings.Contains(string(output), filepath.Join(certs, "node.key")) {
 			t.Fatalf("credential generation failed or filtered its output: %v: %s", err, output)
 		}
 		for _, path := range []string{token, filepath.Join(certs, "node.key"), filepath.Join(certs, "node.crt")} {

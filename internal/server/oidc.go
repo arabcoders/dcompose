@@ -81,8 +81,24 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.oidcPending[state] = pending
 	s.oidcMu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: "dcompose_oidc", Value: state, Path: "/api/auth/oidc", HttpOnly: true, Secure: c.Global.SecureCookie || strings.HasPrefix(c.Auth.OIDC.RedirectURI, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 300})
-	http.Redirect(w, r, pending.oauth.AuthCodeURL(state, oidc.Nonce(pending.nonce), oauth2.S256ChallengeOption(pending.verifier)), http.StatusFound)
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "dcompose_oidc",
+			Value:    state,
+			Path:     "/api/auth/oidc",
+			HttpOnly: true,
+			Secure:   c.Global.SecureCookie || strings.HasPrefix(c.Auth.OIDC.RedirectURI, "https://"),
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   300,
+		},
+	)
+	http.Redirect(
+		w,
+		r,
+		pending.oauth.AuthCodeURL(state, oidc.Nonce(pending.nonce), oauth2.S256ChallengeOption(pending.verifier)),
+		http.StatusFound,
+	)
 }
 
 func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
@@ -91,10 +107,21 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if nil != c.Auth.OIDC {
 		secure = secure || strings.HasPrefix(c.Auth.OIDC.RedirectURI, "https://")
 	}
-	http.SetCookie(w, &http.Cookie{Name: "dcompose_oidc", Path: "/api/auth/oidc", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "dcompose_oidc",
+			Path:     "/api/auth/oidc",
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		},
+	)
 	state := r.URL.Query().Get("state")
 	binding, err := r.Cookie("dcompose_oidc")
-	if nil == c.Auth.OIDC || c.Auth.setupRequired() || "" == state || nil != err || 1 != subtle.ConstantTimeCompare([]byte(state), []byte(binding.Value)) {
+	if nil == c.Auth.OIDC || c.Auth.setupRequired() || "" == state || nil != err ||
+		1 != subtle.ConstantTimeCompare([]byte(state), []byte(binding.Value)) {
 		apiError(w, 400, "External sign-in failed. Try signing in again.")
 		return
 	}
@@ -129,11 +156,13 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 400, "External sign-in failed. Try signing in again.")
 		return
 	}
-	if "" == strings.TrimSpace(identity.Subject) || identity.IssuedAt.IsZero() || 1 != subtle.ConstantTimeCompare([]byte(identity.Nonce), []byte(pending.nonce)) {
+	if "" == strings.TrimSpace(identity.Subject) || identity.IssuedAt.IsZero() ||
+		1 != subtle.ConstantTimeCompare([]byte(identity.Nonce), []byte(pending.nonce)) {
 		apiError(w, 400, "External sign-in failed. Try signing in again.")
 		return
 	}
-	if ("" != claims.AuthorizedParty && pending.oauth.ClientID != claims.AuthorizedParty) || (1 < len(identity.Audience) && pending.oauth.ClientID != claims.AuthorizedParty) {
+	if ("" != claims.AuthorizedParty && pending.oauth.ClientID != claims.AuthorizedParty) ||
+		(1 < len(identity.Audience) && pending.oauth.ClientID != claims.AuthorizedParty) {
 		apiError(w, 400, "External sign-in failed. Try signing in again.")
 		return
 	}

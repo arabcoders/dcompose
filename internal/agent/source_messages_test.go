@@ -65,7 +65,8 @@ func TestEventFailureMessage(t *testing.T) {
 	if err := json.Unmarshal([]byte(logs.text()), &record); nil != err {
 		t.Fatal(err)
 	}
-	if "WARN" != record.Level || "docker" != record.Runtime || "exit status 8" != record.Error || "permission denied for event socket" != record.Stderr {
+	if "WARN" != record.Level || "docker" != record.Runtime || "exit status 8" != record.Error ||
+		"permission denied for event socket" != record.Stderr {
 		t.Fatalf("event fields: %+v", record)
 	}
 	for _, detail := range []string{record.Runtime, record.Error, record.Stderr, "2s"} {
@@ -95,7 +96,8 @@ func TestShellInputMessage(t *testing.T) {
 	if err := json.Unmarshal([]byte(logs.text()), &record); nil != err {
 		t.Fatal(err)
 	}
-	if "ERROR" != record.Level || s.op.ID != record.Shell || s.op.Stack != record.Stack || s.container != record.Container || "" == record.Error {
+	if "ERROR" != record.Level || s.op.ID != record.Shell || s.op.Stack != record.Stack || s.container != record.Container ||
+		"" == record.Error {
 		t.Fatalf("shell input fields: %+v", record)
 	}
 	for _, detail := range []string{record.Shell, record.Stack, record.Container, record.Error} {

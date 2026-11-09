@@ -34,7 +34,9 @@ func TestShellInspectionMessage(t *testing.T) {
 			if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 				t.Fatal(err)
 			}
-			if "ERROR" != record.Level || "docker" != record.Runtime || "demo" != record.Stack || "demo-web" != record.Container || "exit status 1" != record.Error || stderr != record.Stderr {
+			if "ERROR" != record.Level || "docker" != record.Runtime || "demo" != record.Stack || "demo-web" != record.Container ||
+				"exit status 1" != record.Error ||
+				stderr != record.Stderr {
 				t.Fatalf("inspection fields: %+v", record)
 			}
 			for _, detail := range []string{record.Stack, record.Container, record.Error, stderr} {

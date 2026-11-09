@@ -27,7 +27,17 @@ func (a *agent) unpair(w http.ResponseWriter, r *http.Request) error {
 	if "" == a.pairingToken {
 		a.pairingToken = rand.Text()
 	}
-	slog.Info(fmt.Sprintf("Reset pairing for node %q at the request of DCompose peer %s. The node is ready to pair again.", a.config.Global.NodeID, r.RemoteAddr), "node", a.config.Global.NodeID, "peer", r.RemoteAddr)
+	slog.Info(
+		fmt.Sprintf(
+			"Reset pairing for node %q at the request of DCompose peer %s. The node is ready to pair again.",
+			a.config.Global.NodeID,
+			r.RemoteAddr,
+		),
+		"node",
+		a.config.Global.NodeID,
+		"peer",
+		r.RemoteAddr,
+	)
 	// Keep the pairing token local, outside forwarded node logs.
 	fmt.Fprintf(os.Stderr, "TLS fingerprint: %s\n", fingerprint)
 	fmt.Fprintf(os.Stderr, "Use this single-use pairing token in Nodes > Add node: %s\n", a.pairingToken)
@@ -37,7 +47,10 @@ func (a *agent) unpair(w http.ResponseWriter, r *http.Request) error {
 
 func (a *agent) pair(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Cache-Control", "no-store")
-	if supplied := r.Header.Values(protocol.Header); 0 != len(supplied) && (1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
+	if supplied := r.Header.Values(
+		protocol.Header,
+	); 0 != len(supplied) &&
+		(1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
 		return fault(http.StatusUpgradeRequired, "Node version is incompatible. Update the node and server.")
 	}
 	var input struct {
@@ -67,7 +80,15 @@ func (a *agent) pair(w http.ResponseWriter, r *http.Request) error {
 	}
 	a.config.Global.Paired = true
 	a.pairingToken = ""
-	slog.Info(fmt.Sprintf("Paired node %q (%s) with DCompose peer %s.", name, a.config.Global.NodeID, r.RemoteAddr), "name", name, "node", a.config.Global.NodeID, "peer", r.RemoteAddr)
+	slog.Info(
+		fmt.Sprintf("Paired node %q (%s) with DCompose peer %s.", name, a.config.Global.NodeID, r.RemoteAddr),
+		"name",
+		name,
+		"node",
+		a.config.Global.NodeID,
+		"peer",
+		r.RemoteAddr,
+	)
 	respond(w, http.StatusOK, protocol.PairingResponse{ID: a.config.Global.NodeID, Name: name, Token: token, Fingerprint: fingerprint})
 	return nil
 }

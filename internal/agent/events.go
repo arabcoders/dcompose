@@ -339,7 +339,15 @@ func (a *agent) monitorRuntime() {
 			delay = time.Second
 			a.listenRuntime(delay)
 		} else if nil == a.ctx.Err() {
-			slog.Warn(fmt.Sprintf("Could not probe %s for container events: %v. Retrying in %s.", a.config.Global.Engine, err, delay), "runtime", a.config.Global.Engine, "error", err, "retry_in", delay)
+			slog.Warn(
+				fmt.Sprintf("Could not probe %s for container events: %v. Retrying in %s.", a.config.Global.Engine, err, delay),
+				"runtime",
+				a.config.Global.Engine,
+				"error",
+				err,
+				"retry_in",
+				delay,
+			)
 		}
 		if nil != a.ctx.Err() {
 			return
@@ -375,9 +383,28 @@ func (a *agent) listenRuntime(retry time.Duration) {
 		}
 		if err := scanner.Err(); nil != err {
 			if context.Canceled == a.ctx.Err() {
-				slog.Debug(fmt.Sprintf("Reading %s container events was canceled: %v", a.config.Global.Engine, err), "runtime", a.config.Global.Engine, "error", err)
+				slog.Debug(
+					fmt.Sprintf("Reading %s container events was canceled: %v", a.config.Global.Engine, err),
+					"runtime",
+					a.config.Global.Engine,
+					"error",
+					err,
+				)
 			} else {
-				slog.Warn(fmt.Sprintf("Could not read %s container events: %v. Restarting the subscription in %s.", a.config.Global.Engine, err, retry), "runtime", a.config.Global.Engine, "error", err, "retry_in", retry)
+				slog.Warn(
+					fmt.Sprintf(
+						"Could not read %s container events: %v. Restarting the subscription in %s.",
+						a.config.Global.Engine,
+						err,
+						retry,
+					),
+					"runtime",
+					a.config.Global.Engine,
+					"error",
+					err,
+					"retry_in",
+					retry,
+				)
 			}
 			cancel()
 		}
@@ -399,19 +426,69 @@ func (a *agent) listenRuntime(retry time.Duration) {
 		if err := waitCommand(ctx, cmd); nil == a.ctx.Err() {
 			if nil != err {
 				if detail := strings.TrimSpace(stderr.String()); "" != detail {
-					slog.Warn(fmt.Sprintf("The %s container event subscription stopped: %v: %s. Retrying in %s.", a.config.Global.Engine, err, detail, retry), "runtime", a.config.Global.Engine, "error", err, "stderr", detail, "retry_in", retry)
+					slog.Warn(
+						fmt.Sprintf(
+							"The %s container event subscription stopped: %v: %s. Retrying in %s.",
+							a.config.Global.Engine,
+							err,
+							detail,
+							retry,
+						),
+						"runtime",
+						a.config.Global.Engine,
+						"error",
+						err,
+						"stderr",
+						detail,
+						"retry_in",
+						retry,
+					)
 				} else {
-					slog.Warn(fmt.Sprintf("The %s container event subscription stopped: %v. Retrying in %s.", a.config.Global.Engine, err, retry), "runtime", a.config.Global.Engine, "error", err, "retry_in", retry)
+					slog.Warn(
+						fmt.Sprintf("The %s container event subscription stopped: %v. Retrying in %s.", a.config.Global.Engine, err, retry),
+						"runtime",
+						a.config.Global.Engine,
+						"error",
+						err,
+						"retry_in",
+						retry,
+					)
 				}
 			} else {
-				slog.Warn(fmt.Sprintf("The %s container event subscription ended with exit code 0. Retrying in %s.", a.config.Global.Engine, retry), "runtime", a.config.Global.Engine, "exit_code", 0, "retry_in", retry)
+				slog.Warn(
+					fmt.Sprintf(
+						"The %s container event subscription ended with exit code 0. Retrying in %s.",
+						a.config.Global.Engine,
+						retry,
+					),
+					"runtime",
+					a.config.Global.Engine,
+					"exit_code",
+					0,
+					"retry_in",
+					retry,
+				)
 			}
 		}
 	} else {
 		if context.Canceled == a.ctx.Err() {
-			slog.Debug(fmt.Sprintf("Starting the %s container event subscription was canceled: %v", a.config.Global.Engine, err), "runtime", a.config.Global.Engine, "error", err)
+			slog.Debug(
+				fmt.Sprintf("Starting the %s container event subscription was canceled: %v", a.config.Global.Engine, err),
+				"runtime",
+				a.config.Global.Engine,
+				"error",
+				err,
+			)
 		} else {
-			slog.Warn(fmt.Sprintf("Could not start the %s container event subscription: %v. Retrying in %s.", a.config.Global.Engine, err, retry), "runtime", a.config.Global.Engine, "error", err, "retry_in", retry)
+			slog.Warn(
+				fmt.Sprintf("Could not start the %s container event subscription: %v. Retrying in %s.", a.config.Global.Engine, err, retry),
+				"runtime",
+				a.config.Global.Engine,
+				"error",
+				err,
+				"retry_in",
+				retry,
+			)
 		}
 	}
 	_ = writer.Close()

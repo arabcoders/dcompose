@@ -76,7 +76,8 @@ func TestSelfContainer(t *testing.T) {
 			if test.found != (nil != self) || (nil != self && (id != self.ID || "node" != self.Project)) {
 				t.Fatalf("self: %+v", self)
 			}
-			if "found" == test.name && (2 != len(self.Mounts) || "tmpfs" != self.Mounts[1].Type || "/cache/tmp" != self.Mounts[1].Destination || !self.Mounts[0].RW) {
+			if "found" == test.name &&
+				(2 != len(self.Mounts) || "tmpfs" != self.Mounts[1].Type || "/cache/tmp" != self.Mounts[1].Destination || !self.Mounts[0].RW) {
 				t.Fatalf("mounts: %+v", self.Mounts)
 			}
 		})

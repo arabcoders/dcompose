@@ -18,7 +18,13 @@ import (
 
 // HTTP-only proxy tests model a completed handshake without opening a socket.
 func assumeRegistriesApplied(s *Server) {
-	s.channels["home"] = &nodeChannel{ctx: context.Background(), imageContext: context.Background(), conn: new(websocket.Conn), registryRevision: s.registrySync.Revision, registryApplied: s.registrySync.Revision}
+	s.channels["home"] = &nodeChannel{
+		ctx:              context.Background(),
+		imageContext:     context.Background(),
+		conn:             new(websocket.Conn),
+		registryRevision: s.registrySync.Revision,
+		registryApplied:  s.registrySync.Revision,
+	}
 	s.runtime["home"] = &nodeRuntime{state: map[string]json.RawMessage{"state": json.RawMessage(`"connected"`)}}
 }
 
@@ -29,7 +35,9 @@ func ackRegistrySync(t *testing.T, ctx context.Context, conn *websocket.Conn) bo
 		return false
 	}
 	var snapshot protocol.RegistrySync
-	if "registry.sync" != message.Type || "" != message.Node || nil != json.Unmarshal(message.Payload, &snapshot) || "" == snapshot.Revision || nil == snapshot.Registries {
+	if "registry.sync" != message.Type || "" != message.Node || nil != json.Unmarshal(message.Payload, &snapshot) ||
+		"" == snapshot.Revision ||
+		nil == snapshot.Registries {
 		t.Error("missing initial registry snapshot")
 		return false
 	}
@@ -72,7 +80,15 @@ func newRegistryChannel(t *testing.T) *registryChannelFixture {
 		defer func() { _ = conn.CloseNow() }()
 		conn.SetReadLimit(2 << 20)
 		// An eager runtime snapshot must not make the browser ready before apply.
-		if nil != wsjson.Write(r.Context(), conn, protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: json.RawMessage(`{"health":{"status":"ok"},"stacks":[]}`)}) {
+		if nil != wsjson.Write(
+			r.Context(),
+			conn,
+			protocol.ChannelMessage{
+				Type:    "event",
+				Event:   "node.snapshot",
+				Payload: json.RawMessage(`{"health":{"status":"ok"},"stacks":[]}`),
+			},
+		) {
 			return
 		}
 		for {
@@ -128,7 +144,8 @@ func TestRegistryBarrier(t *testing.T) {
 	delete(s.watchers, frames)
 	s.hubMu.Unlock()
 	for _, frame := range initial {
-		if strings.Contains(string(frame), `"node.snapshot"`) || strings.Contains(string(frame), `"state":"connected"`) || strings.Contains(string(frame), "registry.sync") {
+		if strings.Contains(string(frame), `"node.snapshot"`) || strings.Contains(string(frame), `"state":"connected"`) ||
+			strings.Contains(string(frame), "registry.sync") {
 			t.Fatal("browser became ready before registry apply")
 		}
 	}
@@ -166,12 +183,24 @@ func TestRegistryResync(t *testing.T) {
 	startChannels(t, s)
 	first := nextRegistry(t, f)
 	applyRegistry(t, first, first.snapshot.Revision)
-	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", `{"registries":[{"registry":"https://index.docker.io/v1/","label":"Checks","auth":{"username":"alice","password":"sync-secret"},"background_checks":true},{"registry":"https://index.docker.io/v1/refresh-token","auth":{"username":"<token>","password":"sync-refresh:client-id"},"background_checks":false}]}`))
+	registryRows(
+		t,
+		perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/registries",
+			`{"registries":[{"registry":"https://index.docker.io/v1/","label":"Checks","auth":{"username":"alice","password":"sync-secret"},"background_checks":true},{"registry":"https://index.docker.io/v1/refresh-token","auth":{"username":"<token>","password":"sync-refresh:client-id"},"background_checks":false}]}`,
+		),
+	)
 	changed := nextRegistry(t, f)
-	if first.snapshot.Revision == changed.snapshot.Revision || 2 != len(changed.snapshot.Registries) || "sync-secret" != changed.snapshot.Registries[0].Auth["password"] || "Checks" != changed.snapshot.Registries[0].Label {
+	if first.snapshot.Revision == changed.snapshot.Revision || 2 != len(changed.snapshot.Registries) ||
+		"sync-secret" != changed.snapshot.Registries[0].Auth["password"] ||
+		"Checks" != changed.snapshot.Registries[0].Label {
 		t.Fatal("edit did not publish full effective credentials")
 	}
-	if "https://index.docker.io/v1/refresh-token" != changed.snapshot.Registries[1].Registry || "sync-refresh:client-id" != changed.snapshot.Registries[1].Auth["password"] {
+	if "https://index.docker.io/v1/refresh-token" != changed.snapshot.Registries[1].Registry ||
+		"sync-refresh:client-id" != changed.snapshot.Registries[1].Auth["password"] {
 		t.Fatal("registry sync omitted an independent OAuth auth record")
 	}
 	loaded, err := LoadConfig(s.config.path)
@@ -205,7 +234,9 @@ func TestRegistryResync(t *testing.T) {
 	frames := s.workspaceFramesLocked()
 	s.hubMu.Unlock()
 	for _, frame := range frames {
-		if strings.Contains(string(frame), "sync-secret") || strings.Contains(string(frame), "sync-refresh") || strings.Contains(string(frame), "registry.sync") || strings.Contains(string(frame), "registry.applied") {
+		if strings.Contains(string(frame), "sync-secret") || strings.Contains(string(frame), "sync-refresh") ||
+			strings.Contains(string(frame), "registry.sync") ||
+			strings.Contains(string(frame), "registry.applied") {
 			t.Fatal("workspace leaked registry channel data")
 		}
 	}
@@ -299,7 +330,11 @@ func TestRegistryTimeout(t *testing.T) {
 func TestRegistryBrowserBoundary(t *testing.T) {
 	f := newWorkspace(t)
 	browser := browserStream(t, f.app.URL+"/api/events", f.server)
-	browserSend(t, browser, protocol.ChannelMessage{Type: "registry.sync", Node: "home", Payload: json.RawMessage(`{"revision":"forged","registries":[]}`)})
+	browserSend(
+		t,
+		browser,
+		protocol.ChannelMessage{Type: "registry.sync", Node: "home", Payload: json.RawMessage(`{"revision":"forged","registries":[]}`)},
+	)
 	message := resourceMessage(t, browser)
 	if "error" != message.Type || 400 != message.Status {
 		t.Fatal("browser registry command was not rejected")

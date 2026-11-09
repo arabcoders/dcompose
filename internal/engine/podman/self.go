@@ -35,7 +35,10 @@ func (p *Podman) SelfContainer(ctx context.Context) (*engine.SelfContainer, erro
 		return nil, nil
 	}
 	if 1 != len(ids) {
-		return nil, selfContainerError(errors.New("more than one running container has the DCOMPOSE_AGENT=true label on this Podman host"), nil)
+		return nil, selfContainerError(
+			errors.New("more than one running container has the DCOMPOSE_AGENT=true label on this Podman host"),
+			nil,
+		)
 	}
 	stdout, stderr, err = p.run(ctx, p.command("", "inspect", "--type", "container", "--format", selfContainerFormat, "--", ids[0]))
 	if nil != err {
@@ -49,8 +52,12 @@ func (p *Podman) SelfContainer(ctx context.Context) (*engine.SelfContainer, erro
 		return nil, selfContainerError(err, nil)
 	}
 	self := data.SelfContainer
-	if !containerID.MatchString(self.ID) || ids[0] != self.ID || !containerID.MatchString(strings.TrimPrefix(self.Image, "sha256:")) || "" == self.Project {
-		return nil, selfContainerError(errors.New("container inspect did not return the expected full container ID, immutable image ID and Compose project"), nil)
+	if !containerID.MatchString(self.ID) || ids[0] != self.ID || !containerID.MatchString(strings.TrimPrefix(self.Image, "sha256:")) ||
+		"" == self.Project {
+		return nil, selfContainerError(
+			errors.New("container inspect did not return the expected full container ID, immutable image ID and Compose project"),
+			nil,
+		)
 	}
 	// Podman omits tmpfs from Mounts. Keep it for shared-path validation.
 	for destination := range data.Tmpfs {
@@ -64,13 +71,33 @@ func (p *Podman) StartDetached(ctx context.Context, self engine.SelfContainer, n
 		return err
 	}
 	if !containerID.MatchString(self.ID) || !containerID.MatchString(strings.TrimPrefix(self.Image, "sha256:")) {
-		return &engine.Error{Code: 409, Message: "Could not start the action on this node's own stack.", Cause: errors.New("node container requires an exact container ID and immutable image ID")}
+		return &engine.Error{
+			Code:    409,
+			Message: "Could not start the action on this node's own stack.",
+			Cause:   errors.New("node container requires an exact container ID and immutable image ID"),
+		}
 	}
 	groups, err := os.Getgroups()
 	if nil != err {
 		return detachedError("Could not start the action on this node's own stack.", err, nil)
 	}
-	args := []string{"run", "--detach", "--name", name, "--label", "io.dcompose.operation=" + strings.TrimPrefix(name, "dagent-operation-"), "--restart=no", "--pull", "never", "--volumes-from", self.ID, "--security-opt", "label=disable", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
+	args := []string{
+		"run",
+		"--detach",
+		"--name",
+		name,
+		"--label",
+		"io.dcompose.operation=" + strings.TrimPrefix(name, "dagent-operation-"),
+		"--restart=no",
+		"--pull",
+		"never",
+		"--volumes-from",
+		self.ID,
+		"--security-opt",
+		"label=disable",
+		"--user",
+		fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+	}
 	for _, group := range groups {
 		args = append(args, "--group-add", strconv.Itoa(group))
 	}
@@ -99,7 +126,19 @@ func detachedError(message string, err error, stderr []byte) error {
 
 func (p *Podman) DetachedState(ctx context.Context, name string) (engine.DetachedState, error) {
 	var state engine.DetachedState
-	stdout, stderr, err := p.run(ctx, p.command("", "inspect", "--type", "container", "--format", `{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`, "--", name))
+	stdout, stderr, err := p.run(
+		ctx,
+		p.command(
+			"",
+			"inspect",
+			"--type",
+			"container",
+			"--format",
+			`{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`,
+			"--",
+			name,
+		),
+	)
 	if nil != err {
 		return state, detachedError("Could not check the action's status.", err, stderr)
 	}
