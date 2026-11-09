@@ -34,6 +34,7 @@ type Server struct {
 	loginNext      time.Time
 	oidcMu         sync.Mutex
 	oidcPending    map[string]oidcLogin
+	oidcCache      oidcProviderCache
 	ticketMu       sync.Mutex
 	tickets        map[string]websocketTicket
 	hubMu          sync.Mutex

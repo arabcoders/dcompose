@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +28,7 @@ type fakeOIDC struct {
 	nonce     string
 	challenge string
 	mode      string
+	discovery atomic.Int32
 }
 
 func newFakeOIDC(t *testing.T) *fakeOIDC {
@@ -39,6 +42,7 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
+			f.discovery.Add(1)
 			issuer := f.server.URL
 			if "discovery" == f.mode {
 				issuer += "/wrong"
@@ -235,6 +239,71 @@ func TestOIDCDiscovery(t *testing.T) {
 	s.config.Auth.OIDC = &OIDCConfig{Issuer: f.server.URL}
 	if 502 != perform(t, s, "GET", "/api/auth/oidc/login", "").Code {
 		t.Fatal("mismatched discovery issuer accepted")
+	}
+}
+
+func TestOIDCCache(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{Issuer: f.server.URL, ClientID: "dcompose", clientSecret: "client-secret", RedirectURI: "http://localhost:8082/api/auth/oidc/callback"}
+	before := time.Now()
+	startOIDC(t, s, f)
+	cache := s.oidcCache
+	if cache.expires.Before(before.Add(time.Minute)) || cache.expires.After(time.Now().Add(time.Minute)) {
+		t.Fatal("provider cache does not expire after one minute")
+	}
+	startOIDC(t, s, f)
+	if 1 != f.discovery.Load() || !cache.expires.Equal(s.oidcCache.expires) {
+		t.Fatal("provider and verifier were not reused within cache TTL")
+	}
+	s.oidcCache.expires = time.Now().Add(-time.Second)
+	startOIDC(t, s, f)
+	if 2 != f.discovery.Load() || !time.Now().Before(s.oidcCache.expires) {
+		t.Fatal("expired provider cache was not refreshed")
+	}
+}
+
+func TestOIDCLoginValues(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{Issuer: f.server.URL, ClientID: "dcompose", clientSecret: "client-secret", RedirectURI: "http://localhost:8082/api/auth/oidc/callback"}
+	_, first := startOIDC(t, s, f)
+	firstNonce, firstChallenge := f.nonce, f.challenge
+	_, second := startOIDC(t, s, f)
+	if first == second || firstNonce == f.nonce || firstChallenge == f.challenge || s.oidcPending[first].verifier == s.oidcPending[second].verifier {
+		t.Fatal("cached discovery reused login state, nonce or PKCE verifier")
+	}
+	for _, state := range []string{first, second} {
+		login := s.oidcPending[state]
+		if state == login.nonce || state == login.verifier || login.nonce == login.verifier {
+			t.Fatal("login state, nonce and PKCE verifier are not independent")
+		}
+	}
+	if 1 != f.discovery.Load() {
+		t.Fatal("login values test did not use cached discovery")
+	}
+}
+
+func TestOIDCCacheContext(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{Issuer: f.server.URL, ClientID: "dcompose", clientSecret: "client-secret", RedirectURI: "http://localhost:8082/api/auth/oidc/callback"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest("GET", "/api/auth/oidc/login", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if 302 != w.Code {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	cancel()
+	cookie, state := startOIDC(t, s, f)
+	r = httptest.NewRequest("GET", "/api/auth/oidc/callback?state="+url.QueryEscape(state)+"&code=test-code", nil)
+	r.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if 302 != w.Code || 1 != f.discovery.Load() {
+		t.Fatal("cached provider could not verify after discovery request cancellation", w.Code, w.Body.String())
 	}
 }
 

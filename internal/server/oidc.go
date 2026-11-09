@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"net/url"
@@ -19,6 +20,35 @@ type oidcLogin struct {
 	idToken  *oidc.IDTokenVerifier
 }
 
+type oidcProviderCache struct {
+	issuer   string
+	clientID string
+	expires  time.Time
+	provider *oidc.Provider
+	verifier *oidc.IDTokenVerifier
+}
+
+func (s *Server) oidcProvider(ctx context.Context, config *OIDCConfig) (*oidc.Provider, *oidc.IDTokenVerifier, error) {
+	s.oidcMu.Lock()
+	cache := s.oidcCache
+	s.oidcMu.Unlock()
+	if config.Issuer == cache.issuer && config.ClientID == cache.clientID && time.Now().Before(cache.expires) {
+		return cache.provider, cache.verifier, nil
+	}
+	provider, err := oidc.NewProvider(ctx, config.Issuer)
+	if nil != err {
+		return nil, nil, err
+	}
+	verifier := provider.Verifier(&oidc.Config{ClientID: config.ClientID})
+	s.oidcMu.Lock()
+	s.oidcCache = oidcProviderCache{
+		issuer: config.Issuer, clientID: config.ClientID,
+		expires: time.Now().Add(time.Minute), provider: provider, verifier: verifier,
+	}
+	s.oidcMu.Unlock()
+	return provider, verifier, nil
+}
+
 func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 	c, _ := s.snapshot()
 	if nil == c.Auth.OIDC || c.Auth.setupRequired() {
@@ -26,7 +56,7 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := oidc.ClientContext(r.Context(), &http.Client{Timeout: 15 * time.Second})
-	provider, err := oidc.NewProvider(ctx, c.Auth.OIDC.Issuer)
+	provider, verifier, err := s.oidcProvider(ctx, c.Auth.OIDC)
 	if nil != err {
 		apiError(w, 502, "Could not reach your sign-in provider. Try again.")
 		return
@@ -40,7 +70,7 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 			RedirectURL: c.Auth.OIDC.RedirectURI, Endpoint: provider.Endpoint(),
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		},
-		idToken: provider.Verifier(&oidc.Config{ClientID: c.Auth.OIDC.ClientID}),
+		idToken: verifier,
 	}
 	state := oauth2.GenerateVerifier()
 	s.oidcMu.Lock()

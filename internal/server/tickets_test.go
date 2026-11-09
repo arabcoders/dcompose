@@ -20,6 +20,7 @@ func TestTicketMint(t *testing.T) {
 		t.Run(auth, func(t *testing.T) {
 			s := testServer(t, nil)
 			r := httptest.NewRequest("POST", "/api/auth/tickets", strings.NewReader(`{}`))
+			r.AddCookie(&http.Cookie{Name: "unrelated", Value: "other-secret"})
 			if "session" == auth {
 				r.AddCookie(testSession(t, s))
 			} else {
@@ -46,6 +47,17 @@ func TestTicketMint(t *testing.T) {
 			ticket, exists := s.tickets[response.Ticket]
 			if !exists || ticket.expires.Before(before.Add(30*time.Second)) || ticket.expires.After(time.Now().Add(30*time.Second)) {
 				t.Fatal("incorrect ticket expiry")
+			}
+			if 1 != len(ticket.auth) || !s.authenticated(&http.Request{Header: ticket.auth}) {
+				t.Fatal("ticket did not preserve its issuing credential")
+			}
+			if "session" == auth {
+				cookie, err := r.Cookie("session")
+				if nil != err || cookie.String() != ticket.auth.Get("Cookie") {
+					t.Fatal("ticket retained unrelated cookies")
+				}
+			} else if r.Header.Get("Authorization") != ticket.auth.Get("Authorization") {
+				t.Fatal("ticket did not preserve bearer authentication")
 			}
 			if 0 != len(w.Result().Cookies()) {
 				t.Fatal("ticket issuance created a session")

@@ -18,7 +18,15 @@ const eventTicketOrigin = "https://integration.example"
 
 func mintEventTicket(t *testing.T, s *Server) string {
 	t.Helper()
-	w := perform(t, s, http.MethodPost, "/api/auth/tickets", `{}`)
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/tickets", strings.NewReader(`{}`))
+	r.AddCookie(testSession(t, s))
+	return mintEventTicketRequest(t, s, r)
+}
+
+func mintEventTicketRequest(t *testing.T, s *Server, r *http.Request) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
 	if http.StatusCreated != w.Code {
 		t.Fatal("could not mint ticket", w.Code)
 	}
@@ -238,6 +246,81 @@ func TestTicketReplay(t *testing.T) {
 		t.Fatal("could not send replayed ticket")
 	}
 	rejectEventTicket(t, second, false)
+}
+
+func TestTicketRevocation(t *testing.T) {
+	for _, credential := range []string{"session", "signing_key", "bearer"} {
+		for _, connected := range []bool{false, true} {
+			phase := "pending"
+			if connected {
+				phase = "connected"
+			}
+			t.Run(credential+"/"+phase, func(t *testing.T) {
+				s := testServer(t, nil)
+				s.config.Global.WebsocketOrigins = []string{eventTicketOrigin}
+				r := httptest.NewRequest(http.MethodPost, "/api/auth/tickets", strings.NewReader(`{}`))
+				r.AddCookie(testSession(t, s))
+				if "bearer" == credential {
+					s.config.Auth.apiKey = strings.Repeat("cd", 32)
+					r.Header.Set("Authorization", "Bearer "+s.config.Auth.apiKey)
+				}
+				ticket := mintEventTicketRequest(t, s, r)
+				app := httptest.NewServer(s)
+				t.Cleanup(app.Close)
+				conn := dialEventTicket(t, app, "/api/events", http.Header{"Origin": {eventTicketOrigin}})
+				if connected {
+					authenticateEventTicket(t, conn, ticket)
+				}
+
+				s.configMu.Lock()
+				switch credential {
+				case "session":
+					s.config.Auth.Username = "changed"
+				case "signing_key":
+					s.config.Auth.sessionKey = strings.Repeat("\xef", 32)
+				case "bearer":
+					s.config.Auth.apiKey = strings.Repeat("ef", 32)
+				}
+				s.configMu.Unlock()
+
+				if connected {
+					browserSend(t, conn, protocol.ChannelMessage{Type: "shell.attach", Stream: "terminal", Node: "home", Shell: "session"})
+				} else {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+					if err := wsjson.Write(ctx, conn, map[string]string{"type": "auth", "ticket": ticket}); nil != err {
+						t.Fatal(err)
+					}
+				}
+				rejectEventTicket(t, conn, false)
+			})
+		}
+	}
+}
+
+func TestTicketSessionExpiry(t *testing.T) {
+	s := testServer(t, nil)
+	s.config.Global.WebsocketOrigins = []string{eventTicketOrigin}
+	token, err := sessionToken(s.config.Auth, time.Now().Add(3*time.Second))
+	if nil != err {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/tickets", strings.NewReader(`{}`))
+	r.AddCookie(&http.Cookie{Name: "session", Value: token})
+	ticket := mintEventTicketRequest(t, s, r)
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	conn := dialEventTicket(t, app, "/api/events", http.Header{"Origin": {eventTicketOrigin}})
+	authenticateEventTicket(t, conn, ticket)
+	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Second)
+	defer cancel()
+	var message protocol.ChannelMessage
+	if err := wsjson.Read(ctx, conn, &message); nil != err || "error" != message.Type || http.StatusUnauthorized != message.Status {
+		t.Fatal("idle ticket connection outlived its session", message, err)
+	}
+	if _, _, err := conn.Read(ctx); nil == err || nil != ctx.Err() {
+		t.Fatal("expired ticket connection did not close", err)
+	}
 }
 
 func TestTicketOrigins(t *testing.T) {
