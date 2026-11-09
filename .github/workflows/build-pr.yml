@@ -13,11 +13,6 @@ on:
       - '**.md'
       - '.github/ISSUE_TEMPLATE/**'
 
-env:
-  BUN_VERSION: '1.4.4'
-  NODE_VERSION: 22
-  GO_VERSION: '1.27.3'
-
 jobs:
   test:
     name: Run Tests & Build Validation
@@ -27,11 +22,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up tools
+        uses: jdx/mise-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: go.sum
+          install_args: go bun node golangci-lint
+
+      - name: Locate Go caches
+        id: go-cache
+        run: |
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Go dependencies and builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.modules }}
+            ${{ steps.go-cache.outputs.build }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6
@@ -40,16 +50,6 @@ jobs:
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install frontend dependencies
         env:

@@ -33,7 +33,7 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 	if nil != err {
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	authRequest := r
 	if !nativeOrigin || !s.authenticated(r) {
 		if !allowTicket {
@@ -66,9 +66,7 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 	commands := make(chan protocol.ChannelMessage, 64)
 	outgoing := make(chan browserDelivery, 64)
-	workers.Add(1)
-	go func() {
-		defer workers.Done()
+	workers.Go(func() {
 		defer cancel()
 		for {
 			var message protocol.ChannelMessage
@@ -81,7 +79,7 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	}()
+	})
 	stopHeartbeat := socketHeartbeat(ctx, conn, "workspace browser at "+r.RemoteAddr)
 	defer stopHeartbeat()
 	authCheck := time.NewTicker(15 * time.Second)
@@ -123,11 +121,9 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 				subscription, response = s.attachBrowser(ctx, message)
 				if nil != subscription {
 					subscriptions[message.Stream] = subscription
-					workers.Add(1)
-					go func() {
-						defer workers.Done()
+					workers.Go(func() {
 						subscription.forward(outgoing)
-					}()
+					})
 				}
 			case "shell.input", "shell.resize", "shell.close":
 				response = s.browserShellCommand(ctx, subscription, message)
@@ -374,7 +370,7 @@ func (s *Server) stateLocked(id, state, message string) {
 	s.broadcastLocked(runtimeFrame("node.state", payload))
 }
 
-func runtimeFrame(event string, payload interface{}) []byte {
+func runtimeFrame(event string, payload any) []byte {
 	data, _ := json.Marshal(payload)
 	frame, _ := json.Marshal(protocol.ChannelMessage{Type: "event", Event: event, Payload: data})
 	return frame

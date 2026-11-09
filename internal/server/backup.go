@@ -128,12 +128,12 @@ func collectNodeBackup(ctx context.Context, node NodeConfig, client *http.Client
 	if nil != err {
 		return backup, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
 	if err := decoder.Decode(&backup); nil != err {
 		return backup, nodeHTTPError{operation: "read backup files", status: response.StatusCode, message: err.Error()}
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
+	if err := decoder.Decode(new(any)); io.EOF != err {
 		return backup, nodeHTTPError{operation: "read backup files", status: response.StatusCode, message: fmt.Sprintf("unexpected trailing data: %v", err)}
 	}
 	if http.StatusOK != response.StatusCode {

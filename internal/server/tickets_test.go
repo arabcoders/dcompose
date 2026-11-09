@@ -166,14 +166,12 @@ func TestTicketConcurrent(t *testing.T) {
 	var workers sync.WaitGroup
 	start := make(chan struct{})
 	for range 16 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			<-start
 			if _, valid := s.consumeWebsocketTicket("ticket"); valid {
 				winners.Add(1)
 			}
-		}()
+		})
 	}
 	close(start)
 	workers.Wait()

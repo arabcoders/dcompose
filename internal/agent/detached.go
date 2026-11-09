@@ -85,7 +85,7 @@ func (a *agent) initDetached(cacheDir string) {
 	}
 	sort.Slice(requests, func(i, j int) bool { return requests[i].CreatedAt.Before(requests[j].CreatedAt) })
 	for _, request := range requests {
-		op := &operation{operationSnapshot: operationSnapshot{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running"}, automatic: request.Automatic, service: request.Service}
+		op := &operation{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running", automatic: request.Automatic, service: request.Service}
 		result, err := readDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op)
 		if nil == err {
 			_, _ = op.Write([]byte(result.Output))
@@ -109,11 +109,9 @@ func (a *agent) initDetached(cacheDir string) {
 			}
 			a.logOperationResult(op)
 		}
-		a.work.Add(1)
-		go func() {
-			defer a.work.Done()
+		a.work.Go(func() {
 			a.observeDetached(op)
-		}()
+		})
 	}
 }
 
@@ -369,7 +367,7 @@ func RunOperation(ctx context.Context, requestFile string) error {
 	if err := a.initRegistries(request.ConfigDir); nil != err {
 		return err
 	}
-	op := &operation{operationSnapshot: operationSnapshot{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running"}, automatic: request.Automatic, service: request.Service}
+	op := &operation{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running", automatic: request.Automatic, service: request.Service}
 	file, err := os.OpenFile(filepath.Join(filepath.Dir(requestFile), "output.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if nil != err {
 		return fmt.Errorf("open operation output: %w", err)

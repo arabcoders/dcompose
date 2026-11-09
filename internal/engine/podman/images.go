@@ -145,8 +145,8 @@ func (p *Podman) InspectImage(ctx context.Context, s engine.Service) engine.Imag
 
 func (p *Podman) ImageRef(ref string) string {
 	ref = strings.TrimPrefix(ref, "docker://")
-	if strings.HasPrefix(ref, "index.docker.io/") {
-		ref = "docker.io/" + strings.TrimPrefix(ref, "index.docker.io/")
+	if rest, ok := strings.CutPrefix(ref, "index.docker.io/"); ok {
+		ref = "docker.io/" + rest
 	}
 	if strings.HasPrefix(ref, "docker.io/") && 1 == strings.Count(ref, "/") {
 		ref = "docker.io/library/" + strings.TrimPrefix(ref, "docker.io/")

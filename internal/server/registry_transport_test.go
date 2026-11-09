@@ -59,7 +59,7 @@ func TestRegistryTransport(t *testing.T) {
 			if nil != err {
 				t.Fatal(err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			body, _ := io.ReadAll(response.Body)
 			if 429 != response.StatusCode || "60" != response.Header.Get("Retry-After") || 2 != len(response.Header.Values("WWW-Authenticate")) || request != response.Request {
 				t.Fatalf("registry response: %+v", response)

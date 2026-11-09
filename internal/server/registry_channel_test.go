@@ -58,7 +58,7 @@ func newRegistryChannel(t *testing.T) *registryChannelFixture {
 		}
 		if "/channel" != r.URL.Path {
 			if http.MethodGet == r.Method && "/relays" == r.URL.Path {
-				jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+				jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 				return
 			}
 			f.requests.Add(1)
@@ -69,7 +69,7 @@ func newRegistryChannel(t *testing.T) *registryChannelFixture {
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		conn.SetReadLimit(2 << 20)
 		// An eager runtime snapshot must not make the browser ready before apply.
 		if nil != wsjson.Write(r.Context(), conn, protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: json.RawMessage(`{"health":{"status":"ok"},"stacks":[]}`)}) {

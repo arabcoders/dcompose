@@ -30,7 +30,9 @@ git pull origin dev
 git switch -c feature/descriptive-name
 ```
 
-You'll need Go 1.27.3+ and Bun 1.4+. Run commands from the repository root. Install frontend dependencies with:
+Install [mise](https://mise.jdx.dev/getting-started.html), then run `mise install` to install the development tools from
+`mise.toml`. The pre-commit checks use `mise exec` so local checks and CI use the same tool versions.
+Run commands from the repository root. Install frontend dependencies with:
 
 ```sh
 bun --cwd=$PWD/frontend/ install --frozen-lockfile
@@ -66,8 +68,8 @@ bun --cwd=$PWD/frontend/ format:check
 For Go changes:
 
 ```sh
-go test -race ./cmd/... ./internal/...
-go vet ./cmd/... ./internal/...
+mise exec -- go test -race ./cmd/... ./internal/...
+mise exec -- golangci-lint run ./cmd/... ./internal/...
 ```
 
 ## Local hot reload

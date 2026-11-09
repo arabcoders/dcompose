@@ -67,8 +67,8 @@ func TestAPIKeyConfig(t *testing.T) {
 				t.Fatal("API key reference was not persisted", err)
 			}
 			files := []string{path}
-			if strings.HasPrefix(reference, "file:") {
-				secretPath := configutil.Path(path, strings.TrimPrefix(reference, "file:"))
+			if filename, ok := strings.CutPrefix(reference, "file:"); ok {
+				secretPath := configutil.Path(path, filename)
 				files = append(files, secretPath)
 				data, err := os.ReadFile(secretPath)
 				if nil != err || c.Auth.apiKey != strings.TrimSuffix(string(data), "\n") {
@@ -306,7 +306,7 @@ func TestAPIKeyWebsocket(t *testing.T) {
 			}
 			conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(app.URL, "http")+"/api/events", &websocket.DialOptions{HTTPHeader: headers})
 			if nil != conn {
-				defer conn.CloseNow()
+				defer func() { _ = conn.CloseNow() }()
 			}
 			if nil == response || test.status != response.StatusCode {
 				t.Fatal("unexpected Bearer websocket handshake", response, err)

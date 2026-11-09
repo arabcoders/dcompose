@@ -66,7 +66,7 @@ run_extra_dir() {
 
 check_go_format() {
   local files
-  files=$(gofmt -l cmd internal) || return 1
+  files=$(mise exec -- gofmt -l cmd internal) || return 1
   if [ -n "$files" ]; then
     printf '%s\n' "$files" >&2
     return 1
@@ -80,7 +80,7 @@ frontend_changed=0
 while IFS= read -r path; do
   [ -n "$path" ] || continue
   case "$path" in
-    cmd/*.go | internal/*.go | go.mod | go.sum | go.work | go.work.sum)
+    cmd/*.go | internal/*.go | go.mod | go.sum | go.work | go.work.sum | .golangci.yml | .githooks/pre-commit)
       go_changed=1
       ;;
     .editorconfig | mise.toml)
@@ -99,21 +99,21 @@ EOF
 
 if [ "$frontend_changed" -eq 1 ]; then
   echo "Preparing frontend..." >&2
-  NODE_ENV=development bun --cwd="$PWD/frontend/" run nuxt prepare --envName=development
+  NODE_ENV=development mise exec -- bun --cwd="$PWD/frontend/" run nuxt prepare --envName=development
   echo "Frontend preparation passed." >&2
 fi
 
 if [ "$go_changed" -eq 1 ]; then
   run_step "Go: Formatter" check_go_format
-  run_step "Go: Tests" go test -race ./cmd/... ./internal/...
-  run_step "Go: Vet" go vet ./cmd/... ./internal/...
+  run_step "Go: Tests" mise exec -- go test -race ./cmd/... ./internal/...
+  run_step "Go: Linter" mise exec -- golangci-lint run ./cmd/... ./internal/...
 fi
 
 if [ "$frontend_changed" -eq 1 ]; then
-  run_step "Frontend: Formatter" bun --cwd="$PWD/frontend/" run format:check
-  run_step "Frontend: Linter" bun --cwd="$PWD/frontend/" run lint
-  run_step "Frontend: Tests" bun --cwd="$PWD/frontend/" test
-  run_step "Frontend: TSC" bun --cwd="$PWD/frontend/" run lint:tsc
+  run_step "Frontend: Formatter" mise exec -- bun --cwd="$PWD/frontend/" run format:check
+  run_step "Frontend: Linter" mise exec -- bun --cwd="$PWD/frontend/" run lint
+  run_step "Frontend: Tests" mise exec -- bun --cwd="$PWD/frontend/" test
+  run_step "Frontend: TSC" mise exec -- bun --cwd="$PWD/frontend/" run lint:tsc
 fi
 
 extra_dir=$(git rev-parse --git-path hooks)/pre-commit.d

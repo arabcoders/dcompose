@@ -108,11 +108,11 @@ func nextLogStatus(t *testing.T, reader *bufio.Reader) logStatus {
 		if nil != err {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(line, "event: ") {
-			event = strings.TrimSpace(strings.TrimPrefix(line, "event: "))
+		if value, ok := strings.CutPrefix(line, "event: "); ok {
+			event = strings.TrimSpace(value)
 		}
-		if strings.HasPrefix(line, "data: ") {
-			if "log_status" != event || nil != json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &status) {
+		if value, ok := strings.CutPrefix(line, "data: "); ok {
+			if "log_status" != event || nil != json.Unmarshal([]byte(value), &status) {
 				t.Fatal("missing stream retention metadata", event, line)
 			}
 			return status

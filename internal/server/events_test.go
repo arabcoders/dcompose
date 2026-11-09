@@ -240,7 +240,7 @@ func TestBrowserExpiry(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	var message protocol.ChannelMessage
 	if err := wsjson.Read(ctx, conn, &message); nil != err || "error" != message.Type || 401 != message.Status || "" == message.Error {
 		t.Fatal("idle browser did not notice session expiry", message, err)

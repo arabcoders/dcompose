@@ -16,7 +16,8 @@ import (
 func TestNodeInfo(t *testing.T) {
 	infoFixture := readFixture(t, "info.json")
 	statsFixture := readFixture(t, "stats.jsonl")
-	ctx := context.WithValue(context.Background(), struct{}{}, "request")
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "request")
 	calls := 0
 	d := New(func(got context.Context, cmd engine.Command) ([]byte, []byte, error) {
 		if ctx != got || "docker" != cmd.Program || "" != cmd.Dir || 0 != len(cmd.Env) {

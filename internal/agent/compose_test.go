@@ -30,7 +30,7 @@ exit `+strconv.Itoa(code)+"\n")
 			if nil != err {
 				t.Fatal(err)
 			}
-			op := &operation{operationSnapshot: operationSnapshot{Stack: "demo", Action: "pull"}}
+			op := &operation{Stack: "demo", Action: "pull"}
 			err = a.runOperation(op, dir, base, "")
 			if code != exitCode(err) {
 				t.Fatalf("exit: %v", err)

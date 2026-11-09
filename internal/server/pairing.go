@@ -27,7 +27,7 @@ func resetNodePairing(ctx context.Context, node NodeConfig, client *http.Client)
 	if nil != err {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if http.StatusOK != response.StatusCode {
 		return readNodeHTTPError(response, "reset pairing")
 	}
@@ -131,7 +131,7 @@ func (s *Server) pairNode(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadGateway, "Could not pair with the node. Check its address and network connection.")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if http.StatusOK != response.StatusCode {
 		err := readNodeHTTPError(response, "pair")
 		slog.Error(fmt.Sprintf("Could not pair with %s: %s", label, err.Error()), "node", label, "operation", "pair", "status", response.StatusCode, "error", err.Error())

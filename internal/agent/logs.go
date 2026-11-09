@@ -11,8 +11,7 @@ func (a *agent) streamLogs(parent context.Context, name string, send func(stream
 	dir, err := a.stackPath(name, false)
 	if nil != err {
 		code := 502
-		var apiErr *apiError
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*apiError](err); ok {
 			code = apiErr.code
 		}
 		return fault(code, "stack logs unavailable")
@@ -20,8 +19,7 @@ func (a *agent) streamLogs(parent context.Context, name string, send func(stream
 	stack, err := a.engineStack(name, dir)
 	if nil != err {
 		code := 502
-		var apiErr *apiError
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*apiError](err); ok {
 			code = apiErr.code
 		}
 		return fault(code, "stack logs unavailable")

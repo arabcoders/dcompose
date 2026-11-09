@@ -190,7 +190,7 @@ func TestMonitorRecovery(t *testing.T) {
 	if 2 != len(args) {
 		t.Fatalf("missing subscription replay boundary: %s", argv)
 	}
-	boundary := strings.SplitN(args[1], ">", 2)[0]
+	boundary, _, _ := strings.Cut(args[1], ">")
 	if timestamp, err := strconv.ParseFloat(boundary, 64); nil != err || 0 >= timestamp || !strings.Contains(boundary, ".") {
 		t.Fatalf("invalid replay timestamp: %s", boundary)
 	}
@@ -466,7 +466,7 @@ func TestRefreshBound(t *testing.T) {
 }
 
 func TestOperationUTF8(t *testing.T) {
-	op := &operation{operationSnapshot: operationSnapshot{ID: "utf8", Status: "running"}}
+	op := &operation{ID: "utf8", Status: "running"}
 	s := newSubscriber()
 	op.subscribers = map[*eventSubscriber]struct{}{s: {}}
 	text := []byte("日")

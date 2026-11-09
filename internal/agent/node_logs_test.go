@@ -92,13 +92,11 @@ func TestNodeLogBuffer(t *testing.T) {
 	}
 	var writers sync.WaitGroup
 	for i := 0; 8 > i; i++ {
-		writers.Add(1)
-		go func() {
-			defer writers.Done()
+		writers.Go(func() {
 			for i := 0; nodeLogCapacity > i; i++ {
 				logger.Warn("concurrent")
 			}
-		}()
+		})
 	}
 	writers.Wait()
 	buffer.close()

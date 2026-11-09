@@ -76,7 +76,7 @@ func TestRelayResume(t *testing.T) {
 		if pending.Load() {
 			refs = append(refs, map[string]string{"id": "self-helper", "stack": "demo", "action": "update"})
 		}
-		jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": refs})
+		jsonResponse(w, http.StatusOK, map[string]any{"relays": refs})
 	})
 	f.http = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if http.MethodPost != r.Method || "/stacks/demo/actions" != r.URL.Path {
@@ -105,7 +105,7 @@ func TestRelayResume(t *testing.T) {
 		t.Fatal("private helper did not attach", attach)
 	}
 	old, delta, next := "\x1b[32mhelper started\x1b[0m\r\n", "pulling\r", "finished\r\n"
-	send := func(conn *websocket.Conn, stream, event string, payload interface{}) {
+	send := func(conn *websocket.Conn, stream, event string, payload any) {
 		t.Helper()
 		data, err := json.Marshal(payload)
 		if nil != err {
@@ -113,7 +113,7 @@ func TestRelayResume(t *testing.T) {
 		}
 		browserSend(t, conn, protocol.ChannelMessage{Type: "stream.event", Stream: stream, Event: event, Payload: data})
 	}
-	send(node, attach.Stream, "relay.snapshot", map[string]interface{}{"id": "self-helper", "stack": "demo", "action": "update", "status": "running", "output": old})
+	send(node, attach.Stream, "relay.snapshot", map[string]any{"id": "self-helper", "stack": "demo", "action": "update", "status": "running", "output": old})
 	for _, browser := range []*websocket.Conn{one, two} {
 		relayOutput(t, browser, old)
 	}
@@ -127,12 +127,12 @@ func TestRelayResume(t *testing.T) {
 	if "self-helper" != resumed.Resource || "" == resumed.Stream || attach.Stream == resumed.Stream {
 		t.Fatal("helper did not resume on a fresh stream", resumed)
 	}
-	send(node, resumed.Stream, "relay.snapshot", map[string]interface{}{"id": "self-helper", "stack": "demo", "action": "update", "status": "running", "output": old + delta + next})
+	send(node, resumed.Stream, "relay.snapshot", map[string]any{"id": "self-helper", "stack": "demo", "action": "update", "status": "running", "output": old + delta + next})
 	for _, browser := range []*websocket.Conn{one, two} {
 		relayOutput(t, browser, next)
 	}
 	pending.Store(false)
-	send(node, resumed.Stream, "relay.done", map[string]interface{}{"id": "self-helper", "stack": "demo", "action": "update", "status": "succeeded", "output": old + delta + next, "exit_code": 0})
+	send(node, resumed.Stream, "relay.done", map[string]any{"id": "self-helper", "stack": "demo", "action": "update", "status": "succeeded", "output": old + delta + next, "exit_code": 0})
 	for _, browser := range []*websocket.Conn{one, two} {
 		message := stackMessage(t, browser, "stack.action")
 		var exit struct {

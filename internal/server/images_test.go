@@ -249,7 +249,7 @@ func TestImageAvailableAuto(t *testing.T) {
 			f.mu.Lock()
 			f.services["demo"][0] = service
 			f.mu.Unlock()
-			payload, _ := json.Marshal(map[string]interface{}{"name": "demo", "status": "running", "services": []engine.Service{service}})
+			payload, _ := json.Marshal(map[string]any{"name": "demo", "status": "running", "services": []engine.Service{service}})
 			sendRuntime(t, conn, "stack.runtime", string(payload))
 			clock.Store(now.Add(31 * time.Minute).UnixNano())
 			awaitImage(t, func() bool { return 1 == len(imageActions(f)) })
@@ -337,14 +337,14 @@ func TestImageInvalidation(t *testing.T) {
 	// Same reference, new container identity must force a new central observation.
 	f.mu.Lock()
 	f.services["demo"][0].ID = "replacement"
-	runtime, _ := json.Marshal(map[string]interface{}{"name": "demo", "status": "running", "services": f.services["demo"]})
+	runtime, _ := json.Marshal(map[string]any{"name": "demo", "status": "running", "services": f.services["demo"]})
 	f.mu.Unlock()
 	sendRuntime(t, conn, "stack.runtime", string(runtime))
 	awaitImage(t, func() bool { return 5 == imageRequests(f) && "available" == imageStatus(s, "home", "demo", "web") })
 	// A changed image reference must invalidate availability even with the same container ID.
 	f.mu.Lock()
 	f.services["demo"][0].Image = "docker.io/library/nginx:stable"
-	runtime, _ = json.Marshal(map[string]interface{}{"name": "demo", "status": "running", "services": f.services["demo"]})
+	runtime, _ = json.Marshal(map[string]any{"name": "demo", "status": "running", "services": f.services["demo"]})
 	f.mu.Unlock()
 	sendRuntime(t, conn, "stack.runtime", string(runtime))
 	awaitImage(t, func() bool { return 8 == imageRequests(f) && "available" == imageStatus(s, "home", "demo", "web") })
@@ -400,7 +400,7 @@ func TestImageScheduleIntervals(t *testing.T) {
 	f.mu.Lock()
 	f.services["demo"][0] = service
 	f.mu.Unlock()
-	payload, _ := json.Marshal(map[string]interface{}{"name": "demo", "status": "running", "services": []engine.Service{service}})
+	payload, _ := json.Marshal(map[string]any{"name": "demo", "status": "running", "services": []engine.Service{service}})
 	sendRuntime(t, conn, "stack.runtime", string(payload))
 	awaitImage(t, func() bool {
 		s.hubMu.Lock()
@@ -475,8 +475,8 @@ func TestImageCooldownAccount(t *testing.T) {
 	}
 	s := imageServer(t, f, false)
 	lookup := func(username string) engine.RegistryImage {
-		data, _ := json.Marshal(map[string]interface{}{"auths": map[string]interface{}{"docker.io": map[string]string{"username": username, "password": "secret"}}})
-		return s.registryClient.InspectConfig(registryNodeContext(context.Background(), "home"), engine.ImageKey{Ref: "docker.io/library/nginx:latest", ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}, data, 0)
+		data, _ := json.Marshal(map[string]any{"auths": map[string]any{"docker.io": map[string]string{"username": username, "password": "secret"}}})
+		return s.registryClient.InspectConfig(registryNodeContext(context.Background(), "home"), engine.ImageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64"}, data, 0)
 	}
 	first := lookup("one")
 	second := lookup("one")
@@ -539,7 +539,7 @@ func TestImageNodeFailure(t *testing.T) {
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
 	config, _ := json.Marshal(registry.DockerConfig{Auths: map[string]map[string]string{}})
-	key := imageKey{ImageKey: engine.ImageKey{Ref: "docker.io/library/nginx:latest", ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}, purpose: "explicit", node: "home"}
+	key := imageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64", purpose: "explicit", node: "home"}
 	first := s.registryImage(registryNodeContext(context.Background(), "home"), key, config, time.Hour, time.Hour)
 	key.node = "away"
 	second := s.registryImage(registryNodeContext(context.Background(), "away"), key, config, time.Hour, time.Hour)
@@ -554,7 +554,7 @@ func TestImageManualCacheScope(t *testing.T) {
 	startChannels(t, s)
 	_ = nextConnection(t, f.channel)
 	imageReady(t, s, "home")
-	key := imageKey{ImageKey: engine.ImageKey{Ref: "private.example/other:latest"}, node: "away", purpose: "explicit"}
+	key := imageKey{Ref: "private.example/other:latest", node: "away", purpose: "explicit"}
 	entry := &imageCacheEntry{result: engine.RegistryImage{Digest: "retained", CheckedAt: time.Now()}}
 	s.hubMu.Lock()
 	s.images.cache[key] = entry
@@ -582,7 +582,7 @@ func TestImageFleetCooldown(t *testing.T) {
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
 	config, _ := json.Marshal(registry.DockerConfig{Auths: map[string]map[string]string{}})
-	key := imageKey{ImageKey: engine.ImageKey{Ref: "docker.io/library/nginx:latest", ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}, purpose: "explicit", node: "home"}
+	key := imageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64", purpose: "explicit", node: "home"}
 	first := s.registryImage(registryNodeContext(context.Background(), "home"), key, config, 0, time.Hour)
 	key.node = "away"
 	second := s.registryImage(registryNodeContext(context.Background(), "away"), key, config, 0, time.Hour)

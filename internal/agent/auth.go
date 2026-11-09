@@ -50,7 +50,7 @@ func sourceHostname(host string) bool {
 	if 0 == len(host) || 253 < len(host) {
 		return false
 	}
-	for _, label := range strings.Split(host, ".") {
+	for label := range strings.SplitSeq(host, ".") {
 		if 0 == len(label) || 63 < len(label) || '-' == label[0] || '-' == label[len(label)-1] {
 			return false
 		}

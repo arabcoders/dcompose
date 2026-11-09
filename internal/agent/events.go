@@ -28,8 +28,8 @@ func newSubscriber() *eventSubscriber {
 	return &eventSubscriber{events: make(chan streamEvent, 64), done: make(chan struct{})}
 }
 
-// interface{} is only the JSON encoding boundary for the typed event payloads.
-func event(name string, payload interface{}) streamEvent {
+// any (the interface{} alias) is only the JSON encoding boundary for the typed event payloads.
+func event(name string, payload any) streamEvent {
 	data, _ := json.Marshal(payload)
 	return streamEvent{name, data}
 }
@@ -246,9 +246,7 @@ func (a *agent) refreshRuntimes() {
 	results := make(chan runtimeResult, 4)
 	var workers sync.WaitGroup
 	for i := 0; 4 > i; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for name := range jobs {
 				ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 				state, err := a.runtimeStatus(ctx, name)
@@ -259,7 +257,7 @@ func (a *agent) refreshRuntimes() {
 					return
 				}
 			}
-		}()
+		})
 	}
 	defer func() { close(jobs); workers.Wait() }()
 	tick := time.NewTicker(100 * time.Millisecond)

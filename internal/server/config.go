@@ -354,9 +354,7 @@ func cloneConfig(c Config) Config {
 	c.Global.NodeOrder = slices.Clone(c.Global.NodeOrder)
 	c.Global.WebsocketOrigins = slices.Clone(c.Global.WebsocketOrigins)
 	nodes := make(map[string]NodeConfig, len(c.Nodes))
-	for id, node := range c.Nodes {
-		nodes[id] = node
-	}
+	maps.Copy(nodes, c.Nodes)
 	c.Nodes = nodes
 	return c
 }

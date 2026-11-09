@@ -44,7 +44,7 @@ func TestBackupExport(t *testing.T) {
 		{ID: "refresh", Registry: "https://index.docker.io/v1/refresh-token", AuthFile: "file:refresh-auth", auth: map[string]string{"username": "<token>", "password": "refresh-secret:client-id"}},
 	}
 	for _, nodes := range [][]string{{"home"}, {"home", "other"}} {
-		body, err := json.Marshal(map[string]interface{}{"nodes": nodes, "password": "backup-password"})
+		body, err := json.Marshal(map[string]any{"nodes": nodes, "password": "backup-password"})
 		if nil != err {
 			t.Fatal(err)
 		}
@@ -64,7 +64,7 @@ func TestBackupExport(t *testing.T) {
 			file.SetPassword("wrong-password")
 			if reader, err := file.Open(); nil == err {
 				_, err = io.ReadAll(reader)
-				reader.Close()
+				_ = reader.Close()
 				if nil == err {
 					t.Fatal("wrong password accepted")
 				}
@@ -75,7 +75,7 @@ func TestBackupExport(t *testing.T) {
 				t.Fatal(err)
 			}
 			data, err := io.ReadAll(reader)
-			reader.Close()
+			_ = reader.Close()
 			if nil != err {
 				t.Fatal(err)
 			}

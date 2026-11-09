@@ -273,7 +273,7 @@ func (l *lookup) exchange(ctx context.Context, params map[string]string) (string
 	if http.StatusOK != resp.StatusCode {
 		return "", time.Time{}, responseError(resp)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var token struct {
 		Token       string    `json:"token"`
 		AccessToken string    `json:"access_token"`

@@ -17,7 +17,8 @@ func TestNodeInfo(t *testing.T) {
 	// Native Podman 4.3 info schema and stats JSON from podman-stats(1).
 	infoFixture := readFixture(t, "info.json")
 	statsFixture := readFixture(t, "stats.json")
-	ctx := context.WithValue(context.Background(), struct{}{}, "request")
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "request")
 	calls := 0
 	p := New(func(got context.Context, cmd engine.Command) ([]byte, []byte, error) {
 		if ctx != got || "podman" != cmd.Program || "" != cmd.Dir || 0 != len(cmd.Env) {

@@ -294,14 +294,12 @@ func TestHistoryRenderedConcurrent(t *testing.T) {
 	logger := slog.New(newHistoryHandler(logging.NewConsoleHandler(&local, nil), h))
 	var workers sync.WaitGroup
 	for worker := 0; 8 > worker; worker++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			bound := logger.With("worker", worker).WithGroup("entry")
 			for index := 0; 20 > index; index++ {
 				bound.Info("diagnostic", "index", index, "error", errors.New("manifest failure"))
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	lines := make(map[string]int)

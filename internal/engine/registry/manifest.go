@@ -169,8 +169,7 @@ func invalidManifest(cause string) (engine.RegistryImage, error) {
 	return engine.RegistryImage{Status: "error", Reason: "manifest_invalid"}, &manifestError{cause: cause}
 }
 func manifestFailure(err error) engine.RegistryImage {
-	var invalid *manifestError
-	if errors.As(err, &invalid) {
+	if _, ok := errors.AsType[*manifestError](err); ok {
 		return engine.RegistryImage{Status: "error", Reason: "manifest_invalid"}
 	}
 	return engine.RegistryImage{Status: "error", Reason: "registry_error"}
@@ -206,7 +205,7 @@ func (l *lookup) fetch(ctx context.Context, endpoint, expected string) ([]byte, 
 	if http.StatusOK != resp.StatusCode {
 		return nil, "", "", responseError(resp)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMetadataSize+1))
 	if nil != err {
 		return nil, "", "", fmt.Errorf("could not read registry metadata: %w", err)

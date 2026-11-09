@@ -102,7 +102,7 @@ func nodeRequest(ctx context.Context, node NodeConfig, client *http.Client, meth
 		return nil, err
 	}
 	if http.StatusUpgradeRequired == response.StatusCode {
-		response.Body.Close()
+		_ = response.Body.Close()
 		return nil, incompatibleAgent{}
 	}
 	return response, nil
@@ -127,7 +127,7 @@ func checkNode(ctx context.Context, node NodeConfig, client *http.Client) (nodeH
 	if nil != err {
 		return health, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if 200 != response.StatusCode {
 		return health, readNodeHTTPError(response, "node health check")
 	}
@@ -135,7 +135,7 @@ func checkNode(ctx context.Context, node NodeConfig, client *http.Client) (nodeH
 	if err := decoder.Decode(&health); nil != err {
 		return health, errNodeHealth
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
+	if err := decoder.Decode(new(any)); io.EOF != err {
 		return health, errNodeHealth
 	}
 	if protocol.AgentAPI != health.APIVersion {
@@ -213,7 +213,7 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		proxyError(w, err)
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	var payload map[string]json.RawMessage
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
 	if err := decoder.Decode(&payload); nil != err || nil == payload {
@@ -225,7 +225,7 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		apiError(w, 502, "Could not load data from this node. Try again.")
 		return
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
+	if err := decoder.Decode(new(any)); io.EOF != err {
 		detail := "expected only one JSON object"
 		if nil != err {
 			detail = safeTransportError(err)
@@ -422,7 +422,7 @@ func allowedRoute(method string, p []string) (statusOnly bool, safeMessage strin
 }
 
 func proxyBody(w http.ResponseWriter, r *http.Request, p []string) ([]byte, bool) {
-	var payload interface{}
+	var payload any
 	switch {
 	case 2 == len(p) && "images" == p[0] && "check" == p[1]:
 		input := &struct{}{}
@@ -544,8 +544,7 @@ func proxyError(w http.ResponseWriter, err error) {
 		apiError(w, http.StatusConflict, errNodePaused.Error())
 		return
 	}
-	var incompatible incompatibleAgent
-	if errors.As(err, &incompatible) {
+	if incompatible, ok := errors.AsType[incompatibleAgent](err); ok {
 		apiError(w, http.StatusUpgradeRequired, incompatible.Error())
 		return
 	}

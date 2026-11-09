@@ -181,9 +181,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 			relay = &relayDelivery{op: op}
 			relays[key] = relay
 		}
-		streams.Add(1)
-		go func() {
-			defer streams.Done()
+		streams.Go(func() {
 			defer op.unsubscribe(subscriber)
 			send := func(e streamEvent) bool {
 				terminal := "operation.done" == e.name
@@ -227,7 +225,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					}
 				}
 			}
-		}()
+		})
 	}
 	for {
 		select {
@@ -300,9 +298,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					}
 					streamCtx, detach := context.WithCancel(ctx)
 					attached[key] = detach
-					streams.Add(1)
-					go func() {
-						defer streams.Done()
+					streams.Go(func() {
 						err := a.streamLogs(streamCtx, message.Resource, func(e streamEvent) bool {
 							select {
 							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
@@ -313,13 +309,12 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 						})
 						if nil != err && nil == streamCtx.Err() {
 							code := 502
-							var apiErr *apiError
-							if errors.As(err, &apiErr) {
+							if apiErr, ok := errors.AsType[*apiError](err); ok {
 								code = apiErr.code
 							}
 							send(protocol.ChannelMessage{Type: "stream.error", Stream: message.Stream, Error: err.Error(), Status: code})
 						}
-					}()
+					})
 				}
 				continue
 			}
@@ -345,9 +340,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					attach("shell:"+message.Shell, s.op, protocol.ChannelMessage{Type: "shell.event", Shell: message.Shell})
 				}
 				s.requestClose()
-				streams.Add(1)
-				go func() {
-					defer streams.Done()
+				streams.Go(func() {
 					select {
 					case <-s.done:
 					case <-ctx.Done():
@@ -374,7 +367,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 						e := event("operation.done", s.op.snapshot())
 						send(protocol.ChannelMessage{Type: "shell.event", Shell: message.Shell, Event: e.name, Payload: e.data})
 					}
-				}()
+				})
 			default:
 				err = fault(400, "unsupported channel message")
 			}

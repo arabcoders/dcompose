@@ -60,7 +60,7 @@ func fakeChannel(t *testing.T) *channelFixture {
 					f.relays.ServeHTTP(w, r)
 					return
 				}
-				jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+				jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 				return
 			}
 			if nil != f.http {
@@ -75,7 +75,7 @@ func fakeChannel(t *testing.T) *channelFixture {
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		conn.SetReadLimit(8 << 20)
 		f.count.Add(1)
 		if !ackRegistrySync(t, r.Context(), conn) {

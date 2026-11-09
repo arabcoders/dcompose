@@ -79,10 +79,10 @@ func (s *Server) snapshot() (Config, map[string]*http.Client) {
 }
 
 func apiError(w http.ResponseWriter, status int, message string) {
-	jsonResponse(w, status, map[string]interface{}{"error": map[string]interface{}{"code": status, "message": message}})
+	jsonResponse(w, status, map[string]any{"error": map[string]any{"code": status, "message": message}})
 }
 
-func jsonResponse(w http.ResponseWriter, status int, payload interface{}) {
+func jsonResponse(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
@@ -103,7 +103,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	if "/api/version" == path && "GET" == r.Method {
-		jsonResponse(w, 200, map[string]interface{}{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI})
+		jsonResponse(w, 200, map[string]any{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI})
 		return
 	}
 	if "/api/auth/login" == path && "POST" == r.Method {
@@ -149,7 +149,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createWebsocketTicket(w, r)
 	case "/api/auth/user" == path && "GET" == r.Method:
 		config, _ := s.snapshot()
-		jsonResponse(w, 200, map[string]interface{}{"account": map[string]string{"username": config.Auth.Username}, "authenticated": true})
+		jsonResponse(w, 200, map[string]any{"account": map[string]string{"username": config.Auth.Username}, "authenticated": true})
 	case "/api/settings" == path || strings.HasPrefix(path, "/api/settings/"):
 		s.settings(w, r, path)
 	case "/api/auth/logout" == path && "POST" == r.Method:
@@ -258,7 +258,7 @@ func sessionToken(auth AuthConfig, expires time.Time) (string, error) {
 		return "", err
 	}
 	return jwt.Signed(signer).Claims(sessionClaims{
-		Claims:             jwt.Claims{Expiry: jwt.NewNumericDate(expires)},
+		Expiry:             jwt.NewNumericDate(expires),
 		CredentialRevision: credentialRevision(auth),
 	}).Serialize()
 }
@@ -284,14 +284,14 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, map[string]bool{"authenticated": false})
 }
 
-func decodeBody(w http.ResponseWriter, r *http.Request, target interface{}, limit int64) bool {
+func decodeBody(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); nil != err {
 		apiError(w, 400, "Invalid JSON request.")
 		return false
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
+	if err := decoder.Decode(new(any)); io.EOF != err {
 		apiError(w, 400, "Invalid JSON request.")
 		return false
 	}
@@ -312,7 +312,7 @@ func (s *Server) listNodes(w http.ResponseWriter) {
 		node := config.Nodes[id]
 		nodes = append(nodes, publicNodeInfo{ID: id, Name: node.Name, PublicHost: strings.Trim(node.PublicHost, "[]"), Paused: node.Paused})
 	}
-	jsonResponse(w, 200, map[string]interface{}{"nodes": nodes})
+	jsonResponse(w, 200, map[string]any{"nodes": nodes})
 }
 
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {

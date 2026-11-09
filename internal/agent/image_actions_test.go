@@ -44,7 +44,7 @@ func TestHelperRegistryService(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.operationsDir = t.TempDir()
-	op := &operation{operationSnapshot: operationSnapshot{ID: "0123456789abcdef", Stack: "demo", Action: "update", Status: "running"}}
+	op := &operation{ID: "0123456789abcdef", Stack: "demo", Action: "update", Status: "running"}
 	if err := a.prepareDetached(op, stack, "web"); nil != err {
 		t.Fatal(err)
 	}

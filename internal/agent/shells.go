@@ -94,7 +94,7 @@ func (a *agent) createShell(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	id := hex.EncodeToString(random[:])
 	s := &shellSession{
-		op:        &operation{operationSnapshot: operationSnapshot{ID: id, Stack: stack, Action: "shell", Status: "running"}, retainTail: true},
+		op:        &operation{ID: id, Stack: stack, Action: "shell", Status: "running", retainTail: true},
 		container: container, shell: *input.Shell, lastActivity: time.Now(),
 		close: make(chan struct{}), ready: make(chan struct{}), done: make(chan struct{}),
 	}
@@ -295,8 +295,8 @@ func (a *agent) runShell(s *shellSession, cols, rows int) {
 		reason = "could not create the shell terminal: " + err.Error()
 		return
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	// pty.Setsize calls File.Fd(), which switches pollable files back to
 	// blocking mode. Use the slave for resize; the master must stay pollable.
 	if err := pty.Setsize(slave, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}); nil != err {
@@ -398,7 +398,7 @@ func (a *agent) runShell(s *shellSession, cols, rows int) {
 	}
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	if nil != waited {
-		<-waited
+		_ = <-waited
 	}
 	_ = slave.Close()
 	select {

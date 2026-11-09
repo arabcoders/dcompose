@@ -73,8 +73,8 @@ func Resolve(value, configPath string) (string, error) {
 		return "", fmt.Errorf("read secret file: %w", err)
 	}
 	result := string(data)
-	if strings.HasSuffix(result, "\r\n") {
-		result = strings.TrimSuffix(result, "\r\n")
+	if trimmed, ok := strings.CutSuffix(result, "\r\n"); ok {
+		result = trimmed
 	} else if strings.HasSuffix(result, "\n") || strings.HasSuffix(result, "\r") {
 		result = result[:len(result)-1]
 	}
@@ -94,8 +94,8 @@ func Write(path string, data []byte) error {
 	if nil != err {
 		return err
 	}
-	defer os.Remove(file.Name())
-	defer file.Close()
+	defer func() { _ = os.Remove(file.Name()) }()
+	defer func() { _ = file.Close() }()
 	if _, err := file.Write(data); nil != err {
 		return err
 	}

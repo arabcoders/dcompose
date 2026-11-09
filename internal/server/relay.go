@@ -63,16 +63,14 @@ func (s *Server) startRelay(node, id string) {
 		return
 	}
 	s.relays[key] = true
-	s.hubWorkers.Add(1)
-	go func() {
-		defer s.hubWorkers.Done()
+	s.hubWorkers.Go(func() {
 		defer func() {
 			s.hubMu.Lock()
 			delete(s.relays, key)
 			s.hubMu.Unlock()
 		}()
 		s.relaySelfUpdate(s.hubContext, key)
-	}()
+	})
 }
 
 func (s *Server) relaySelfUpdate(ctx context.Context, key relayKey) {

@@ -84,7 +84,7 @@ func TestShellInputMessage(t *testing.T) {
 	if err := file.Close(); nil != err {
 		t.Fatal(err)
 	}
-	s := &shellSession{op: &operation{operationSnapshot: operationSnapshot{ID: "shell-42", Stack: "demo"}}, container: "demo-web", terminal: file}
+	s := &shellSession{op: &operation{ID: "shell-42", Stack: "demo"}, container: "demo-web", terminal: file}
 	if err := s.writeInput("private-shell-input"); nil == err {
 		t.Fatal("closed terminal accepted input")
 	}

@@ -300,7 +300,7 @@ func TestShellNaturalExit(t *testing.T) {
 	}
 	<-s.done
 	var stopped bool
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		var record struct {
 			Level, Shell, Stack, Container, Reason string
 			Message                                string `json:"msg"`
@@ -332,8 +332,8 @@ func TestShellInputDeadline(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	if err := pty.Setsize(slave, &pty.Winsize{Cols: 90, Rows: 30}); nil != err {
 		t.Fatal(err)
 	}
@@ -354,13 +354,13 @@ func TestShellInputDeadline(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		_ = slave.Close()
-		<-done
+		_ = <-done
 		t.Fatal("blocked shell input ignored write deadline")
 	}
 }
 
 func TestShellOutputTail(t *testing.T) {
-	op := &operation{operationSnapshot: operationSnapshot{ID: "shell", Action: "shell", Status: "running"}, retainTail: true}
+	op := &operation{ID: "shell", Action: "shell", Status: "running", retainTail: true}
 	s := newSubscriber()
 	op.subscribers = map[*eventSubscriber]struct{}{s: {}}
 	_, _ = op.Write([]byte("old-prefix" + strings.Repeat("€", (1<<20)/3)))

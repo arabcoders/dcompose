@@ -57,8 +57,7 @@ func (c *Client) InspectConfig(ctx context.Context, key engine.ImageKey, data []
 		if nil == err {
 			return result
 		}
-		var cooldown *cooldownError
-		if errors.As(err, &cooldown) {
+		if cooldown, ok := errors.AsType[*cooldownError](err); ok {
 			checkedAt := result.CheckedAt
 			if checkedAt.IsZero() {
 				checkedAt = c.Now()
@@ -107,7 +106,7 @@ func parseReference(ref string) (reference, error) {
 	if "" == name || "" == tag {
 		return reference{}, errors.New("image repository or tag is empty")
 	}
-	for _, part := range strings.Split(name, "/") {
+	for part := range strings.SplitSeq(name, "/") {
 		if "" == part || "." == part || ".." == part {
 			return reference{}, errors.New("invalid image repository")
 		}
@@ -175,8 +174,7 @@ func (l *lookup) send(req *http.Request) (*http.Response, error) {
 		if nil != resp {
 			_ = resp.Body.Close()
 		}
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
+		if urlErr, ok := errors.AsType[*url.Error](err); ok {
 			err = urlErr.Err
 		}
 		return nil, fmt.Errorf("%s registry metadata: %w", req.Method, err)
@@ -203,7 +201,7 @@ func (l *lookup) sharedError(err error) error {
 }
 
 func responseError(resp *http.Response) error {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if nil != err {
 		return fmt.Errorf("HTTP %d %s (could not read registry error: %v)", resp.StatusCode, http.StatusText(resp.StatusCode), err)

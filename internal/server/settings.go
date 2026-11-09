@@ -34,7 +34,7 @@ func publicNode(id string, node NodeConfig) safeNode {
 	return safeNode{ID: id, Name: node.Name, URL: node.URL, Fingerprint: node.Fingerprint, PublicHost: node.PublicHost, HasToken: "" != node.token, Token: node.token, Paused: node.Paused}
 }
 
-func (s *Server) publicSettings(c Config) interface{} {
+func (s *Server) publicSettings(c Config) any {
 	nodes := make([]safeNode, 0, len(c.Nodes))
 	for _, id := range orderedNodeIDs(c) {
 		nodes = append(nodes, publicNode(id, c.Nodes[id]))
@@ -118,8 +118,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request, path string) {
 		s.saveNode(w, r, "")
 		return
 	}
-	if strings.HasPrefix(path, "/api/settings/nodes/") {
-		id := strings.TrimPrefix(path, "/api/settings/nodes/")
+	if id, ok := strings.CutPrefix(path, "/api/settings/nodes/"); ok {
 		if identity.MatchString(id) {
 			if "PUT" == r.Method {
 				s.saveNode(w, r, id)
@@ -352,10 +351,9 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	health, err := checkNode(ctx, node, client)
 	if nil != err {
-		var incompatible incompatibleAgent
 		detail := safeTransportError(err)
 		slog.Error(fmt.Sprintf("Connection test for %s failed: %s", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "error", detail)
-		if errors.As(err, &incompatible) {
+		if incompatible, ok := errors.AsType[incompatibleAgent](err); ok {
 			apiError(w, 426, incompatible.Error())
 		} else {
 			apiError(w, 502, "Cannot connect to the node. Check its token, address and public-key fingerprint.")

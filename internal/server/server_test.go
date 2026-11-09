@@ -360,14 +360,14 @@ func TestStatic(t *testing.T) {
 func TestAggregate(t *testing.T) {
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if http.MethodGet == r.Method && "/relays" == r.URL.Path {
-			jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+			jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 			return
 		}
 		conn, err := websocket.Accept(w, r, nil)
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		if !ackRegistrySync(t, r.Context(), conn) {
 			return
 		}
@@ -424,7 +424,7 @@ func TestReconnect(t *testing.T) {
 	var attempts atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if http.MethodGet == r.Method && "/relays" == r.URL.Path {
-			jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+			jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 			return
 		}
 		attempt := attempts.Add(1)
@@ -436,7 +436,7 @@ func TestReconnect(t *testing.T) {
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		if !ackRegistrySync(t, r.Context(), conn) {
 			return
 		}

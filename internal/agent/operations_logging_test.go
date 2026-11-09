@@ -27,7 +27,7 @@ type operationLogRecord struct {
 func operationLogs(t *testing.T, logs *automaticLogBuffer) []operationLogRecord {
 	t.Helper()
 	var records []operationLogRecord
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		if "" == line {
 			continue
 		}
@@ -170,7 +170,7 @@ func TestManualLogBound(t *testing.T) {
 	logs := captureAutomaticLogs(t)
 	a, _ := executionFixture(t)
 	cause := "registry.example: access denied"
-	op := &operation{operationSnapshot: operationSnapshot{ID: "manual", Stack: "demo", Action: "pull", Status: "running"}}
+	op := &operation{ID: "manual", Stack: "demo", Action: "pull", Status: "running"}
 	_, _ = op.Write([]byte(strings.Repeat("progress €\r\n", 1000) + "\x1b[31m" + cause + "\x1b[0m\nError: exit status 7\n"))
 	a.finishOperation(op, 7)
 	checkFailureLog(t, logs, a, op, cause, 7)

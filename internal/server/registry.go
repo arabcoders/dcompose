@@ -49,7 +49,7 @@ func registrySecretField(field string) bool {
 	return "username" != field && "email" != field && "serveraddress" != field
 }
 
-func publicRegistries(registries []RegistryConfig) interface{} {
+func publicRegistries(registries []RegistryConfig) any {
 	rows := make([]safeRegistry, 0, len(registries))
 	for _, registry := range registries {
 		auth := maps.Clone(registry.auth)

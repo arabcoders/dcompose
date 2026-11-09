@@ -42,7 +42,7 @@ func TestRegistryAddress(t *testing.T) {
 func TestRegistries(t *testing.T) {
 	s := persistedServer(t, nil)
 	auth := map[string]string{"auth": base64.StdEncoding.EncodeToString([]byte("encoded-user:encoded-password")), "username": "alice", "password": "private-password", "identitytoken": "private-identity", "registrytoken": "private-token", "email": "alice@example.com", "serveraddress": "https://index.docker.io/v1/"}
-	body, _ := json.Marshal(map[string]interface{}{"registries": []registryInput{{Registry: "https://index.docker.io/v1/", Label: "Personal / checks", Auth: auth, BackgroundChecks: true}, {Registry: "registry-1.docker.io", Auth: map[string]string{"registrytoken": "second-token"}}}})
+	body, _ := json.Marshal(map[string]any{"registries": []registryInput{{Registry: "https://index.docker.io/v1/", Label: "Personal / checks", Auth: auth, BackgroundChecks: true}, {Registry: "registry-1.docker.io", Auth: map[string]string{"registrytoken": "second-token"}}}})
 	w := perform(t, s, "PUT", "/api/settings/registries", string(body))
 	rows := registryRows(t, w)
 	if 2 != len(rows) || rows[0].ID == rows[1].ID || "" == rows[0].ID || "https://index.docker.io/v1/" != rows[0].Registry || !rows[0].HasAuth || !rows[0].BackgroundChecks || rows[1].BackgroundChecks || "Personal / checks" != rows[0].Label || "alice" != rows[0].Username {
@@ -88,7 +88,7 @@ func TestRegistries(t *testing.T) {
 	}
 	// Masked auth fields round-trip without exposing or changing secrets.
 	input := []registryInput{{ID: rows[0].ID, Registry: rows[0].Registry, Label: "", Auth: rows[0].Auth, BackgroundChecks: false}}
-	body, _ = json.Marshal(map[string]interface{}{"registries": input})
+	body, _ = json.Marshal(map[string]any{"registries": input})
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", string(body)))
 	current, _ := s.snapshot()
 	if !maps.Equal(auth, current.Registries[0].auth) || loaded.Registries[0].AuthFile != current.Registries[0].AuthFile || "" != current.Registries[0].Label || current.Registries[0].BackgroundChecks {

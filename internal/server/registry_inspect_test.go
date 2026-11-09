@@ -62,8 +62,8 @@ func imageService(name string) engine.Service {
 func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 	t.Helper()
 	f := &imageNodeFixture{channel: fakeChannel(t), services: map[string][]engine.Service{"demo": services}, local: make(map[string]string), metadata: nativeMetadata}
-	stacks := []map[string]interface{}{{"name": "demo", "status": "running", "loading": false, "services": services}}
-	f.channel.snapshot, _ = json.Marshal(map[string]interface{}{"health": map[string]string{"status": "ok", "image_check_interval": "6h"}, "stacks": stacks})
+	stacks := []map[string]any{{"name": "demo", "status": "running", "loading": false, "services": services}}
+	f.channel.snapshot, _ = json.Marshal(map[string]any{"health": map[string]string{"status": "ok", "image_check_interval": "6h"}, "stacks": stacks})
 	f.channel.http = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case "/images/inspect" == r.URL.Path:
@@ -100,7 +100,7 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 			metadata := f.metadata
 			f.mu.Unlock()
 			response := metadata(request)
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			body, _ := io.ReadAll(response.Body)
 			_ = json.NewEncoder(w).Encode(protocol.RegistryResponse{Status: response.StatusCode, Header: response.Header, Body: body})
 		case strings.HasSuffix(r.URL.Path, "/actions"):
@@ -129,7 +129,7 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 					service.ID += "-updated"
 				}
 			}
-			runtime, _ := json.Marshal(map[string]interface{}{"name": "demo", "status": "running", "busy": true, "services": f.services["demo"]})
+			runtime, _ := json.Marshal(map[string]any{"name": "demo", "status": "running", "busy": true, "services": f.services["demo"]})
 			f.mu.Unlock()
 			sendRuntime(t, conn, "stack.runtime", string(runtime))
 			sendRuntime(t, conn, "stack.action", `{"name":"demo","action":"update","phase":"exit","exit_code":0}`)
@@ -137,7 +137,7 @@ func imageNode(t *testing.T, services ...engine.Service) *imageNodeFixture {
 		case "/stacks/demo/status" == r.URL.Path || "/stacks/demo" == r.URL.Path:
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"name": "demo", "status": "running", "services": f.services["demo"], "compose": "services: {}", "env": ""})
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo", "status": "running", "services": f.services["demo"], "compose": "services: {}", "env": ""})
 		default:
 			t.Error("unexpected image-node route", r.URL.Path)
 			w.WriteHeader(404)
@@ -199,7 +199,7 @@ func TestRegistrySharedMetadata(t *testing.T) {
 	clock.Store(now.UnixNano())
 	s.registryClient.Now = func() time.Time { return time.Unix(0, clock.Load()).UTC() }
 	config, _ := json.Marshal(registry.DockerConfig{Auths: map[string]map[string]string{}})
-	key := imageKey{ImageKey: engine.ImageKey{Ref: "docker.io/library/nginx:latest", ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}, purpose: "explicit"}
+	key := imageKey{Ref: "docker.io/library/nginx:latest", OS: "linux", Architecture: "amd64", purpose: "explicit"}
 	lookup := func(node string, age time.Duration) engine.RegistryImage {
 		return s.registryClient.InspectConfig(registryNodeContext(context.Background(), node), key.ImageKey, config, age)
 	}

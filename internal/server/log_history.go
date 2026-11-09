@@ -350,8 +350,8 @@ func renderStoredLog(entry logEntry) string {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		// interface{} is the legacy JSON boundary, retaining native field values.
-		var value interface{}
+		// any is the legacy JSON boundary, retaining native field values.
+		var value any
 		decoder := json.NewDecoder(bytes.NewReader(entry.Fields[key]))
 		decoder.UseNumber()
 		_ = decoder.Decode(&value)
@@ -387,9 +387,9 @@ func (f logFilter) matches(entry logEntry) bool {
 	}
 	if "" != f.search {
 		encoded, _ := json.Marshal(entry)
-		// interface{} is the JSON search boundary. Decode escaped string values
+		// any is the JSON search boundary. Decode escaped string values
 		// while preserving integer text in diagnostic fields.
-		var record interface{}
+		var record any
 		decoder := json.NewDecoder(bytes.NewReader(encoded))
 		decoder.UseNumber()
 		_ = decoder.Decode(&record)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -156,11 +157,9 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 			return
 		}
 		code, reason := 500, "operation startup failed"
-		var apiErr *apiError
-		var engineErr *engine.Error
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*apiError](err); ok {
 			code, reason = apiErr.code, apiErr.message
-		} else if errors.As(err, &engineErr) {
+		} else if engineErr, ok := errors.AsType[*engine.Error](err); ok {
 			code, reason = engineErr.Code, engineErr.Message
 		}
 		level := slog.LevelError
@@ -206,14 +205,7 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 		if nil != err {
 			return err
 		}
-		found := false
-		for _, candidate := range services {
-			if service == candidate {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(services, service) {
 			return fault(400, "service is not defined in the Compose file")
 		}
 	}
@@ -238,7 +230,7 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 			return fmt.Errorf("relay ID: %w", err)
 		}
 		id = hex.EncodeToString(randomID[:])
-		op = &operation{operationSnapshot: operationSnapshot{ID: id, Stack: name, Action: action, Status: "running"}, automatic: automatic, service: service}
+		op = &operation{ID: id, Stack: name, Action: action, Status: "running", automatic: automatic, service: service}
 		if err := a.prepareDetached(op, base, service); nil != err {
 			return err
 		}

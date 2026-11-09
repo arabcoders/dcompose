@@ -576,9 +576,7 @@ func TestConfigRace(t *testing.T) {
 	s := persistedServer(t, up)
 	var workers sync.WaitGroup
 	for i := 0; 4 > i; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for j := 0; 12 > j; j++ {
 				for _, path := range []string{"/api/settings", "/api/nodes", "/api/nodes/home/stacks", "/api/auth/user"} {
 					if 200 != perform(t, s, "GET", path, "").Code {
@@ -586,7 +584,7 @@ func TestConfigRace(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	for i := 0; 12 > i; i++ {
 		if 200 != perform(t, s, "PUT", "/api/settings/nodes/home", fmt.Sprintf(`{"name":"Home %d","url":%q,"fingerprint":%q}`, i, up.URL, testFingerprint(up))).Code {

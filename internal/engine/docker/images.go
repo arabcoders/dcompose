@@ -114,7 +114,7 @@ func (d *Docker) InspectImage(ctx context.Context, s engine.Service) engine.Imag
 func (d *Docker) ImageRef(ref string) string {
 	ref = strings.TrimPrefix(ref, "index.docker.io/")
 	ref = strings.TrimPrefix(ref, "docker.io/")
-	first := strings.SplitN(ref, "/", 2)[0]
+	first, _, _ := strings.Cut(ref, "/")
 	if !strings.Contains(ref, "/") {
 		ref = "docker.io/library/" + ref
 	} else if !strings.ContainsAny(first, ".:") && "localhost" != first {

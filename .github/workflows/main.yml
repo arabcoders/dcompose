@@ -27,9 +27,6 @@ env:
   BUILD_ARM64: ${{ vars.BUILD_ARM64 != 'false' && 'true' || 'false' }}
   DOCKERHUB_SLUG: arabcoders/dcompose
   GHCR_SLUG: ghcr.io/arabcoders/dcompose
-  BUN_VERSION: '1.4.4'
-  NODE_VERSION: '22'
-  GO_VERSION: '1.27.3'
 
 jobs:
   validate-build-config:
@@ -53,10 +50,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: go.sum
+          install_args: go bun node golangci-lint
+
+      - name: Locate Go caches
+        id: go-cache
+        run: |
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Go dependencies and builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.modules }}
+            ${{ steps.go-cache.outputs.build }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6
@@ -64,14 +76,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('frontend/bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install frontend dependencies
         run: bun --cwd=$PWD/frontend/ install --frozen-lockfile
@@ -124,10 +128,25 @@ jobs:
           name: frontend-build
           path: frontend/exported/
 
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: go.sum
+          install_args: go
+
+      - name: Locate Go caches
+        id: go-cache
+        run: |
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Go dependencies and builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.modules }}
+            ${{ steps.go-cache.outputs.build }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ github.job }}-
 
       - name: Build and package native binaries
         run: |

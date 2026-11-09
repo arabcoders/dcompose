@@ -363,14 +363,14 @@ func TestChannelInputIsolation(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	cmd := exec.Command("stty", "raw", "-echo")
 	cmd.Stdin = slave
 	if err := cmd.Run(); nil != err {
 		t.Fatal(err)
 	}
-	s := &shellSession{op: &operation{operationSnapshot: operationSnapshot{ID: "blocked", Status: "running"}}, terminal: master}
+	s := &shellSession{op: &operation{ID: "blocked", Status: "running"}, terminal: master}
 	a.shells["blocked"] = s
 	conn := openChannel(t, channelServer(t, a))
 	channelUntil(t, conn, "event", "node.snapshot")
@@ -399,7 +399,7 @@ func TestChannelInputIsolation(t *testing.T) {
 
 func TestChannelLargeSnapshot(t *testing.T) {
 	a, _ := fixture(t)
-	a.shells["large"] = &shellSession{op: &operation{operationSnapshot: operationSnapshot{ID: "large", Status: "succeeded", Output: strings.Repeat("\x00", 1<<20)}}}
+	a.shells["large"] = &shellSession{op: &operation{ID: "large", Status: "succeeded", Output: strings.Repeat("\x00", 1<<20)}}
 	conn := openChannel(t, channelServer(t, a))
 	channelSend(t, conn, protocol.ChannelMessage{Type: "shell.attach", Shell: "large"})
 	message := channelUntil(t, conn, "shell.event", "operation.snapshot")

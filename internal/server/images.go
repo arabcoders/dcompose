@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -201,9 +202,7 @@ func (s *Server) publishImagesLocked(key imageStackKey) {
 		}
 		s.decorateImagesLocked(key, stack)
 		payload := make(map[string]json.RawMessage, len(stack)+1)
-		for field, value := range stack {
-			payload[field] = value
-		}
+		maps.Copy(payload, stack)
 		payload["node"], _ = json.Marshal(key.node)
 		s.broadcastLocked(runtimeFrame("stack.runtime", payload))
 		break
@@ -376,9 +375,7 @@ func (s *Server) watchImages() {
 	jobs := make(chan imageStackKey)
 	var workers sync.WaitGroup
 	for i := 0; 4 > i; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for key := range jobs {
 				s.refreshImages(key)
 				s.hubMu.Lock()
@@ -387,7 +384,7 @@ func (s *Server) watchImages() {
 				}
 				s.hubMu.Unlock()
 			}
-		}()
+		})
 	}
 	defer func() { close(jobs); workers.Wait() }()
 	tick := time.NewTicker(100 * time.Millisecond)
@@ -415,7 +412,7 @@ func (s *Server) watchImages() {
 	}
 }
 
-func (s *Server) imageRequest(ctx context.Context, node, method, path string, input, output interface{}) error {
+func (s *Server) imageRequest(ctx context.Context, node, method, path string, input, output any) error {
 	var body io.Reader
 	if nil != input {
 		data, err := json.Marshal(input)
@@ -428,7 +425,7 @@ func (s *Server) imageRequest(ctx context.Context, node, method, path string, in
 	if nil != err {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if 200 > response.StatusCode || 300 <= response.StatusCode {
 		return readNodeHTTPError(response, "image update request")
 	}
@@ -454,9 +451,7 @@ func (s *Server) refreshImages(key imageStackKey) {
 	inspection := state.inspection
 	state.inspection = nil
 	autoPending := make(map[string]string, len(state.autoPending))
-	for service, id := range state.autoPending {
-		autoPending[service] = id
-	}
+	maps.Copy(autoPending, state.autoPending)
 	nodeContext := channel.imageContext
 	s.hubMu.Unlock()
 	ctx, cancel := context.WithTimeout(nodeContext, 45*time.Second)

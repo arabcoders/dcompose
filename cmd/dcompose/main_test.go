@@ -45,7 +45,7 @@ func TestLogLevel(t *testing.T) {
 			if test.warn != strings.Contains(string(output), " WARN ") {
 				t.Fatalf("warning filter: %s", output)
 			}
-			for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 				parts := strings.SplitN(line, " ", 3)
 				if 3 != len(parts) {
 					t.Fatal("missing log message", line)
@@ -94,7 +94,7 @@ func TestPasswordConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = write.Close()
-			defer read.Close()
+			defer func() { _ = read.Close() }()
 			oldArgs, oldFlags, oldStdin := os.Args, flag.CommandLine, os.Stdin
 			oldLogger := slog.Default()
 			t.Cleanup(func() {

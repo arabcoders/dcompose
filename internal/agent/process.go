@@ -52,8 +52,8 @@ func runTerminalCommand(ctx context.Context, cmd *exec.Cmd, output io.Writer) er
 	if nil != err {
 		return err
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	if err := pty.Setsize(master, &pty.Winsize{Rows: 30, Cols: 120}); nil != err {
 		return err
 	}

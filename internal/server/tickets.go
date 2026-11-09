@@ -47,7 +47,7 @@ func (s *Server) createWebsocketTicket(w http.ResponseWriter, r *http.Request) {
 	s.tickets[value] = websocketTicket{expires: now.Add(30 * time.Second), auth: auth}
 	s.ticketMu.Unlock()
 
-	jsonResponse(w, http.StatusCreated, map[string]interface{}{"ticket": value, "expires_in": 30})
+	jsonResponse(w, http.StatusCreated, map[string]any{"ticket": value, "expires_in": 30})
 }
 
 func (s *Server) consumeWebsocketTicket(value string) (websocketTicket, bool) {

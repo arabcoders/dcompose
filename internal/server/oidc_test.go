@@ -47,7 +47,7 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 			if "discovery" == f.mode {
 				issuer += "/wrong"
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"issuer": issuer, "authorization_endpoint": f.server.URL + "/authorize", "token_endpoint": f.server.URL + "/token", "jwks_uri": f.server.URL + "/keys", "id_token_signing_alg_values_supported": []string{"ES256"},
 			})
 		case "/keys":
@@ -69,7 +69,7 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 				http.Error(w, "provider error", 400)
 				return
 			}
-			claims := map[string]interface{}{"iss": f.server.URL, "aud": "dcompose", "sub": "provider-user", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": f.nonce}
+			claims := map[string]any{"iss": f.server.URL, "aud": "dcompose", "sub": "provider-user", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": f.nonce}
 			switch f.mode {
 			case "issuer":
 				claims["iss"] = "https://wrong.example"
@@ -117,7 +117,7 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 				t.Error(err)
 				return
 			}
-			response := map[string]interface{}{"access_token": "unused-access-token", "token_type": "Bearer", "id_token": raw}
+			response := map[string]any{"access_token": "unused-access-token", "token_type": "Bearer", "id_token": raw}
 			if "missing_token" == f.mode {
 				delete(response, "id_token")
 			}

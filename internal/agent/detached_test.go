@@ -63,7 +63,7 @@ func detachedFixture(t *testing.T) (*agent, *detachedDriver, context.CancelFunc)
 
 func detachedOp(t *testing.T, a *agent, id string) *operation {
 	t.Helper()
-	op := &operation{operationSnapshot: operationSnapshot{ID: id, Stack: "self", Action: "update", Status: "running"}}
+	op := &operation{ID: id, Stack: "self", Action: "update", Status: "running"}
 	if err := a.prepareDetached(op, engine.Stack{Name: "self", Dir: "/stacks/self", ComposeFile: "/stacks/self/compose.yaml", EnvFile: "/stacks/self/.env"}, ""); nil != err {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestSelfOperation(t *testing.T) {
 		if "dagent-operation-"+input.ID != name || "self" != base.Name || "update" != input.Action {
 			return errors.New("incorrect helper request")
 		}
-		op := &operation{operationSnapshot: operationSnapshot{ID: input.ID, Stack: "self", Action: "update", Output: "helper completed\n"}}
+		op := &operation{ID: input.ID, Stack: "self", Action: "update", Output: "helper completed\n"}
 		return writeDetachedResult(filepath.Join(filepath.Dir(path), "result.json"), op, 0)
 	}
 	driver.state = func(context.Context, string) (engine.DetachedState, error) {
@@ -179,7 +179,7 @@ func TestPodmanSelfOperation(t *testing.T) {
 						return nil, nil, fmt.Errorf("unexpected helper request: %+v", input)
 					}
 					started.Add(1)
-					op := &operation{operationSnapshot: operationSnapshot{ID: input.ID, Stack: input.Stack.Name, Action: input.Action, Output: "podman helper completed\n"}}
+					op := &operation{ID: input.ID, Stack: input.Stack.Name, Action: input.Action, Output: "podman helper completed\n"}
 					return nil, nil, writeDetachedResult(filepath.Join(filepath.Dir(path), "result.json"), op, 0)
 				case "logs":
 					return nil, nil, nil
@@ -323,7 +323,7 @@ func TestDetachedInspectOutage(t *testing.T) {
 		t.Fatalf("outage changed helper result: %+v calls=%d", snapshot, calls)
 	}
 	matches := 0
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		var record struct {
 			Level, Operation, Error string
 			Message                 string `json:"msg"`
@@ -532,7 +532,7 @@ func TestDetachedLogCap(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	log := &detachedLog{file: file, remaining: 1 << 20}
 	data := []byte(strings.Repeat("x", (1<<20)+32))
 	if n, err := log.Write(data); len(data) != n || nil != err {
@@ -554,7 +554,7 @@ func TestRunOperation(t *testing.T) {
 				t.Fatal(err)
 			}
 			a.operationsDir = filepath.Join(directory, "operations")
-			op := &operation{operationSnapshot: operationSnapshot{ID: "000000000000000a", Stack: "self", Action: "restart", Status: "running"}}
+			op := &operation{ID: "000000000000000a", Stack: "self", Action: "restart", Status: "running"}
 			if err := a.prepareDetached(op, base, "web"); nil != err {
 				t.Fatal(err)
 			}
@@ -596,7 +596,7 @@ func TestRunOperationPodman(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.operationsDir = filepath.Join(directory, "operations")
-	op := &operation{operationSnapshot: operationSnapshot{ID: "000000000000000f", Stack: "self", Action: "restart", Status: "running"}}
+	op := &operation{ID: "000000000000000f", Stack: "self", Action: "restart", Status: "running"}
 	if err := a.prepareDetached(op, base, "web"); nil != err {
 		t.Fatal(err)
 	}
@@ -611,7 +611,7 @@ func TestRunOperationPodman(t *testing.T) {
 	if nil != err || "" == strings.TrimSpace(string(environment)) {
 		t.Fatalf("Compose environment: %q error=%v", environment, err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(environment)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(environment)), "\n") {
 		if host+"|||" != line {
 			t.Fatalf("Compose transport: %q", line)
 		}

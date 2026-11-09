@@ -58,7 +58,7 @@ func captureAutomaticLogs(t *testing.T) *automaticLogBuffer {
 func (b *automaticLogBuffer) records(t *testing.T) []automaticLogRecord {
 	t.Helper()
 	records := []automaticLogRecord{}
-	for _, line := range strings.Split(strings.TrimSpace(b.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(b.text()), "\n") {
 		if "" == line {
 			continue
 		}
@@ -243,7 +243,7 @@ func TestAutoDetachedRestoreLogs(t *testing.T) {
 			t.Run(fmt.Sprintf("%t/%d", ready, code), func(t *testing.T) {
 				logs := captureAutomaticLogs(t)
 				a, driver, _ := detachedFixture(t)
-				op := &operation{operationSnapshot: operationSnapshot{ID: "0123456789abcdef", Stack: "self", Action: "update", Status: "running"}, automatic: true, service: "web"}
+				op := &operation{ID: "0123456789abcdef", Stack: "self", Action: "update", Status: "running", automatic: true, service: "web"}
 				if err := a.prepareDetached(op, engine.Stack{Name: "self", Dir: "/stacks/self"}, "web"); nil != err {
 					t.Fatal(err)
 				}

@@ -71,9 +71,7 @@ func TestConsoleConcurrent(t *testing.T) {
 	stamp := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	var workers sync.WaitGroup
 	for worker := 0; 8 > worker; worker++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			bound := handler.WithAttrs([]slog.Attr{slog.Int("worker", worker)}).WithGroup("entry")
 			for index := 0; 20 > index; index++ {
 				record := slog.NewRecord(stamp, slog.LevelInfo, fmt.Sprintf(`node "%d" path "C:\%d"`, worker, index), 0)
@@ -82,7 +80,7 @@ func TestConsoleConcurrent(t *testing.T) {
 					t.Error(err)
 				}
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")

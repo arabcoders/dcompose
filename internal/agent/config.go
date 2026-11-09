@@ -148,13 +148,13 @@ func loadConfig(path string) (config, error) {
 	return c, nil
 }
 
-func saveGlobalSetting(path, key string, value interface{}) error {
+func saveGlobalSetting(path, key string, value any) error {
 	// Preserve relative references and unknown keys instead of encoding runtime defaults.
-	var document map[string]interface{}
+	var document map[string]any
 	if _, err := toml.DecodeFile(path, &document); nil != err {
 		return err
 	}
-	document["global"].(map[string]interface{})[key] = value
+	document["global"].(map[string]any)[key] = value
 	var data bytes.Buffer
 	if err := toml.NewEncoder(&data).Encode(document); nil != err {
 		return err

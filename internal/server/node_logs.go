@@ -24,9 +24,9 @@ func (s *Server) nodeLogs(channel *nodeChannel, payload json.RawMessage) error {
 			case "node_id", "node_name", "_from_node", "_node_source":
 				continue
 			}
-			// interface{} is the JSON boundary: attributes may contain any native
+			// any is the JSON boundary: attributes may contain any native
 			// JSON value. UseNumber retains integer diagnostic fields exactly.
-			var value interface{}
+			var value any
 			decoder := json.NewDecoder(bytes.NewReader(raw))
 			decoder.UseNumber()
 			if err := decoder.Decode(&value); nil != err {

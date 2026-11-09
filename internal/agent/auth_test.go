@@ -27,7 +27,8 @@ func TestHostAuth(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	key := struct{}{}
+	type contextKey struct{}
+	key := contextKey{}
 	a := newAgent(context.WithValue(context.Background(), key, "agent"), c)
 	calls := 0
 	a.dns.lookup = func(ctx context.Context, network, host string) ([]netip.Addr, error) {

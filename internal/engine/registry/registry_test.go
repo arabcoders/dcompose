@@ -27,7 +27,7 @@ func TestMain(m *testing.M) { os.Exit(testutil.Run(m)) }
 var linuxAMD64 = engine.ImagePlatform{OS: "linux", Architecture: "amd64"}
 
 // encode handles heterogeneous fixtures only at the encoding/json test boundary.
-func encode(t *testing.T, value interface{}) []byte {
+func encode(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if nil != err {
@@ -84,7 +84,7 @@ func TestIndex(t *testing.T) {
 					w.WriteHeader(http.StatusNotFound)
 				}
 			})
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				got := client.InspectConfig(context.Background(), key, []byte("{}"))
 				var parsed manifest
 				_ = json.Unmarshal(child, &parsed)
@@ -172,7 +172,7 @@ func TestSingle(t *testing.T) {
 					}
 					respond(w, r, root)
 				})
-				for i := 0; i < 2; i++ {
+				for range 2 {
 					got := client.InspectConfig(context.Background(), key, []byte("{}"))
 					if contentDigest(config) != got.Digest || "" != got.Status {
 						t.Fatalf("image: %+v", got)
@@ -391,7 +391,7 @@ func TestConcurrentRoot(t *testing.T) {
 	var workers, started sync.WaitGroup
 	started.Add(4)
 	workers.Add(4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		go func() {
 			defer workers.Done()
 			target := key
@@ -583,7 +583,7 @@ func TestAuth(t *testing.T) {
 			case "anonymous":
 				login = credentials{}
 			}
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				configKey := host
 				if "identity" == name {
 					configKey = "https://" + host + "/v1/access-token"
@@ -787,7 +787,7 @@ func TestCooldownAccounts(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	})
 	client.Now = func() time.Time { return now }
-	host := strings.SplitN(key.Ref, "/", 2)[0]
+	host, _, _ := strings.Cut(key.Ref, "/")
 	for _, username := range []string{"one", "two", "one"} {
 		if got := client.InspectConfig(context.Background(), key, authConfig(host, credentials{Username: username, Password: "secret"})); nil == got.Cooldown {
 			t.Fatalf("missing cooldown: %+v", got)
@@ -1047,18 +1047,16 @@ func TestConcurrent(t *testing.T) {
 		}
 	})
 	var workers sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for j := 0; j < 5; j++ {
+	for range 4 {
+		workers.Go(func() {
+			for range 5 {
 				got := client.InspectConfig(context.Background(), key, []byte("{}"))
 				if "" != got.Status {
 					t.Errorf("image: %+v", got)
 				}
 				_ = client.Cooldowns()
 			}
-		}()
+		})
 	}
 	workers.Wait()
 }
