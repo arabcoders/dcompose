@@ -55,14 +55,17 @@ func relayRegistry(ctx context.Context, input protocol.RegistryRequest, transpor
 		}
 		return protocol.RegistryResponse{Error: registryTransportError(err, input)}, nil
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	output := protocol.RegistryResponse{Status: response.StatusCode, Header: response.Header.Clone()}
 	if http.MethodHead == input.Method {
 		return output, nil
 	}
 	output.Body, err = io.ReadAll(io.LimitReader(response.Body, registryResponseLimit+1))
 	if nil != err {
-		return protocol.RegistryResponse{}, fault(http.StatusBadGateway, "Could not read registry response: "+registryTransportError(err, input))
+		return protocol.RegistryResponse{}, fault(
+			http.StatusBadGateway,
+			"Could not read registry response: "+registryTransportError(err, input),
+		)
 	}
 	if registryResponseLimit < len(output.Body) {
 		return protocol.RegistryResponse{}, fault(http.StatusBadGateway, "Registry response body exceeds 8 MiB.")
@@ -72,8 +75,7 @@ func relayRegistry(ctx context.Context, input protocol.RegistryRequest, transpor
 
 // Remove URL wrappers and request secrets before a transport failure leaves the node.
 func registryTransportError(err error, input protocol.RegistryRequest) string {
-	var addressError *url.Error
-	if errors.As(err, &addressError) {
+	if addressError, ok := errors.AsType[*url.Error](err); ok {
 		err = addressError.Err
 	}
 	message := err.Error()

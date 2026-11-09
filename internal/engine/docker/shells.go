@@ -44,9 +44,35 @@ func (d *Docker) ResolveContainer(ctx context.Context, s engine.Stack, reference
 	output, stderr, err := d.run(ctx, command(s.Dir, "inspect", "--type", "container", "--", reference))
 	if nil != err {
 		if detail := strings.TrimSpace(string(stderr)); "" != detail {
-			slog.Error(fmt.Sprintf("Could not inspect Docker container %q in stack %q for a shell: %v: %s", reference, s.Name, err, detail), "runtime", "docker", "command", "docker inspect", "stack", s.Name, "container", reference, "error", err, "stderr", detail)
+			slog.Error(
+				fmt.Sprintf("Could not inspect Docker container %q in stack %q for a shell: %v: %s", reference, s.Name, err, detail),
+				"runtime",
+				"docker",
+				"command",
+				"docker inspect",
+				"stack",
+				s.Name,
+				"container",
+				reference,
+				"error",
+				err,
+				"stderr",
+				detail,
+			)
 		} else {
-			slog.Error(fmt.Sprintf("Could not inspect Docker container %q in stack %q for a shell: %v", reference, s.Name, err), "runtime", "docker", "command", "docker inspect", "stack", s.Name, "container", reference, "error", err)
+			slog.Error(
+				fmt.Sprintf("Could not inspect Docker container %q in stack %q for a shell: %v", reference, s.Name, err),
+				"runtime",
+				"docker",
+				"command",
+				"docker inspect",
+				"stack",
+				s.Name,
+				"container",
+				reference,
+				"error",
+				err,
+			)
 		}
 		return "", &engine.Error{Code: 404, Message: "container not found"}
 	}

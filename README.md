@@ -1,6 +1,9 @@
 # DCompose
 
 ![Build Status](https://github.com/arabcoders/dcompose/actions/workflows/main.yml/badge.svg)
+![MIT License](https://img.shields.io/github/license/arabcoders/dcompose.svg)
+![Docker Pulls](https://img.shields.io/docker/pulls/arabcoders/dcompose.svg)
+![GHCR Pulls](https://ghcr-badge.elias.eu.org/shield/arabcoders/dcompose/dcompose)
 
 DCompose manages your compose stacks on local and remote hosts from one web interface. The project is
 inspired by [Dockge](https://github.com/louislam/dockge).
@@ -22,9 +25,11 @@ Only `dagent` needs access to Docker or Podman.
 On Linux, run the installer and choose server, node, or both:
 
 ```sh
-curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/master/install.sh -o install.sh
+curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/HEAD/install.sh -o install.sh
 bash install.sh
 ```
+
+The installer previews commands by default. Review them, then run `bash install.sh --execute` to install.
 
 See [Installation](installation.md) for requirements. For manual setup, use the Docker instructions below or the
 [native and Podman instructions](packaging/README.md).
@@ -106,6 +111,6 @@ is not good fit for you. Build your own using technologies you approve of.
 
 ## Other projects
 
-- [YTPTube](https://github.com/arabcoders/ytptube): Download manager and automation interface for yt-dlp.
-- [WatchState](https://github.com/arabcoders/watchstate): Sync play states between media servers without third-party services.
-- [Millwright](https://github.com/arabcoders/millwright): automation interface for FFmpeg.
+* [WatchState](https://github.com/arabcoders/watchstate): Sync your media servers without relying on 3rd parties.
+* [YTPTube](https://github.com/arabcoders/ytptube): Download manager and automation interface for yt-dlp.
+* [Millwright](https://github.com/arabcoders/millwright): Automation interface for FFmpeg.

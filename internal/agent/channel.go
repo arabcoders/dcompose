@@ -27,9 +27,21 @@ func (a *agent) channel(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, nil)
 	if nil != err {
 		if context.Canceled == r.Context().Err() {
-			slog.Debug(fmt.Sprintf("DCompose connection setup from %s was canceled: %v", r.RemoteAddr, err), "peer", r.RemoteAddr, "error", err)
+			slog.Debug(
+				fmt.Sprintf("DCompose connection setup from %s was canceled: %v", r.RemoteAddr, err),
+				"peer",
+				r.RemoteAddr,
+				"error",
+				err,
+			)
 		} else {
-			slog.Error(fmt.Sprintf("Could not establish an authenticated DCompose connection from %s: %v", r.RemoteAddr, err), "peer", r.RemoteAddr, "error", err)
+			slog.Error(
+				fmt.Sprintf("Could not establish an authenticated DCompose connection from %s: %v", r.RemoteAddr, err),
+				"peer",
+				r.RemoteAddr,
+				"error",
+				err,
+			)
 		}
 		return
 	}
@@ -43,7 +55,13 @@ func (a *agent) channel(w http.ResponseWriter, r *http.Request) {
 		_ = conn.CloseNow()
 		workers.Wait()
 	}()
-	slog.Debug(fmt.Sprintf("DCompose peer %s connected and authenticated to node %q.", r.RemoteAddr, a.config.Global.NodeID), "peer", r.RemoteAddr, "node", a.config.Global.NodeID)
+	slog.Debug(
+		fmt.Sprintf("DCompose peer %s connected and authenticated to node %q.", r.RemoteAddr, a.config.Global.NodeID),
+		"peer",
+		r.RemoteAddr,
+		"node",
+		a.config.Global.NodeID,
+	)
 
 	outgoing := make(chan protocol.ChannelMessage, 64)
 	commands := make(chan protocol.ChannelMessage, 64)
@@ -64,7 +82,13 @@ func (a *agent) channel(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			default:
-				slog.Warn(fmt.Sprintf("Closing DCompose connection from %s because its %d-command buffer is full.", r.RemoteAddr, cap(commands)), "peer", r.RemoteAddr, "capacity", cap(commands))
+				slog.Warn(
+					fmt.Sprintf("Closing DCompose connection from %s because its %d-command buffer is full.", r.RemoteAddr, cap(commands)),
+					"peer",
+					r.RemoteAddr,
+					"capacity",
+					cap(commands),
+				)
 				return
 			}
 		}
@@ -98,7 +122,17 @@ func (a *agent) channel(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-subscriber.done:
-			slog.Warn(fmt.Sprintf("Closing DCompose connection from %s because its %d-status-update buffer is full.", r.RemoteAddr, cap(subscriber.events)), "peer", r.RemoteAddr, "capacity", cap(subscriber.events))
+			slog.Warn(
+				fmt.Sprintf(
+					"Closing DCompose connection from %s because its %d-status-update buffer is full.",
+					r.RemoteAddr,
+					cap(subscriber.events),
+				),
+				"peer",
+				r.RemoteAddr,
+				"capacity",
+				cap(subscriber.events),
+			)
 			return
 		case e := <-subscriber.events:
 			if !write(protocol.ChannelMessage{Type: "event", Event: e.name, Payload: e.data}) {
@@ -133,21 +167,53 @@ func (a *agent) channelError(ctx context.Context, peer, operation string, err er
 	}
 	status := websocket.CloseStatus(err)
 	if websocket.StatusNormalClosure == status || websocket.StatusGoingAway == status {
-		slog.Debug(fmt.Sprintf("DCompose peer %s disconnected from node %q: WebSocket closed with code %d (%s).", peer, a.config.Global.NodeID, status, status.String()), "peer", peer, "node", a.config.Global.NodeID)
+		slog.Debug(
+			fmt.Sprintf(
+				"DCompose peer %s disconnected from node %q: WebSocket closed with code %d (%s).",
+				peer,
+				a.config.Global.NodeID,
+				status,
+				status.String(),
+			),
+			"peer",
+			peer,
+			"node",
+			a.config.Global.NodeID,
+		)
 		return
 	}
 	if errors.Is(err, io.EOF) {
-		slog.Info(fmt.Sprintf("DCompose peer %s disconnected from node %q without a WebSocket close handshake.", peer, a.config.Global.NodeID), "peer", peer, "node", a.config.Global.NodeID)
+		slog.Info(
+			fmt.Sprintf("DCompose peer %s disconnected from node %q without a WebSocket close handshake.", peer, a.config.Global.NodeID),
+			"peer",
+			peer,
+			"node",
+			a.config.Global.NodeID,
+		)
 		return
 	}
 	detail := err.Error()
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		detail = "connection ended during an incomplete WebSocket message"
 	}
-	slog.Warn(fmt.Sprintf("DCompose connection from %s to node %q failed while %s: %s", peer, a.config.Global.NodeID, operation, detail), "peer", peer, "node", a.config.Global.NodeID, "error", err)
+	slog.Warn(
+		fmt.Sprintf("DCompose connection from %s to node %q failed while %s: %s", peer, a.config.Global.NodeID, operation, detail),
+		"peer",
+		peer,
+		"node",
+		a.config.Global.NodeID,
+		"error",
+		err,
+	)
 }
 
-func (a *agent) channelCommands(ctx context.Context, peer string, commands <-chan protocol.ChannelMessage, outgoing chan<- protocol.ChannelMessage, cancel context.CancelFunc) {
+func (a *agent) channelCommands(
+	ctx context.Context,
+	peer string,
+	commands <-chan protocol.ChannelMessage,
+	outgoing chan<- protocol.ChannelMessage,
+	cancel context.CancelFunc,
+) {
 	attached := make(map[string]context.CancelFunc)
 	type relayDelivery struct {
 		op   *operation
@@ -181,9 +247,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 			relay = &relayDelivery{op: op}
 			relays[key] = relay
 		}
-		streams.Add(1)
-		go func() {
-			defer streams.Done()
+		streams.Go(func() {
 			defer op.unsubscribe(subscriber)
 			send := func(e streamEvent) bool {
 				terminal := "operation.done" == e.name
@@ -218,7 +282,26 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 				case <-streamCtx.Done():
 					return
 				case <-subscriber.done:
-					slog.Warn(fmt.Sprintf("Closing DCompose connection from %s because the %d-update buffer for %s operation %s on stack %q is full.", peer, cap(subscriber.events), op.Action, op.ID, op.Stack), "peer", peer, "operation", op.ID, "stack", op.Stack, "action", op.Action, "capacity", cap(subscriber.events))
+					slog.Warn(
+						fmt.Sprintf(
+							"Closing DCompose connection from %s because the %d-update buffer for %s operation %s on stack %q is full.",
+							peer,
+							cap(subscriber.events),
+							op.Action,
+							op.ID,
+							op.Stack,
+						),
+						"peer",
+						peer,
+						"operation",
+						op.ID,
+						"stack",
+						op.Stack,
+						"action",
+						op.Action,
+						"capacity",
+						cap(subscriber.events),
+					)
 					cancel()
 					return
 				case e := <-subscriber.events:
@@ -227,7 +310,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					}
 				}
 			}
-		}()
+		})
 	}
 	for {
 		select {
@@ -272,7 +355,14 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 				continue
 			}
 			if "operation.attach" == message.Type {
-				send(protocol.ChannelMessage{Type: "stream.error", Stream: message.Stream, Error: "operation streams are not available", Status: 404})
+				send(
+					protocol.ChannelMessage{
+						Type:   "stream.error",
+						Stream: message.Stream,
+						Error:  "operation streams are not available",
+						Status: 404,
+					},
+				)
 				continue
 			}
 			if "relay.attach" == message.Type || "logs.attach" == message.Type {
@@ -300,9 +390,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					}
 					streamCtx, detach := context.WithCancel(ctx)
 					attached[key] = detach
-					streams.Add(1)
-					go func() {
-						defer streams.Done()
+					streams.Go(func() {
 						err := a.streamLogs(streamCtx, message.Resource, func(e streamEvent) bool {
 							select {
 							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
@@ -313,13 +401,12 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 						})
 						if nil != err && nil == streamCtx.Err() {
 							code := 502
-							var apiErr *apiError
-							if errors.As(err, &apiErr) {
+							if apiErr, ok := errors.AsType[*apiError](err); ok {
 								code = apiErr.code
 							}
 							send(protocol.ChannelMessage{Type: "stream.error", Stream: message.Stream, Error: err.Error(), Status: code})
 						}
-					}()
+					})
 				}
 				continue
 			}
@@ -345,9 +432,7 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 					attach("shell:"+message.Shell, s.op, protocol.ChannelMessage{Type: "shell.event", Shell: message.Shell})
 				}
 				s.requestClose()
-				streams.Add(1)
-				go func() {
-					defer streams.Done()
+				streams.Go(func() {
 					select {
 					case <-s.done:
 					case <-ctx.Done():
@@ -367,14 +452,39 @@ func (a *agent) channelCommands(ctx context.Context, peer string, commands <-cha
 						}
 					}
 					if nil != cleanupErr {
-						slog.Error(fmt.Sprintf("Could not close shell %s in container %q of stack %q for DCompose peer %s: %v", s.op.ID, s.container, s.op.Stack, peer, cleanupErr), "shell", s.op.ID, "stack", s.op.Stack, "container", s.container, "peer", peer, "error", cleanupErr)
-						send(protocol.ChannelMessage{Type: "shell.error", Shell: message.Shell, Error: "shell cleanup failed. Retry closing the shell when the container engine is available"})
+						slog.Error(
+							fmt.Sprintf(
+								"Could not close shell %s in container %q of stack %q for DCompose peer %s: %v",
+								s.op.ID,
+								s.container,
+								s.op.Stack,
+								peer,
+								cleanupErr,
+							),
+							"shell",
+							s.op.ID,
+							"stack",
+							s.op.Stack,
+							"container",
+							s.container,
+							"peer",
+							peer,
+							"error",
+							cleanupErr,
+						)
+						send(
+							protocol.ChannelMessage{
+								Type:  "shell.error",
+								Shell: message.Shell,
+								Error: "shell cleanup failed. Retry closing the shell when the container engine is available",
+							},
+						)
 					}
 					if completed {
 						e := event("operation.done", s.op.snapshot())
 						send(protocol.ChannelMessage{Type: "shell.event", Shell: message.Shell, Event: e.name, Payload: e.data})
 					}
-				}()
+				})
 			default:
 				err = fault(400, "unsupported channel message")
 			}

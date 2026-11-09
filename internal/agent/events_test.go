@@ -86,7 +86,8 @@ func TestRuntimeProgressive(t *testing.T) {
 			t.Fatalf("pending runtime: %+v", state)
 		}
 	}
-	if strings.Contains(string(data), "SECRET") || strings.Contains(string(data), "compose") || strings.Contains(string(data), "output") || strings.Contains(string(data), `"env"`) {
+	if strings.Contains(string(data), "SECRET") || strings.Contains(string(data), "compose") || strings.Contains(string(data), "output") ||
+		strings.Contains(string(data), `"env"`) {
 		t.Fatalf("unsafe snapshot: %s", data)
 	}
 	data = reader.until(t, "stack.runtime")
@@ -173,7 +174,9 @@ func TestEventFilterBurst(t *testing.T) {
 		t.Fatal("unmanaged events queued")
 	}
 	for i := 0; 1000 > i; i++ {
-		a.runtimeEvent([]byte(`{"Type":"container","Action":"health_status: healthy","Actor":{"Attributes":{"com.docker.compose.project":"demo"}}}`))
+		a.runtimeEvent(
+			[]byte(`{"Type":"container","Action":"health_status: healthy","Actor":{"Attributes":{"com.docker.compose.project":"demo"}}}`),
+		)
 	}
 	if 1 != len(a.events.pending) || !a.events.pending["demo"] {
 		t.Fatal("burst was not coalesced")
@@ -190,7 +193,7 @@ func TestMonitorRecovery(t *testing.T) {
 	if 2 != len(args) {
 		t.Fatalf("missing subscription replay boundary: %s", argv)
 	}
-	boundary := strings.SplitN(args[1], ">", 2)[0]
+	boundary, _, _ := strings.Cut(args[1], ">")
 	if timestamp, err := strconv.ParseFloat(boundary, 64); nil != err || 0 >= timestamp || !strings.Contains(boundary, ".") {
 		t.Fatalf("invalid replay timestamp: %s", boundary)
 	}
@@ -213,7 +216,11 @@ func TestMonitorRecovery(t *testing.T) {
 		t.Fatal("monitor did not restart")
 	}
 	write(t, filepath.Join(fake, "ps"), `[{"State":"running"}]`)
-	write(t, filepath.Join(fake, "events-staged"), `{"Type":"container","Action":"start","Actor":{"Attributes":{"com.docker.compose.project":"demo"}}}`+"\n")
+	write(
+		t,
+		filepath.Join(fake, "events-staged"),
+		`{"Type":"container","Action":"start","Actor":{"Attributes":{"com.docker.compose.project":"demo"}}}`+"\n",
+	)
 	if err := os.Rename(filepath.Join(fake, "events-staged"), filepath.Join(fake, "events-input")); nil != err {
 		t.Fatal(err)
 	}
@@ -370,7 +377,8 @@ func TestOperationEvents(t *testing.T) {
 		Stacks []inventoryRuntime `json:"stacks"`
 	}
 	data := reconnected.until(t, "node.snapshot")
-	if nil != json.Unmarshal(data, &snapshot) || 1 != len(snapshot.Stacks) || !snapshot.Stacks[0].Busy || strings.Contains(string(data), "output") {
+	if nil != json.Unmarshal(data, &snapshot) || 1 != len(snapshot.Stacks) || !snapshot.Stacks[0].Busy ||
+		strings.Contains(string(data), "output") {
 		t.Fatalf("busy snapshot: %s", data)
 	}
 	_ = os.Remove(filepath.Join(fake, "block"))
@@ -398,7 +406,8 @@ func TestRuntimeStatusSafe(t *testing.T) {
 	dir := seed(t, a, "demo", "compose.yaml")
 	write(t, filepath.Join(dir, ".env"), "SECRET=private")
 	w := request(a, "GET", "/stacks/demo/status", "")
-	if 200 != w.Code || strings.Contains(w.Body.String(), "SECRET") || strings.Contains(w.Body.String(), "compose") || strings.Contains(w.Body.String(), `"env"`) {
+	if 200 != w.Code || strings.Contains(w.Body.String(), "SECRET") || strings.Contains(w.Body.String(), "compose") ||
+		strings.Contains(w.Body.String(), `"env"`) {
 		t.Fatalf("unsafe runtime: %s", w.Body)
 	}
 }
@@ -466,7 +475,7 @@ func TestRefreshBound(t *testing.T) {
 }
 
 func TestOperationUTF8(t *testing.T) {
-	op := &operation{operationSnapshot: operationSnapshot{ID: "utf8", Status: "running"}}
+	op := &operation{ID: "utf8", Status: "running"}
 	s := newSubscriber()
 	op.subscribers = map[*eventSubscriber]struct{}{s: {}}
 	text := []byte("日")

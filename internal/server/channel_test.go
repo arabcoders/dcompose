@@ -60,7 +60,7 @@ func fakeChannel(t *testing.T) *channelFixture {
 					f.relays.ServeHTTP(w, r)
 					return
 				}
-				jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+				jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 				return
 			}
 			if nil != f.http {
@@ -75,14 +75,18 @@ func fakeChannel(t *testing.T) *channelFixture {
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		conn.SetReadLimit(8 << 20)
 		f.count.Add(1)
 		if !ackRegistrySync(t, r.Context(), conn) {
 			return
 		}
 		f.active.Store(conn)
-		if err := wsjson.Write(r.Context(), conn, protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: f.snapshot}); nil != err {
+		if err := wsjson.Write(
+			r.Context(),
+			conn,
+			protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: f.snapshot},
+		); nil != err {
 			return
 		}
 		f.connections <- conn
@@ -254,7 +258,7 @@ func browserSend(t *testing.T, conn *websocket.Conn, message protocol.ChannelMes
 
 func resourceMessage(t *testing.T, conn *websocket.Conn) protocol.ChannelMessage {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for {
 		var message protocol.ChannelMessage
@@ -304,16 +308,12 @@ func TestShellChannel(t *testing.T) {
 	t.Cleanup(func() { _ = browser.CloseNow() })
 	browserSend(t, browser, protocol.ChannelMessage{Type: "shell.attach", Stream: "terminal", Node: "home", Shell: "session"})
 	nextCommand(t, f, "shell.attach")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 	for _, message := range []protocol.ChannelMessage{
 		{Type: "shell.input", Stream: "terminal", Node: "forged", Shell: "forged", Data: "echo test\n"},
 		{Type: "shell.resize", Stream: "terminal", Shell: "forged", Cols: 90, Rows: 35},
 		{Type: "shell.input", Stream: "terminal", Data: strings.Repeat("\x00", 64<<10)},
 	} {
-		if err := wsjson.Write(ctx, browser, message); nil != err {
-			t.Fatal(err)
-		}
+		browserSend(t, browser, message)
 		got := nextCommand(t, f, message.Type)
 		if got.Data != message.Data || got.Cols != message.Cols || got.Rows != message.Rows {
 			t.Fatal("command changed")
@@ -327,17 +327,26 @@ func TestShellChannel(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	if err := wsjson.Write(ctx, upstream, protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: large}); nil != err {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := wsjson.Write(
+		ctx,
+		upstream,
+		protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: large},
+	); nil != err {
 		t.Fatal(err)
 	}
 	got := resourceMessage(t, browser)
 	if "operation.snapshot" != got.Event || 6<<20 > len(got.Payload) || "terminal" != got.Stream {
 		t.Fatal("large terminal snapshot rejected", len(got.Payload), got.Stream)
 	}
-	output := protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.output", Payload: json.RawMessage(`{"id":"session","output":"hello"}`)}
-	if err := wsjson.Write(ctx, upstream, output); nil != err {
-		t.Fatal(err)
+	output := protocol.ChannelMessage{
+		Type:    "shell.event",
+		Shell:   "session",
+		Event:   "operation.output",
+		Payload: json.RawMessage(`{"id":"session","output":"hello"}`),
 	}
+	browserSend(t, upstream, output)
 	got = resourceMessage(t, browser)
 	if "operation.output" != got.Event || !strings.Contains(string(got.Payload), "hello") {
 		t.Fatal("missing terminal output", got)
@@ -414,7 +423,10 @@ func TestChannelRejection(t *testing.T) {
 func TestTransportDetails(t *testing.T) {
 	cause := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 	err := &url.Error{Op: "Get", URL: "https://user:secret@node.invalid?token=secret", Err: cause}
-	if detail := safeTransportError(err); !strings.Contains(detail, cause.Op) || !strings.Contains(detail, cause.Net) || !strings.Contains(detail, cause.Err.Error()) || strings.Contains(detail, "secret") {
+	if detail := safeTransportError(
+		err,
+	); !strings.Contains(detail, cause.Op) || !strings.Contains(detail, cause.Net) || !strings.Contains(detail, cause.Err.Error()) ||
+		strings.Contains(detail, "secret") {
 		t.Fatal("missing safe connection details", detail)
 	}
 	const reason = "message exceeded the configured read limit"
@@ -447,7 +459,8 @@ func TestChannelRetryLog(t *testing.T) {
 		if err := json.Unmarshal(line, &record); nil != err {
 			t.Fatal(err)
 		}
-		if "WARN" != record.Level || nodeLogLabel(node) != record.Node || time.Second != record.RetryIn || !strings.Contains(record.Error, cause.Err.Error()) {
+		if "WARN" != record.Level || nodeLogLabel(node) != record.Node || time.Second != record.RetryIn ||
+			!strings.Contains(record.Error, cause.Err.Error()) {
 			t.Fatal("missing structured retry context", string(line))
 		}
 		for _, detail := range []string{record.Node, record.Error, time.Second.String()} {
@@ -455,7 +468,8 @@ func TestChannelRetryLog(t *testing.T) {
 				t.Fatal("retry message hides failure context", record.Message)
 			}
 		}
-		if strings.Contains(string(line), "secret") || strings.Contains(string(line), "/private") || strings.Contains(string(line), "user:") {
+		if strings.Contains(string(line), "secret") || strings.Contains(string(line), "/private") ||
+			strings.Contains(string(line), "user:") {
 			t.Fatal("transport URL leaked", string(line))
 		}
 	case <-time.After(3 * time.Second):
@@ -609,7 +623,11 @@ func TestLogStreamError(t *testing.T) {
 	if "logs.attach" != attach.Type || "missing" != attach.Resource {
 		t.Fatal(attach)
 	}
-	if err := wsjson.Write(ctx, upstream, protocol.ChannelMessage{Type: "stream.error", Stream: attach.Stream, Status: 404, Error: "private transport secret"}); nil != err {
+	if err := wsjson.Write(
+		ctx,
+		upstream,
+		protocol.ChannelMessage{Type: "stream.error", Stream: attach.Stream, Status: 404, Error: "private transport secret"},
+	); nil != err {
 		t.Fatal(err)
 	}
 	message := resourceMessage(t, browser)

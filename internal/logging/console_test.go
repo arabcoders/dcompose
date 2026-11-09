@@ -31,7 +31,23 @@ func TestConsoleAttrs(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(NewConsoleHandler(&output, nil))
 	logger = logger.With("node", "local", "msg", "bound").WithGroup("request").With("operation", "deploy").WithGroup("details")
-	logger.Info("diagnostic", "attempt", int64(9_007_199_254_740_993), "maximum", ^uint64(0), "path", `C:\stacks\compose.yaml`, "error", errors.New("failure"), "codes", []int{401, 403}, "automatic", true, slog.Group("nested", "value", 2), slog.Group("", "inline", 3))
+	logger.Info(
+		"diagnostic",
+		"attempt",
+		int64(9_007_199_254_740_993),
+		"maximum",
+		^uint64(0),
+		"path",
+		`C:\stacks\compose.yaml`,
+		"error",
+		errors.New("failure"),
+		"codes",
+		[]int{401, 403},
+		"automatic",
+		true,
+		slog.Group("nested", "value", 2),
+		slog.Group("", "inline", 3),
+	)
 	for _, attr := range []string{`node=local`, `msg=bound`, `request.operation=deploy`, `request.details.attempt=9007199254740993`, `request.details.maximum=18446744073709551615`, `request.details.path=C:\stacks\compose.yaml`, `request.details.error=failure`, `request.details.codes="[401 403]"`, `request.details.automatic=true`, `request.details.nested.value=2`, `request.details.inline=3`} {
 		if !strings.Contains(output.String(), " "+attr) {
 			t.Fatalf("missing attribute %q: %s", attr, output.String())
@@ -71,9 +87,7 @@ func TestConsoleConcurrent(t *testing.T) {
 	stamp := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	var workers sync.WaitGroup
 	for worker := 0; 8 > worker; worker++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			bound := handler.WithAttrs([]slog.Attr{slog.Int("worker", worker)}).WithGroup("entry")
 			for index := 0; 20 > index; index++ {
 				record := slog.NewRecord(stamp, slog.LevelInfo, fmt.Sprintf(`node "%d" path "C:\%d"`, worker, index), 0)
@@ -82,7 +96,7 @@ func TestConsoleConcurrent(t *testing.T) {
 					t.Error(err)
 				}
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
@@ -95,7 +109,13 @@ func TestConsoleConcurrent(t *testing.T) {
 	}
 	for worker := 0; 8 > worker; worker++ {
 		for index := 0; 20 > index; index++ {
-			expected := fmt.Sprintf(`2026-10-29T12:00:00Z INFO node "%d" path "C:\%d" worker=%d entry.index=%d`, worker, index, worker, index)
+			expected := fmt.Sprintf(
+				`2026-10-29T12:00:00Z INFO node "%d" path "C:\%d" worker=%d entry.index=%d`,
+				worker,
+				index,
+				worker,
+				index,
+			)
 			if 1 != actual[expected] {
 				t.Fatalf("mixed or missing line: %q", expected)
 			}

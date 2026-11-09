@@ -32,7 +32,13 @@ func applyRegistryFixture(t *testing.T, a *agent) {
 
 func registrySnapshot() protocol.RegistrySync {
 	return protocol.RegistrySync{Revision: "revision-1", Registries: []protocol.RegistryCredential{
-		{ID: "background", Registry: "docker.io", Label: "Checks", Auth: loginAuth("background", "background-secret"), BackgroundChecks: true},
+		{
+			ID:               "background",
+			Registry:         "docker.io",
+			Label:            "Checks",
+			Auth:             loginAuth("background", "background-secret"),
+			BackgroundChecks: true,
+		},
 		{ID: "pull", Registry: "docker.io", Auth: loginAuth("pull", "pull-secret")},
 		{ID: "token", Registry: "git.example.test", Auth: map[string]string{"identitytoken": "identity-secret"}},
 	}}
@@ -107,9 +113,26 @@ func TestRegistryViews(t *testing.T) {
 func TestRegistryKeys(t *testing.T) {
 	credentials := []protocol.RegistryCredential{
 		{ID: "hub", Registry: "https://index.docker.io/v1/", Auth: loginAuth("hub", "hub-secret"), BackgroundChecks: true},
-		{ID: "access", Registry: "https://index.docker.io/v1/access-token", Auth: map[string]string{"identitytoken": "access-secret"}, BackgroundChecks: true},
+		{
+			ID:               "access",
+			Registry:         "https://index.docker.io/v1/access-token",
+			Auth:             map[string]string{"identitytoken": "access-secret"},
+			BackgroundChecks: true,
+		},
 		{ID: "refresh", Registry: "https://index.docker.io/v1/refresh-token", Auth: map[string]string{"registrytoken": "refresh-secret"}},
-		{ID: "git", Registry: "git.example.test", Auth: map[string]string{"auth": "original-auth", "username": "git", "password": "git-secret", "email": "git@example.com", "serveraddress": "git.example.test", "identitytoken": "identity", "registrytoken": "bearer"}},
+		{
+			ID:       "git",
+			Registry: "git.example.test",
+			Auth: map[string]string{
+				"auth":          "original-auth",
+				"username":      "git",
+				"password":      "git-secret",
+				"email":         "git@example.com",
+				"serveraddress": "git.example.test",
+				"identitytoken": "identity",
+				"registrytoken": "bearer",
+			},
+		},
 	}
 	background, pull, err := registryConfigs(credentials)
 	if nil != err || 2 != len(background.Auths) || 4 != len(pull.Auths) {
@@ -142,13 +165,21 @@ func TestRegistryKeys(t *testing.T) {
 	if nil != err || nil != json.Unmarshal(data, &restored) || !maps.Equal(credentials[3].Auth, restored.Registries[3].Auth) {
 		t.Fatal("private snapshot changed native auth")
 	}
-	if "access-secret" != pull.Auths[credentials[1].Registry]["identitytoken"] || "refresh-secret" != pull.Auths[credentials[2].Registry]["registrytoken"] {
+	if "access-secret" != pull.Auths[credentials[1].Registry]["identitytoken"] ||
+		"refresh-secret" != pull.Auths[credentials[2].Registry]["registrytoken"] {
 		t.Fatal("native token representation was lost")
 	}
 }
 
 func TestRegistryNativeLogin(t *testing.T) {
-	auth := map[string]string{"username": "native", "password": "password:token", "email": "native@example.com", "serveraddress": "native.example", "identitytoken": "identity", "registrytoken": "bearer"}
+	auth := map[string]string{
+		"username":      "native",
+		"password":      "password:token",
+		"email":         "native@example.com",
+		"serveraddress": "native.example",
+		"identitytoken": "identity",
+		"registrytoken": "bearer",
+	}
 	credentials := []protocol.RegistryCredential{{ID: "native", Registry: "native.example", Auth: auth, BackgroundChecks: true}}
 	background, pull, err := registryConfigs(credentials)
 	if nil != err {
@@ -192,7 +223,10 @@ func TestRegistryPersistence(t *testing.T) {
 	if err := restarted.initRegistries(dir); nil != err || a.pullConfigDir() != restarted.pullConfigDir() {
 		t.Fatalf("restore: %v", err)
 	}
-	if !maps.Equal(readDockerConfig(t, filepath.Join(restarted.pullConfigDir(), "config.json")).Auths["https://index.docker.io/v1/"], loginAuth("pull", "pull-secret")) {
+	if !maps.Equal(
+		readDockerConfig(t, filepath.Join(restarted.pullConfigDir(), "config.json")).Auths["https://index.docker.io/v1/"],
+		loginAuth("pull", "pull-secret"),
+	) {
 		t.Fatal("restart lost managed pull credentials")
 	}
 	if err := a.applyRegistries(protocol.RegistrySync{Revision: "empty", Registries: []protocol.RegistryCredential{}}); nil != err {
@@ -238,7 +272,8 @@ func TestRegistryChannel(t *testing.T) {
 			}
 			if valid {
 				var applied protocol.RegistryApplied
-				if "registry.applied" != reply.Type || nil != json.Unmarshal(reply.Payload, &applied) || snapshot.Revision != applied.Revision {
+				if "registry.applied" != reply.Type || nil != json.Unmarshal(reply.Payload, &applied) ||
+					snapshot.Revision != applied.Revision {
 					t.Fatalf("ack: %+v", reply)
 				}
 				if 0 == len(readDockerConfig(t, filepath.Join(a.pullConfigDir(), "config.json")).Auths) {

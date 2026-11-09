@@ -18,7 +18,11 @@ func TestSchedulingLabels(t *testing.T) {
 		{`null`, "", false},
 	} {
 		var service engine.Service
-		if err := ApplyLabels(&service, []byte(test.data)); nil != err || test.interval != service.CheckInterval || test.auto != service.AutoUpdate {
+		if err := ApplyLabels(
+			&service,
+			[]byte(test.data),
+		); nil != err || test.interval != service.CheckInterval ||
+			test.auto != service.AutoUpdate {
 			t.Fatalf("labels: %+v %v", service, err)
 		}
 	}

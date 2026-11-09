@@ -57,7 +57,9 @@ func (o *nodeLogOutput) next(t *testing.T) map[string]json.RawMessage {
 func TestNodeLogs(t *testing.T) {
 	output := captureNodeLogs(t, slog.LevelDebug)
 	channel := &nodeChannel{id: "home", node: NodeConfig{Name: "Home"}, ctx: context.Background()}
-	payload := json.RawMessage(`{"entries":[{"time":"2026-10-29T12:00:00.123456789Z","level":"ERROR","msg":"diagnostic","attrs":{"node_id":"forged","node_name":"forged","_from_node":false,"stack":"demo","service":"web","operation":"job","image":"example:latest","stderr":"registry denied","error":"manifest failure","attempt":9007199254740993,"automatic":true,"details":{"registry":"example","codes":[401,403]}}}]}`)
+	payload := json.RawMessage(
+		`{"entries":[{"time":"2026-10-29T12:00:00.123456789Z","level":"ERROR","msg":"diagnostic","attrs":{"node_id":"forged","node_name":"forged","_from_node":false,"stack":"demo","service":"web","operation":"job","image":"example:latest","stderr":"registry denied","error":"manifest failure","attempt":9007199254740993,"automatic":true,"details":{"registry":"example","codes":[401,403]}}}]}`,
+	)
 	if err := (&Server{}).nodeLogs(channel, payload); nil != err {
 		t.Fatal(err)
 	}
@@ -77,7 +79,8 @@ func TestNodeLogs(t *testing.T) {
 		Registry string `json:"registry"`
 		Codes    []int  `json:"codes"`
 	}
-	if nil != json.Unmarshal(record["details"], &details) || "example" != details.Registry || 2 != len(details.Codes) || 401 != details.Codes[0] {
+	if nil != json.Unmarshal(record["details"], &details) || "example" != details.Registry || 2 != len(details.Codes) ||
+		401 != details.Codes[0] {
 		t.Fatalf("nested attrs lost: %s", record["details"])
 	}
 }
@@ -85,7 +88,10 @@ func TestNodeLogs(t *testing.T) {
 func TestNodeLogLevel(t *testing.T) {
 	output := captureNodeLogs(t, slog.LevelWarn)
 	channel := &nodeChannel{id: "home", ctx: context.Background()}
-	if err := (&Server{}).nodeLogs(channel, json.RawMessage(`{"entries":[{"level":"DEBUG"},{"level":"INFO"},{"level":"WARN"}]}`)); nil != err {
+	if err := (&Server{}).nodeLogs(
+		channel,
+		json.RawMessage(`{"entries":[{"level":"DEBUG"},{"level":"INFO"},{"level":"WARN"}]}`),
+	); nil != err {
 		t.Fatal(err)
 	}
 	if `"WARN"` != string(output.next(t)["level"]) || 0 != len(output.lines) {
@@ -109,12 +115,15 @@ func TestChannelNodeLogs(t *testing.T) {
 	t.Cleanup(func() { s.hubMu.Lock(); delete(s.watchers, frames); s.hubMu.Unlock() })
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	payload := json.RawMessage(`{"entries":[{"time":"2026-10-29T12:00:00.123456789Z","level":"ERROR","msg":"diagnostic","source":{"file":"node.go","function":"node.check","line":42},"attrs":{"image":"example:latest","stderr":"registry denied\nsecond line","node_id":"forged","_node_source":{"file":"forged"}}}]}`)
+	payload := json.RawMessage(
+		`{"entries":[{"time":"2026-10-29T12:00:00.123456789Z","level":"ERROR","msg":"diagnostic","source":{"file":"node.go","function":"node.check","line":42},"attrs":{"image":"example:latest","stderr":"registry denied\nsecond line","node_id":"forged","_node_source":{"file":"forged"}}}]}`,
+	)
 	if err := wsjson.Write(ctx, conn, protocol.ChannelMessage{Type: "node.logs", Node: "forged", Payload: payload}); nil != err {
 		t.Fatal(err)
 	}
 	record := output.next(t)
-	if `"home"` != string(record["node_id"]) || `"Home"` != string(record["node_name"]) || `"registry denied\nsecond line"` != string(record["stderr"]) {
+	if `"home"` != string(record["node_id"]) || `"Home"` != string(record["node_name"]) ||
+		`"registry denied\nsecond line"` != string(record["stderr"]) {
 		t.Fatalf("channel log: %+v", record)
 	}
 	select {
@@ -129,7 +138,12 @@ func TestChannelNodeLogs(t *testing.T) {
 		t.Fatalf("central node history: %+v", page)
 	}
 	entry := page.Entries[0]
-	if "node.home" != entry.Logger || "error" != entry.Level || `"home"` != string(entry.Fields["node_id"]) || `"Home"` != string(entry.Fields["node_name"]) || nil == entry.Source || "node.go" != entry.Source.File || 42 != entry.Source.Line || "2026-10-29T12:00:00.123456789Z" != entry.Timestamp.Format(time.RFC3339Nano) {
+	if "node.home" != entry.Logger || "error" != entry.Level || `"home"` != string(entry.Fields["node_id"]) ||
+		`"Home"` != string(entry.Fields["node_name"]) ||
+		nil == entry.Source ||
+		"node.go" != entry.Source.File ||
+		42 != entry.Source.Line ||
+		"2026-10-29T12:00:00.123456789Z" != entry.Timestamp.Format(time.RFC3339Nano) {
 		t.Fatalf("central node entry: %+v", entry)
 	}
 	if _, exists := entry.Fields["_from_node"]; exists {

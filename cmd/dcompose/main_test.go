@@ -30,7 +30,10 @@ func TestLogLevel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("DCOMPOSE_LOG_LEVEL", test.environment)
 			path := filepath.Join(t.TempDir(), "dcompose.toml")
-			data := fmt.Sprintf("[global]\nunknown = true\nlog_level = %q\n[auth]\nusername = 'admin'\npassword = 'invalid'\n", test.configured)
+			data := fmt.Sprintf(
+				"[global]\nunknown = true\nlog_level = %q\n[auth]\nusername = 'admin'\npassword = 'invalid'\n",
+				test.configured,
+			)
 			if err := os.WriteFile(path, []byte(data), 0600); nil != err {
 				t.Fatal(err)
 			}
@@ -39,13 +42,14 @@ func TestLogLevel(t *testing.T) {
 				args = append(args, "--log-level", test.override)
 			}
 			output, err := exec.Command(binary, args...).CombinedOutput()
-			if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") || !strings.Contains(string(output), "config="+path) {
+			if nil == err || !strings.Contains(string(output), " ERROR ") || !strings.Contains(string(output), "error=") ||
+				!strings.Contains(string(output), "config="+path) {
 				t.Fatalf("startup error: %v: %s", err, output)
 			}
 			if test.warn != strings.Contains(string(output), " WARN ") {
 				t.Fatalf("warning filter: %s", output)
 			}
-			for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 				parts := strings.SplitN(line, " ", 3)
 				if 3 != len(parts) {
 					t.Fatal("missing log message", line)
@@ -94,7 +98,7 @@ func TestPasswordConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = write.Close()
-			defer read.Close()
+			defer func() { _ = read.Close() }()
 			oldArgs, oldFlags, oldStdin := os.Args, flag.CommandLine, os.Stdin
 			oldLogger := slog.Default()
 			t.Cleanup(func() {

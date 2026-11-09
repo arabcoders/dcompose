@@ -55,8 +55,8 @@ func TestContainerInfoFormat(t *testing.T) {
 	started := created.Add(469 * time.Millisecond)
 	for _, native := range []bool{false, true} {
 		var container struct {
-			Created interface{}
-			State   struct{ StartedAt interface{} }
+			Created any
+			State   struct{ StartedAt any }
 			Config  struct{ Labels map[string]string }
 		}
 		if native {
@@ -65,7 +65,7 @@ func TestContainerInfoFormat(t *testing.T) {
 			container.Created, container.State.StartedAt = created.Format(time.RFC3339Nano), started.Format(time.RFC3339Nano)
 		}
 		container.Config.Labels = map[string]string{"io.dcompose.auto-update": "true", "private": "private-label-value"}
-		format := template.Must(template.New("inspect").Funcs(template.FuncMap{"json": func(value interface{}) (string, error) {
+		format := template.Must(template.New("inspect").Funcs(template.FuncMap{"json": func(value any) (string, error) {
 			data, err := json.Marshal(value)
 			return string(data), err
 		}}).Parse(ContainerInfoFormat))

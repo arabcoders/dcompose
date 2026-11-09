@@ -41,11 +41,31 @@ func TestRegistryAddress(t *testing.T) {
 
 func TestRegistries(t *testing.T) {
 	s := persistedServer(t, nil)
-	auth := map[string]string{"auth": base64.StdEncoding.EncodeToString([]byte("encoded-user:encoded-password")), "username": "alice", "password": "private-password", "identitytoken": "private-identity", "registrytoken": "private-token", "email": "alice@example.com", "serveraddress": "https://index.docker.io/v1/"}
-	body, _ := json.Marshal(map[string]interface{}{"registries": []registryInput{{Registry: "https://index.docker.io/v1/", Label: "Personal / checks", Auth: auth, BackgroundChecks: true}, {Registry: "registry-1.docker.io", Auth: map[string]string{"registrytoken": "second-token"}}}})
+	auth := map[string]string{
+		"auth":          base64.StdEncoding.EncodeToString([]byte("encoded-user:encoded-password")),
+		"username":      "alice",
+		"password":      "private-password",
+		"identitytoken": "private-identity",
+		"registrytoken": "private-token",
+		"email":         "alice@example.com",
+		"serveraddress": "https://index.docker.io/v1/",
+	}
+	body, _ := json.Marshal(
+		map[string]any{
+			"registries": []registryInput{
+				{Registry: "https://index.docker.io/v1/", Label: "Personal / checks", Auth: auth, BackgroundChecks: true},
+				{Registry: "registry-1.docker.io", Auth: map[string]string{"registrytoken": "second-token"}},
+			},
+		},
+	)
 	w := perform(t, s, "PUT", "/api/settings/registries", string(body))
 	rows := registryRows(t, w)
-	if 2 != len(rows) || rows[0].ID == rows[1].ID || "" == rows[0].ID || "https://index.docker.io/v1/" != rows[0].Registry || !rows[0].HasAuth || !rows[0].BackgroundChecks || rows[1].BackgroundChecks || "Personal / checks" != rows[0].Label || "alice" != rows[0].Username {
+	if 2 != len(rows) || rows[0].ID == rows[1].ID || "" == rows[0].ID || "https://index.docker.io/v1/" != rows[0].Registry ||
+		!rows[0].HasAuth ||
+		!rows[0].BackgroundChecks ||
+		rows[1].BackgroundChecks ||
+		"Personal / checks" != rows[0].Label ||
+		"alice" != rows[0].Username {
 		t.Fatal("registry metadata not retained")
 	}
 	for field, value := range rows[0].Auth {
@@ -65,7 +85,8 @@ func TestRegistries(t *testing.T) {
 		}
 	}
 	loaded, err := LoadConfig(s.config.path)
-	if nil != err || 2 != len(loaded.Registries) || !maps.Equal(auth, loaded.Registries[0].auth) || "Personal / checks" != loaded.Registries[0].Label {
+	if nil != err || 2 != len(loaded.Registries) || !maps.Equal(auth, loaded.Registries[0].auth) ||
+		"Personal / checks" != loaded.Registries[0].Label {
 		t.Fatal("native registry persistence failed", err)
 	}
 	for _, registry := range loaded.Registries {
@@ -88,17 +109,28 @@ func TestRegistries(t *testing.T) {
 	}
 	// Masked auth fields round-trip without exposing or changing secrets.
 	input := []registryInput{{ID: rows[0].ID, Registry: rows[0].Registry, Label: "", Auth: rows[0].Auth, BackgroundChecks: false}}
-	body, _ = json.Marshal(map[string]interface{}{"registries": input})
+	body, _ = json.Marshal(map[string]any{"registries": input})
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", string(body)))
 	current, _ := s.snapshot()
-	if !maps.Equal(auth, current.Registries[0].auth) || loaded.Registries[0].AuthFile != current.Registries[0].AuthFile || "" != current.Registries[0].Label || current.Registries[0].BackgroundChecks {
+	if !maps.Equal(auth, current.Registries[0].auth) || loaded.Registries[0].AuthFile != current.Registries[0].AuthFile ||
+		"" != current.Registries[0].Label ||
+		current.Registries[0].BackgroundChecks {
 		t.Fatal("blank secret preservation or metadata editing failed")
 	}
 }
 
 func TestRegistryReplace(t *testing.T) {
 	s := persistedServer(t, nil)
-	rows := registryRows(t, perform(t, s, "PUT", "/api/settings/registries", `{"registries":[{"registry":"ghcr.io","auth":{"username":"alice","password":"original-secret"},"background_checks":true}]}`))
+	rows := registryRows(
+		t,
+		perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/registries",
+			`{"registries":[{"registry":"ghcr.io","auth":{"username":"alice","password":"original-secret"},"background_checks":true}]}`,
+		),
+	)
 	id := rows[0].ID
 	old, _ := s.snapshot()
 	for _, body := range []string{
@@ -113,7 +145,10 @@ func TestRegistryReplace(t *testing.T) {
 			t.Fatal("invalid registry replacement accepted")
 		}
 	}
-	body := fmt.Sprintf(`{"registries":[{"id":%q,"registry":"registry.example:5000","auth":{"username":"renamed","password":""},"background_checks":false}]}`, id)
+	body := fmt.Sprintf(
+		`{"registries":[{"id":%q,"registry":"registry.example:5000","auth":{"username":"renamed","password":""},"background_checks":false}]}`,
+		id,
+	)
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", body))
 	current, _ := s.snapshot()
 	if "original-secret" != current.Registries[0].auth["password"] || "alice" != old.Registries[0].auth["username"] {
@@ -136,27 +171,50 @@ func TestRegistryReplace(t *testing.T) {
 
 func TestRegistryLogin(t *testing.T) {
 	s := persistedServer(t, nil)
-	rows := registryRows(t, perform(t, s, "PUT", "/api/settings/registries", `{"registries":[{"registry":"docker.io","auth":{"auth":"YWxpY2U6cGFzczp3b3Jk"}}]}`))
+	rows := registryRows(
+		t,
+		perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/registries",
+			`{"registries":[{"registry":"docker.io","auth":{"auth":"YWxpY2U6cGFzczp3b3Jk"}}]}`,
+		),
+	)
 	if "alice" != rows[0].Username {
 		t.Fatal("encoded username not available for editing")
 	}
 	body := fmt.Sprintf(`{"registries":[{"id":%q,"registry":"docker.io","auth":{"auth":"","username":"bob","password":""}}]}`, rows[0].ID)
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", body))
 	current, _ := s.snapshot()
-	if 1 != len(current.Registries[0].auth) || base64.StdEncoding.EncodeToString([]byte("bob:pass:word")) != current.Registries[0].auth["auth"] {
+	if 1 != len(current.Registries[0].auth) ||
+		base64.StdEncoding.EncodeToString([]byte("bob:pass:word")) != current.Registries[0].auth["auth"] {
 		t.Fatal("username edit did not preserve password or native shape")
 	}
-	body = fmt.Sprintf(`{"registries":[{"id":%q,"registry":"docker.io","auth":{"auth":"","username":"bob","password":"new:password"}}]}`, rows[0].ID)
+	body = fmt.Sprintf(
+		`{"registries":[{"id":%q,"registry":"docker.io","auth":{"auth":"","username":"bob","password":"new:password"}}]}`,
+		rows[0].ID,
+	)
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", body))
 	current, _ = s.snapshot()
-	if 1 != len(current.Registries[0].auth) || base64.StdEncoding.EncodeToString([]byte("bob:new:password")) != current.Registries[0].auth["auth"] {
+	if 1 != len(current.Registries[0].auth) ||
+		base64.StdEncoding.EncodeToString([]byte("bob:new:password")) != current.Registries[0].auth["auth"] {
 		t.Fatal("password replacement failed")
 	}
 }
 
 func TestRegistryDuplicates(t *testing.T) {
 	s := persistedServer(t, nil)
-	rows := registryRows(t, perform(t, s, "PUT", "/api/settings/registries", `{"registries":[{"registry":"docker.io","auth":{"password":"first"}},{"registry":"docker.io","auth":{"password":"second"}}]}`))
+	rows := registryRows(
+		t,
+		perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/registries",
+			`{"registries":[{"registry":"docker.io","auth":{"password":"first"}},{"registry":"docker.io","auth":{"password":"second"}}]}`,
+		),
+	)
 	if 2 != len(rows) || rows[0].ID == rows[1].ID {
 		t.Fatal("distinct logins for the same registry were not retained")
 	}
@@ -164,14 +222,28 @@ func TestRegistryDuplicates(t *testing.T) {
 
 func TestRegistrySaveFailure(t *testing.T) {
 	s := persistedServer(t, nil)
-	rows := registryRows(t, perform(t, s, "PUT", "/api/settings/registries", `{"registries":[{"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":"original-secret"}}]}`))
+	rows := registryRows(
+		t,
+		perform(
+			t,
+			s,
+			"PUT",
+			"/api/settings/registries",
+			`{"registries":[{"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":"original-secret"}}]}`,
+		),
+	)
 	before, _ := s.snapshot()
 	beforeRevision := s.registrySync.Revision
 	s.config.path = t.TempDir()
-	body := fmt.Sprintf(`{"registries":[{"id":%q,"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":"failed-replacement"}}]}`, rows[0].ID)
+	body := fmt.Sprintf(
+		`{"registries":[{"id":%q,"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":"failed-replacement"}}]}`,
+		rows[0].ID,
+	)
 	w := perform(t, s, "PUT", "/api/settings/registries", body)
 	after, _ := s.snapshot()
-	if 500 != w.Code || strings.Contains(w.Body.String(), "failed-replacement") || !reflect.DeepEqual(before.Registries, after.Registries) || beforeRevision != s.registrySync.Revision {
+	if 500 != w.Code || strings.Contains(w.Body.String(), "failed-replacement") ||
+		!reflect.DeepEqual(before.Registries, after.Registries) ||
+		beforeRevision != s.registrySync.Revision {
 		t.Fatal("failed save replaced active registry credentials")
 	}
 	data, err := os.ReadFile(configutil.Path(before.path, strings.TrimPrefix(before.Registries[0].AuthFile, "file:")))
@@ -185,7 +257,16 @@ func TestRegistrySaveFailure(t *testing.T) {
 }
 
 func TestRegistryRevision(t *testing.T) {
-	rows := []RegistryConfig{{ID: "a", Registry: "docker.io", Label: "Checks", auth: map[string]string{"password": "secret"}, AuthFile: "file:first", BackgroundChecks: true}}
+	rows := []RegistryConfig{
+		{
+			ID:               "a",
+			Registry:         "docker.io",
+			Label:            "Checks",
+			auth:             map[string]string{"password": "secret"},
+			AuthFile:         "file:first",
+			BackgroundChecks: true,
+		},
+	}
 	first := registrySnapshot(rows)
 	rows[0].AuthFile = "file:second"
 	if first.Revision != registrySnapshot(rows).Revision {
@@ -197,7 +278,8 @@ func TestRegistryRevision(t *testing.T) {
 	}
 	rows[0].auth["password"] = "secret"
 	rows[0].BackgroundChecks = false
-	if first.Revision == registrySnapshot(rows).Revision || first.Revision == registrySnapshot(nil).Revision || nil == registrySnapshot(nil).Registries {
+	if first.Revision == registrySnapshot(rows).Revision || first.Revision == registrySnapshot(nil).Revision ||
+		nil == registrySnapshot(nil).Registries {
 		t.Fatal("effective settings or empty snapshot revision invalid")
 	}
 }
@@ -206,7 +288,9 @@ func TestRegistryAuthKeys(t *testing.T) {
 	s := persistedServer(t, nil)
 	body := `{"registries":[{"registry":"https://index.docker.io/v1/","auth":{"auth":"hub-secret"},"background_checks":true},{"registry":"https://index.docker.io/v1/access-token","auth":{"identitytoken":"access-secret"}},{"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":"refresh-secret:client-id"},"background_checks":true},{"registry":"registry.example/path","auth":{"registrytoken":"registry-bearer"}}]}`
 	rows := registryRows(t, perform(t, s, "PUT", "/api/settings/registries", body))
-	if 4 != len(rows) || "https://index.docker.io/v1/" != rows[0].Registry || "https://index.docker.io/v1/access-token" != rows[1].Registry || "https://index.docker.io/v1/refresh-token" != rows[2].Registry {
+	if 4 != len(rows) || "https://index.docker.io/v1/" != rows[0].Registry ||
+		"https://index.docker.io/v1/access-token" != rows[1].Registry ||
+		"https://index.docker.io/v1/refresh-token" != rows[2].Registry {
 		t.Fatal("original auth keys not preserved")
 	}
 	loaded, err := LoadConfig(s.config.path)
@@ -214,10 +298,14 @@ func TestRegistryAuthKeys(t *testing.T) {
 		t.Fatal("OAuth auth record persistence failed", err)
 	}
 	before, _ := s.snapshot()
-	body = fmt.Sprintf(`{"registries":[{"id":%q,"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":""},"background_checks":false}]}`, rows[2].ID)
+	body = fmt.Sprintf(
+		`{"registries":[{"id":%q,"registry":"https://index.docker.io/v1/refresh-token","auth":{"password":""},"background_checks":false}]}`,
+		rows[2].ID,
+	)
 	registryRows(t, perform(t, s, "PUT", "/api/settings/registries", body))
 	after, _ := s.snapshot()
-	if 1 != len(after.Registries) || 4 != len(before.Registries) || "refresh-secret:client-id" != after.Registries[0].auth["password"] || after.Registries[0].BackgroundChecks {
+	if 1 != len(after.Registries) || 4 != len(before.Registries) || "refresh-secret:client-id" != after.Registries[0].auth["password"] ||
+		after.Registries[0].BackgroundChecks {
 		t.Fatal("independent auth row editing or deletion failed")
 	}
 }

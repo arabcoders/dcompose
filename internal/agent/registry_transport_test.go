@@ -24,7 +24,8 @@ func TestRegistryRelay(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			fixture := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
-				if method != r.Method || "Bearer registry-token" != r.Header.Get("Authorization") || "application/json" != r.Header.Get("Accept") {
+				if method != r.Method || "Bearer registry-token" != r.Header.Get("Authorization") ||
+					"application/json" != r.Header.Get("Accept") {
 					t.Errorf("registry request: method=%s headers=%v", r.Method, r.Header)
 				}
 				if http.MethodPost == method && "refresh_token=secret" != string(body) {
@@ -37,12 +38,17 @@ func TestRegistryRelay(t *testing.T) {
 				_, _ = io.WriteString(w, "registry limit")
 			}))
 			defer fixture.Close()
-			input := protocol.RegistryRequest{Method: method, URL: fixture.URL + "/v2/repo/manifests/latest", Header: http.Header{"Authorization": {"Bearer registry-token"}, "Accept": {"application/json"}}}
+			input := protocol.RegistryRequest{
+				Method: method,
+				URL:    fixture.URL + "/v2/repo/manifests/latest",
+				Header: http.Header{"Authorization": {"Bearer registry-token"}, "Accept": {"application/json"}},
+			}
 			if http.MethodPost == method {
 				input.Body = []byte("refresh_token=secret")
 			}
 			output, err := relayRegistry(context.Background(), input, fixture.Client().Transport)
-			if nil != err || "" != output.Error || 429 != output.Status || "120" != output.Header.Get("Retry-After") || 2 != len(output.Header.Values("WWW-Authenticate")) {
+			if nil != err || "" != output.Error || 429 != output.Status || "120" != output.Header.Get("Retry-After") ||
+				2 != len(output.Header.Values("WWW-Authenticate")) {
 				t.Fatalf("registry response: %+v error=%v", output, err)
 			}
 			if http.MethodHead == method {
@@ -62,11 +68,19 @@ func TestRegistryRelayRedirect(t *testing.T) {
 		w.WriteHeader(http.StatusFound)
 	}))
 	defer fixture.Close()
-	output, err := relayRegistry(context.Background(), protocol.RegistryRequest{Method: http.MethodGet, URL: fixture.URL}, fixture.Client().Transport)
+	output, err := relayRegistry(
+		context.Background(),
+		protocol.RegistryRequest{Method: http.MethodGet, URL: fixture.URL},
+		fixture.Client().Transport,
+	)
 	if nil != err || 302 != output.Status || "https://must-not-be-contacted.invalid/token" != output.Header.Get("Location") {
 		t.Fatalf("redirect was not preserved: %+v %v", output, err)
 	}
-	output, err = relayRegistry(context.Background(), protocol.RegistryRequest{Method: http.MethodGet, URL: fixture.URL}, http.DefaultTransport)
+	output, err = relayRegistry(
+		context.Background(),
+		protocol.RegistryRequest{Method: http.MethodGet, URL: fixture.URL},
+		http.DefaultTransport,
+	)
 	if nil != err || "" == output.Error || 0 != output.Status {
 		t.Fatalf("untrusted TLS accepted: %+v %v", output, err)
 	}
@@ -90,7 +104,12 @@ func TestRegistryRelayValidation(t *testing.T) {
 }
 
 func TestRegistryRelayFailure(t *testing.T) {
-	input := protocol.RegistryRequest{Method: http.MethodPost, URL: "https://registry.example/token?account=query-secret", Header: http.Header{"Authorization": {"Bearer header-secret"}}, Body: []byte("refresh_token=body-secret")}
+	input := protocol.RegistryRequest{
+		Method: http.MethodPost,
+		URL:    "https://registry.example/token?account=query-secret",
+		Header: http.Header{"Authorization": {"Bearer header-secret"}},
+		Body:   []byte("refresh_token=body-secret"),
+	}
 	transport := registryRelayRoundTripper(func(*http.Request) (*http.Response, error) {
 		return nil, &url.Error{Op: "Post", URL: input.URL, Err: errors.New("connection refused: query-secret header-secret body-secret")}
 	})
@@ -116,9 +135,17 @@ func TestRegistryRelayFailure(t *testing.T) {
 
 func TestRegistryRelayBounds(t *testing.T) {
 	transport := registryRelayRoundTripper(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(strings.Repeat("x", registryResponseLimit+1)))}, nil
+		return &http.Response{
+			StatusCode: 200,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", registryResponseLimit+1))),
+		}, nil
 	})
-	_, err := relayRegistry(context.Background(), protocol.RegistryRequest{Method: http.MethodGet, URL: "https://registry.example"}, transport)
+	_, err := relayRegistry(
+		context.Background(),
+		protocol.RegistryRequest{Method: http.MethodGet, URL: "https://registry.example"},
+		transport,
+	)
 	var failure *apiError
 	if !errors.As(err, &failure) || http.StatusBadGateway != failure.code {
 		t.Fatalf("oversized response: %v", err)

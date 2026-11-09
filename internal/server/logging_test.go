@@ -89,7 +89,11 @@ func TestProxyLogs(t *testing.T) {
 					Message string `json:"message"`
 				} `json:"error"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || w.Code != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), test.detail) {
+			if err := json.Unmarshal(
+				w.Body.Bytes(),
+				&response,
+			); nil != err || w.Code != response.Error.Code || "" == response.Error.Message ||
+				strings.Contains(w.Body.String(), test.detail) {
 				t.Fatal("unexpected public error", w.Body.String())
 			}
 			var record struct {
@@ -103,7 +107,11 @@ func TestProxyLogs(t *testing.T) {
 			if err := json.Unmarshal(output.Bytes(), &record); nil != err {
 				t.Fatal(err, output.String())
 			}
-			if "ERROR" != record.Level || !strings.Contains(record.Node, "Home") || !strings.Contains(record.Node, "https://node.invalid") || "" == record.Operation || test.status != record.Status || test.detail != record.Error {
+			if "ERROR" != record.Level || !strings.Contains(record.Node, "Home") ||
+				!strings.Contains(record.Node, "https://node.invalid") ||
+				"" == record.Operation ||
+				test.status != record.Status ||
+				test.detail != record.Error {
 				t.Fatal("missing structured failure context", output.String())
 			}
 			for _, detail := range []string{"Home", "https://node.invalid", test.detail} {

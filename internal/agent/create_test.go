@@ -25,7 +25,8 @@ func TestCreate(t *testing.T) {
 	var result struct {
 		Name string `json:"name"`
 	}
-	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || "copy" != result.Name || strconv.Itoa(protocol.AgentAPI) != w.Header().Get(protocol.Header) {
+	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &result) || "copy" != result.Name ||
+		strconv.Itoa(protocol.AgentAPI) != w.Header().Get(protocol.Header) {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
 	dir := filepath.Join(a.config.Global.StacksDir, "copy")
@@ -50,7 +51,8 @@ func TestCreate(t *testing.T) {
 	}
 	w = request(a, http.MethodGet, "/stacks/copy", "")
 	var saved stack
-	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &saved) || compose != saved.Compose || env != saved.Env || "draft" != saved.Status {
+	if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &saved) || compose != saved.Compose || env != saved.Env ||
+		"draft" != saved.Status {
 		t.Fatalf("copy not readable: %d %s", w.Code, w.Body)
 	}
 }
@@ -91,7 +93,8 @@ func TestCreateConflict(t *testing.T) {
 				var response struct {
 					Error string `json:"error"`
 				}
-				if 409 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &response) || "" == response.Error || strings.Contains(w.Body.String(), "secret") {
+				if 409 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &response) || "" == response.Error ||
+					strings.Contains(w.Body.String(), "secret") {
 					t.Fatalf("conflict: %d %s", w.Code, w.Body)
 				}
 				for name, want := range files {

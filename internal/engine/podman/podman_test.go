@@ -21,7 +21,12 @@ func testStack() engine.Stack {
 
 func TestCheck(t *testing.T) {
 	infoFixture := readFixture(t, "info.json")
-	wantEnv := []string{"DOCKER_HOST=unix:///run/user/1000/podman/podman.sock", "DOCKER_CONTEXT=", "DOCKER_TLS_VERIFY=", "DOCKER_CERT_PATH="}
+	wantEnv := []string{
+		"DOCKER_HOST=unix:///run/user/1000/podman/podman.sock",
+		"DOCKER_CONTEXT=",
+		"DOCKER_TLS_VERIFY=",
+		"DOCKER_CERT_PATH=",
+	}
 	t.Setenv("DOCKER_CONTEXT", "unrelated-docker")
 	t.Setenv("DOCKER_HOST", "tcp://unrelated-docker:2376")
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
@@ -93,7 +98,9 @@ func TestMountedSocket(t *testing.T) {
 					if !reflect.DeepEqual(want, cmd.Args) {
 						t.Fatalf("info: %+v", cmd)
 					}
-					return []byte(strings.Replace(fixture, `"serviceIsRemote":false`, `"serviceIsRemote":`+strconv.FormatBool(remote), 1)), nil, nil
+					return []byte(
+						strings.Replace(fixture, `"serviceIsRemote":false`, `"serviceIsRemote":`+strconv.FormatBool(remote), 1),
+					), nil, nil
 				}
 				if "docker" != cmd.Program || !reflect.DeepEqual(composeEnv(host), cmd.Env) {
 					t.Fatalf("compose: %+v", cmd)
@@ -272,7 +279,8 @@ func TestEvents(t *testing.T) {
 
 func TestImageRefs(t *testing.T) {
 	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-		if "docker" != cmd.Program || !slices.Contains(cmd.Args, "--images") || !slices.Contains(cmd.Args, "--no-env-resolution") || !slices.Contains(cmd.Env, "DOCKER_CONTEXT=") {
+		if "docker" != cmd.Program || !slices.Contains(cmd.Args, "--images") || !slices.Contains(cmd.Args, "--no-env-resolution") ||
+			!slices.Contains(cmd.Env, "DOCKER_CONTEXT=") {
 			t.Fatalf("images: %+v", cmd)
 		}
 		return []byte("nginx nginx:latest example.com/a:v1"), nil, nil

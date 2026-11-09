@@ -26,7 +26,11 @@ func ValidateDetachedMounts(self SelfContainer, requestFile string, stack Stack)
 			}
 		}
 		if nil == covering || ("bind" != covering.Type && "volume" != covering.Type) || (writable && !covering.RW) {
-			return &Error{Code: 409, Message: "This action requires persistent mounts for the node cache and stack files, with a writable cache. Run it from the host instead.", Cause: fmt.Errorf("path %q is not covered by a shared persistent mount (writable required: %t)", path, writable)}
+			return &Error{
+				Code:    409,
+				Message: "This action requires persistent mounts for the node cache and stack files, with a writable cache. Run it from the host instead.",
+				Cause:   fmt.Errorf("path %q is not covered by a shared persistent mount (writable required: %t)", path, writable),
+			}
 		}
 	}
 	return nil

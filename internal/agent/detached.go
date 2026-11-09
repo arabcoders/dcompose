@@ -34,7 +34,11 @@ func (a *agent) detachedOperation(name, action string) (bool, error) {
 		return false, nil
 	}
 	if nil != a.selfErr {
-		return false, &engine.Error{Code: 503, Message: "Could not identify the node container. Check the DCOMPOSE_AGENT=true label or run this action from the host.", Cause: a.selfErr}
+		return false, &engine.Error{
+			Code:    503,
+			Message: "Could not identify the node container. Check the DCOMPOSE_AGENT=true label or run this action from the host.",
+			Cause:   a.selfErr,
+		}
 	}
 	return nil != a.selfContainer && name == a.selfContainer.Project, nil
 }
@@ -47,7 +51,11 @@ func (a *agent) initDetached(cacheDir string) {
 	a.detachedExecutor = executor
 	a.selfContainer, a.selfErr = executor.SelfContainer(a.ctx)
 	if nil != a.selfErr {
-		slog.Warn(fmt.Sprintf("Could not identify this node's container: %v. Lifecycle actions are disabled.", a.selfErr), "error", a.selfErr)
+		slog.Warn(
+			fmt.Sprintf("Could not identify this node's container: %v. Lifecycle actions are disabled.", a.selfErr),
+			"error",
+			a.selfErr,
+		)
 	}
 	if nil != a.selfContainer {
 		self := *a.selfContainer
@@ -73,25 +81,58 @@ func (a *agent) initDetached(cacheDir string) {
 		}
 		requestFile := filepath.Join(a.operationsDir, entry.Name(), "request.json")
 		if !entry.IsDir() {
-			slog.Warn(fmt.Sprintf("Ignoring detached operation entry %q because it is not a directory.", filepath.Join(a.operationsDir, entry.Name())), "path", filepath.Join(a.operationsDir, entry.Name()))
+			slog.Warn(
+				fmt.Sprintf(
+					"Ignoring detached operation entry %q because it is not a directory.",
+					filepath.Join(a.operationsDir, entry.Name()),
+				),
+				"path",
+				filepath.Join(a.operationsDir, entry.Name()),
+			)
 			continue
 		}
 		request, err := readDetachedRequest(requestFile)
 		if nil != err {
-			slog.Warn(fmt.Sprintf("Could not restore detached operation from request %q: %v", requestFile, err), "path", requestFile, "error", err)
+			slog.Warn(
+				fmt.Sprintf("Could not restore detached operation from request %q: %v", requestFile, err),
+				"path",
+				requestFile,
+				"error",
+				err,
+			)
 			continue
 		}
 		requests = append(requests, request)
 	}
 	sort.Slice(requests, func(i, j int) bool { return requests[i].CreatedAt.Before(requests[j].CreatedAt) })
 	for _, request := range requests {
-		op := &operation{operationSnapshot: operationSnapshot{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running"}, automatic: request.Automatic, service: request.Service}
+		op := &operation{
+			ID:        request.ID,
+			Stack:     request.Stack.Name,
+			Action:    request.Action,
+			Status:    "running",
+			automatic: request.Automatic,
+			service:   request.Service,
+		}
 		result, err := readDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op)
 		if nil == err {
 			_, _ = op.Write([]byte(result.Output))
 			op.Status, op.ExitCode = result.Status, result.ExitCode
 		} else if !os.IsNotExist(err) {
-			slog.Warn(fmt.Sprintf("Could not restore the result of detached %s operation %s on stack %q from %q: %v", op.Action, op.ID, op.Stack, filepath.Join(a.operationsDir, op.ID, "result.json"), err), "operation", op.ID, "error", err)
+			slog.Warn(
+				fmt.Sprintf(
+					"Could not restore the result of detached %s operation %s on stack %q from %q: %v",
+					op.Action,
+					op.ID,
+					op.Stack,
+					filepath.Join(a.operationsDir, op.ID, "result.json"),
+					err,
+				),
+				"operation",
+				op.ID,
+				"error",
+				err,
+			)
 		}
 		a.ops[op.ID] = op
 		a.order = append(a.order, op.ID)
@@ -109,11 +150,9 @@ func (a *agent) initDetached(cacheDir string) {
 			}
 			a.logOperationResult(op)
 		}
-		a.work.Add(1)
-		go func() {
-			defer a.work.Done()
+		a.work.Go(func() {
 			a.observeDetached(op)
-		}()
+		})
 	}
 }
 
@@ -127,7 +166,8 @@ func readDetachedRequest(path string) (detachedRequest, error) {
 		return request, err
 	}
 	id, err := hex.DecodeString(request.ID)
-	if nil != err || 8 != len(id) || request.ID != hex.EncodeToString(id) || filepath.Base(filepath.Dir(path)) != request.ID || !stackName.MatchString(request.Stack.Name) {
+	if nil != err || 8 != len(id) || request.ID != hex.EncodeToString(id) || filepath.Base(filepath.Dir(path)) != request.ID ||
+		!stackName.MatchString(request.Stack.Name) {
 		return request, fmt.Errorf("invalid detached operation ID or stack name")
 	}
 	if "" != request.Engine && "docker" != request.Engine && "podman" != request.Engine {
@@ -143,7 +183,11 @@ func readDetachedRequest(path string) (detachedRequest, error) {
 
 func (a *agent) prepareDetached(op *operation, base engine.Stack, service string) error {
 	if "" == a.operationsDir {
-		return &engine.Error{Code: 503, Message: "Actions on this node's own stack require a writable persistent cache directory.", Cause: errors.New("node cache directory is unavailable")}
+		return &engine.Error{
+			Code:    503,
+			Message: "Actions on this node's own stack require a writable persistent cache directory.",
+			Cause:   errors.New("node cache directory is unavailable"),
+		}
 	}
 	directory := filepath.Join(a.operationsDir, op.ID)
 	if err := os.MkdirAll(a.operationsDir, 0700); nil != err {
@@ -153,7 +197,18 @@ func (a *agent) prepareDetached(op *operation, base engine.Stack, service string
 		return &engine.Error{Code: 503, Message: "Could not prepare the action on this node's own stack.", Cause: err}
 	}
 	configDir := filepath.Dir(a.registries.root)
-	data, err := json.Marshal(detachedRequest{ID: op.ID, Engine: a.config.Global.Engine, Stack: base, Action: op.Action, Service: service, Automatic: op.automatic, ConfigDir: configDir, CreatedAt: time.Now().UTC()})
+	data, err := json.Marshal(
+		detachedRequest{
+			ID:        op.ID,
+			Engine:    a.config.Global.Engine,
+			Stack:     base,
+			Action:    op.Action,
+			Service:   service,
+			Automatic: op.automatic,
+			ConfigDir: configDir,
+			CreatedAt: time.Now().UTC(),
+		},
+	)
 	if nil == err {
 		err = configutil.Write(filepath.Join(directory, "request.json"), data)
 	}
@@ -186,7 +241,10 @@ func readDetachedResult(path string, op *operation) (operationSnapshot, error) {
 	if err := json.Unmarshal(data, &result); nil != err {
 		return result, err
 	}
-	if result.ID != op.ID || result.Stack != op.Stack || result.Action != op.Action || nil == result.ExitCode || 1<<20 < len(result.Output) || ("succeeded" != result.Status && "failed" != result.Status) || (0 == *result.ExitCode) != ("succeeded" == result.Status) {
+	if result.ID != op.ID || result.Stack != op.Stack || result.Action != op.Action || nil == result.ExitCode ||
+		1<<20 < len(result.Output) ||
+		("succeeded" != result.Status && "failed" != result.Status) ||
+		(0 == *result.ExitCode) != ("succeeded" == result.Status) {
 		return result, fmt.Errorf("invalid detached operation result")
 	}
 	return result, nil
@@ -221,7 +279,20 @@ func (a *agent) observeDetached(op *operation) {
 				terminal = true
 			} else {
 				if !os.IsNotExist(err) && lastError != err.Error() {
-					slog.Warn(fmt.Sprintf("Could not read the result of detached %s operation %s on stack %q from %q: %v", op.Action, op.ID, op.Stack, filepath.Join(directory, "result.json"), err), "operation", op.ID, "error", err)
+					slog.Warn(
+						fmt.Sprintf(
+							"Could not read the result of detached %s operation %s on stack %q from %q: %v",
+							op.Action,
+							op.ID,
+							op.Stack,
+							filepath.Join(directory, "result.json"),
+							err,
+						),
+						"operation",
+						op.ID,
+						"error",
+						err,
+					)
 					lastError = err.Error()
 				}
 				file, err := os.Open(filepath.Join(directory, "output.log"))
@@ -236,7 +307,20 @@ func (a *agent) observeDetached(op *operation) {
 					}
 				}
 				if nil != err && !os.IsNotExist(err) && lastError != err.Error() {
-					slog.Warn(fmt.Sprintf("Could not read output for detached %s operation %s on stack %q from %q: %v", op.Action, op.ID, op.Stack, filepath.Join(directory, "output.log"), err), "operation", op.ID, "error", err)
+					slog.Warn(
+						fmt.Sprintf(
+							"Could not read output for detached %s operation %s on stack %q from %q: %v",
+							op.Action,
+							op.ID,
+							op.Stack,
+							filepath.Join(directory, "output.log"),
+							err,
+						),
+						"operation",
+						op.ID,
+						"error",
+						err,
+					)
 					lastError = err.Error()
 				}
 			}
@@ -247,7 +331,20 @@ func (a *agent) observeDetached(op *operation) {
 		}
 		if terminal && nil != err {
 			// Completed helpers may already have been removed by the old node.
-			slog.Debug(fmt.Sprintf("Could not inspect completed helper %q for detached %s operation %s on stack %q during cleanup: %v", helperName, op.Action, op.ID, op.Stack, err), "operation", op.ID, "error", err)
+			slog.Debug(
+				fmt.Sprintf(
+					"Could not inspect completed helper %q for detached %s operation %s on stack %q during cleanup: %v",
+					helperName,
+					op.Action,
+					op.ID,
+					op.Stack,
+					err,
+				),
+				"operation",
+				op.ID,
+				"error",
+				err,
+			)
 			return
 		}
 		if nil == err {
@@ -255,7 +352,20 @@ func (a *agent) observeDetached(op *operation) {
 		}
 		if nil != err && (state.Running || (0 == state.ExitCode && "" == state.Output)) {
 			if inspectError != err.Error() {
-				slog.Warn(fmt.Sprintf("Could not inspect helper %q for detached %s operation %s on stack %q: %v. Waiting for its result.", helperName, op.Action, op.ID, op.Stack, err), "operation", op.ID, "error", err)
+				slog.Warn(
+					fmt.Sprintf(
+						"Could not inspect helper %q for detached %s operation %s on stack %q: %v. Waiting for its result.",
+						helperName,
+						op.Action,
+						op.ID,
+						op.Stack,
+						err,
+					),
+					"operation",
+					op.ID,
+					"error",
+					err,
+				)
 				inspectError = err.Error()
 			}
 		} else if !state.Running {
@@ -280,7 +390,20 @@ func (a *agent) observeDetached(op *operation) {
 			// Never remove the only diagnostics unless a terminal result is durable.
 			if _, err := readDetachedResult(filepath.Join(directory, "result.json"), op); nil == err {
 				if err := a.detachedExecutor.RemoveDetached(a.ctx, helperName); nil != err && nil == a.ctx.Err() {
-					slog.Warn(fmt.Sprintf("Could not remove helper container %q for detached %s operation %s on stack %q: %v", helperName, op.Action, op.ID, op.Stack, err), "operation", op.ID, "error", err)
+					slog.Warn(
+						fmt.Sprintf(
+							"Could not remove helper container %q for detached %s operation %s on stack %q: %v",
+							helperName,
+							op.Action,
+							op.ID,
+							op.Stack,
+							err,
+						),
+						"operation",
+						op.ID,
+						"error",
+						err,
+					)
 				}
 			}
 			return
@@ -301,7 +424,15 @@ func (a *agent) collectRelay(op *operation) {
 	}
 	path := filepath.Join(a.operationsDir, op.ID, "collected")
 	if err := configutil.Write(path, nil); nil != err {
-		slog.Warn(fmt.Sprintf("Could not mark relay %s for stack %q as consumed: %v", op.ID, op.Stack, err), "relay", op.ID, "stack", op.Stack, "error", err)
+		slog.Warn(
+			fmt.Sprintf("Could not mark relay %s for stack %q as consumed: %v", op.ID, op.Stack, err),
+			"relay",
+			op.ID,
+			"stack",
+			op.Stack,
+			"error",
+			err,
+		)
 		return
 	}
 	a.mu.Lock()
@@ -318,7 +449,20 @@ func (a *agent) collectRelay(op *operation) {
 func (a *agent) failDetached(op *operation, code int, err error) {
 	_, _ = fmt.Fprintf(op, "\nError: %v\n", err)
 	if writeErr := writeDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op, code); nil != writeErr {
-		slog.Error(fmt.Sprintf("Could not save the result of detached %s operation %s on stack %q to %q: %v", op.Action, op.ID, op.Stack, filepath.Join(a.operationsDir, op.ID, "result.json"), writeErr), "operation", op.ID, "error", writeErr)
+		slog.Error(
+			fmt.Sprintf(
+				"Could not save the result of detached %s operation %s on stack %q to %q: %v",
+				op.Action,
+				op.ID,
+				op.Stack,
+				filepath.Join(a.operationsDir, op.ID, "result.json"),
+				writeErr,
+			),
+			"operation",
+			op.ID,
+			"error",
+			writeErr,
+		)
 	}
 	a.finishOperation(op, code)
 }
@@ -369,7 +513,14 @@ func RunOperation(ctx context.Context, requestFile string) error {
 	if err := a.initRegistries(request.ConfigDir); nil != err {
 		return err
 	}
-	op := &operation{operationSnapshot: operationSnapshot{ID: request.ID, Stack: request.Stack.Name, Action: request.Action, Status: "running"}, automatic: request.Automatic, service: request.Service}
+	op := &operation{
+		ID:        request.ID,
+		Stack:     request.Stack.Name,
+		Action:    request.Action,
+		Status:    "running",
+		automatic: request.Automatic,
+		service:   request.Service,
+	}
 	file, err := os.OpenFile(filepath.Join(filepath.Dir(requestFile), "output.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if nil != err {
 		return fmt.Errorf("open operation output: %w", err)

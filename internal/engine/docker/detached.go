@@ -34,7 +34,11 @@ func (d *Docker) SelfContainer(ctx context.Context) (*engine.SelfContainer, erro
 		return nil, nil
 	}
 	if 1 != len(ids) {
-		return nil, detachedError("Could not identify the node container.", errors.New("more than one running container has the DCOMPOSE_AGENT=true label on this Docker host"), nil)
+		return nil, detachedError(
+			"Could not identify the node container.",
+			errors.New("more than one running container has the DCOMPOSE_AGENT=true label on this Docker host"),
+			nil,
+		)
 	}
 	stdout, stderr, err = d.run(ctx, command("", "inspect", "--type", "container", "--format", selfContainerFormat, "--", ids[0]))
 	if nil != err {
@@ -45,7 +49,11 @@ func (d *Docker) SelfContainer(ctx context.Context) (*engine.SelfContainer, erro
 		return nil, detachedError("Could not identify the node container.", err, nil)
 	}
 	if !containerID.MatchString(self.ID) || ids[0] != self.ID || !immutableImage(self.Image) {
-		return nil, detachedError("Could not identify the node container.", errors.New("container inspect did not return a full container ID and immutable image ID"), nil)
+		return nil, detachedError(
+			"Could not identify the node container.",
+			errors.New("container inspect did not return a full container ID and immutable image ID"),
+			nil,
+		)
 	}
 	return &self, nil
 }
@@ -59,13 +67,31 @@ func (d *Docker) StartDetached(ctx context.Context, self engine.SelfContainer, n
 		return err
 	}
 	if !containerID.MatchString(self.ID) || !immutableImage(self.Image) {
-		return &engine.Error{Code: 409, Message: "Could not start the action on this node's own stack.", Cause: errors.New("node container requires an exact container ID and immutable image ID")}
+		return &engine.Error{
+			Code:    409,
+			Message: "Could not start the action on this node's own stack.",
+			Cause:   errors.New("node container requires an exact container ID and immutable image ID"),
+		}
 	}
 	groups, err := os.Getgroups()
 	if nil != err {
 		return detachedError("Could not start the action on this node's own stack.", err, nil)
 	}
-	args := []string{"run", "--detach", "--name", name, "--label", "io.dcompose.operation=" + strings.TrimPrefix(name, "dagent-operation-"), "--restart=no", "--pull", "never", "--volumes-from", self.ID, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
+	args := []string{
+		"run",
+		"--detach",
+		"--name",
+		name,
+		"--label",
+		"io.dcompose.operation=" + strings.TrimPrefix(name, "dagent-operation-"),
+		"--restart=no",
+		"--pull",
+		"never",
+		"--volumes-from",
+		self.ID,
+		"--user",
+		fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+	}
 	for _, group := range groups {
 		args = append(args, "--group-add", strconv.Itoa(group))
 	}
@@ -83,7 +109,19 @@ func (d *Docker) StartDetached(ctx context.Context, self engine.SelfContainer, n
 
 func (d *Docker) DetachedState(ctx context.Context, name string) (engine.DetachedState, error) {
 	var state engine.DetachedState
-	stdout, stderr, err := d.run(ctx, command("", "inspect", "--type", "container", "--format", `{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`, "--", name))
+	stdout, stderr, err := d.run(
+		ctx,
+		command(
+			"",
+			"inspect",
+			"--type",
+			"container",
+			"--format",
+			`{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`,
+			"--",
+			name,
+		),
+	)
 	if nil != err {
 		return state, detachedError("Could not check the action's status.", err, stderr)
 	}

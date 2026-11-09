@@ -23,7 +23,8 @@ func registryBridgeFixture(t *testing.T, handler http.HandlerFunc) *httptest.Ser
 		if testHealth(w, r) {
 			return
 		}
-		if http.MethodPost != r.Method || "/registry/request" != r.URL.Path || "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
+		if http.MethodPost != r.Method || "/registry/request" != r.URL.Path || "Bearer agent-test-token" != r.Header.Get("Authorization") ||
+			strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) {
 			t.Errorf("agent transport request: %s %s headers=%v", r.Method, r.URL.Path, r.Header)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -43,25 +44,37 @@ func TestRegistryTransport(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				if method != input.Method || "https://private.invalid/token" != input.URL || "Bearer registry-token" != input.Header.Get("Authorization") || "refresh_token=secret" != string(input.Body) {
+				if method != input.Method || "https://private.invalid/token" != input.URL ||
+					"Bearer registry-token" != input.Header.Get("Authorization") ||
+					"refresh_token=secret" != string(input.Body) {
 					t.Errorf("registry wire request: %+v", input)
 				}
 				_ = json.NewEncoder(w).Encode(protocol.RegistryResponse{
 					Status: http.StatusTooManyRequests,
-					Header: http.Header{"Retry-After": {"60"}, "Www-Authenticate": {`Bearer realm="https://auth.invalid"`, `Basic realm="private"`}},
-					Body:   []byte("registry limit"),
+					Header: http.Header{
+						"Retry-After":      {"60"},
+						"Www-Authenticate": {`Bearer realm="https://auth.invalid"`, `Basic realm="private"`},
+					},
+					Body: []byte("registry limit"),
 				})
 			})
 			s := testServer(t, fixture)
-			request, _ := http.NewRequestWithContext(registryNodeContext(context.Background(), "home"), method, "https://private.invalid/token", strings.NewReader("refresh_token=secret"))
+			request, _ := http.NewRequestWithContext(
+				registryNodeContext(context.Background(), "home"),
+				method,
+				"https://private.invalid/token",
+				strings.NewReader("refresh_token=secret"),
+			)
 			request.Header.Set("Authorization", "Bearer registry-token")
 			response, err := (registryTransport{server: s}).RoundTrip(request)
 			if nil != err {
 				t.Fatal(err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			body, _ := io.ReadAll(response.Body)
-			if 429 != response.StatusCode || "60" != response.Header.Get("Retry-After") || 2 != len(response.Header.Values("WWW-Authenticate")) || request != response.Request {
+			if 429 != response.StatusCode || "60" != response.Header.Get("Retry-After") ||
+				2 != len(response.Header.Values("WWW-Authenticate")) ||
+				request != response.Request {
 				t.Fatalf("registry response: %+v", response)
 			}
 			if http.MethodHead == method {
@@ -86,7 +99,12 @@ func TestRegistryTransportNode(t *testing.T) {
 	node := NodeConfig{Name: "Away", URL: away.URL, token: "agent-test-token", Fingerprint: testFingerprint(away)}
 	s.config.Nodes["away"] = node
 	s.nodes["away"] = nodeClient(node)
-	request, _ := http.NewRequestWithContext(registryNodeContext(context.Background(), "away"), http.MethodGet, "https://private.invalid/v2/", nil)
+	request, _ := http.NewRequestWithContext(
+		registryNodeContext(context.Background(), "away"),
+		http.MethodGet,
+		"https://private.invalid/v2/",
+		nil,
+	)
 	response, err := (registryTransport{server: s}).RoundTrip(request)
 	if nil != err {
 		t.Fatal(err)
@@ -182,15 +200,26 @@ func TestRegistryTransportBounds(t *testing.T) {
 	var requests atomic.Int32
 	fixture := registryBridgeFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		_ = json.NewEncoder(w).Encode(protocol.RegistryResponse{Status: http.StatusOK, Header: http.Header{"X-Padding": {strings.Repeat("x", (12<<20)+1)}}, Body: []byte("metadata")})
+		_ = json.NewEncoder(w).
+			Encode(protocol.RegistryResponse{Status: http.StatusOK, Header: http.Header{"X-Padding": {strings.Repeat("x", (12<<20)+1)}}, Body: []byte("metadata")})
 	})
 	s := testServer(t, fixture)
 	transport := registryTransport{server: s}
-	request, _ := http.NewRequestWithContext(registryNodeContext(context.Background(), "home"), http.MethodGet, "https://private.invalid/v2/", nil)
+	request, _ := http.NewRequestWithContext(
+		registryNodeContext(context.Background(), "home"),
+		http.MethodGet,
+		"https://private.invalid/v2/",
+		nil,
+	)
 	if _, err := transport.RoundTrip(request); nil == err {
 		t.Fatalf("response bound: %v", err)
 	}
-	request, _ = http.NewRequestWithContext(registryNodeContext(context.Background(), "home"), http.MethodPost, "https://private.invalid/token", strings.NewReader(strings.Repeat("x", (1<<20)+1)))
+	request, _ = http.NewRequestWithContext(
+		registryNodeContext(context.Background(), "home"),
+		http.MethodPost,
+		"https://private.invalid/token",
+		strings.NewReader(strings.Repeat("x", (1<<20)+1)),
+	)
 	if _, err := transport.RoundTrip(request); nil == err || 1 != requests.Load() {
 		t.Fatalf("request bound: %v", err)
 	}

@@ -33,14 +33,15 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 	if nil != err {
 		return
 	}
-	defer conn.CloseNow()
-	ticketConnection := !nativeOrigin || !s.authenticated(r)
-	if ticketConnection {
+	defer func() { _ = conn.CloseNow() }()
+	authRequest := r
+	if !nativeOrigin || !s.authenticated(r) {
 		if !allowTicket {
 			_ = writeChannel(r.Context(), conn, signInMessage())
 			return
 		}
-		if !s.authenticateWorkspaceTicket(r.Context(), conn) {
+		authRequest = s.authenticateWorkspaceTicket(r.Context(), conn)
+		if nil == authRequest {
 			return
 		}
 	}
@@ -65,9 +66,7 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 	commands := make(chan protocol.ChannelMessage, 64)
 	outgoing := make(chan browserDelivery, 64)
-	workers.Add(1)
-	go func() {
-		defer workers.Done()
+	workers.Go(func() {
 		defer cancel()
 		for {
 			var message protocol.ChannelMessage
@@ -80,19 +79,11 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	}()
+	})
 	stopHeartbeat := socketHeartbeat(ctx, conn, "workspace browser at "+r.RemoteAddr)
 	defer stopHeartbeat()
-	var authCheck, ticketExpiry <-chan time.Time
-	if ticketConnection {
-		timer := time.NewTimer(24 * time.Hour)
-		defer timer.Stop()
-		ticketExpiry = timer.C
-	} else {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		authCheck = ticker.C
-	}
+	authCheck := time.NewTicker(15 * time.Second)
+	defer authCheck.Stop()
 	for _, frame := range initial {
 		if err := writeSocket(ctx, conn, frame); nil != err {
 			return
@@ -102,16 +93,13 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticketExpiry:
-			_ = writeChannel(ctx, conn, signInMessage())
-			return
-		case <-authCheck:
-			if !s.authenticated(r) {
+		case <-authCheck.C:
+			if !s.authenticated(authRequest) {
 				_ = writeChannel(ctx, conn, signInMessage())
 				return
 			}
 		case message := <-commands:
-			if !ticketConnection && !s.authenticated(r) {
+			if !s.authenticated(authRequest) {
 				_ = writeChannel(ctx, conn, signInMessage())
 				return
 			}
@@ -133,11 +121,9 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 				subscription, response = s.attachBrowser(ctx, message)
 				if nil != subscription {
 					subscriptions[message.Stream] = subscription
-					workers.Add(1)
-					go func() {
-						defer workers.Done()
+					workers.Go(func() {
 						subscription.forward(outgoing)
-					}()
+					})
 				}
 			case "shell.input", "shell.resize", "shell.close":
 				response = s.browserShellCommand(ctx, subscription, message)
@@ -171,25 +157,31 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) authenticateWorkspaceTicket(ctx context.Context, conn *websocket.Conn) bool {
+func (s *Server) authenticateWorkspaceTicket(ctx context.Context, conn *websocket.Conn) *http.Request {
 	conn.SetReadLimit(1024)
 	authContext, cancel := context.WithTimeout(ctx, 5*time.Second)
 	kind, data, err := conn.Read(authContext)
 	cancel()
 	if nil != err {
-		return false
+		return nil
 	}
 	var input struct {
 		Type   string `json:"type"`
 		Ticket string `json:"ticket"`
 	}
 	if websocket.MessageText == kind && nil == json.Unmarshal(data, &input) && "auth" == input.Type {
-		if _, ok := s.consumeWebsocketTicket(input.Ticket); ok {
-			return nil == writeChannel(ctx, conn, protocol.ChannelMessage{Type: "auth.ok"})
+		if ticket, ok := s.consumeWebsocketTicket(input.Ticket); ok {
+			authRequest := &http.Request{Header: ticket.auth}
+			if s.authenticated(authRequest) {
+				if nil == writeChannel(ctx, conn, protocol.ChannelMessage{Type: "auth.ok"}) {
+					return authRequest
+				}
+				return nil
+			}
 		}
 	}
 	_ = writeChannel(ctx, conn, protocol.ChannelMessage{Type: "error", Status: 401, Error: "Invalid or expired connection ticket."})
-	return false
+	return nil
 }
 
 func signInMessage() protocol.ChannelMessage {
@@ -378,7 +370,7 @@ func (s *Server) stateLocked(id, state, message string) {
 	s.broadcastLocked(runtimeFrame("node.state", payload))
 }
 
-func runtimeFrame(event string, payload interface{}) []byte {
+func runtimeFrame(event string, payload any) []byte {
 	data, _ := json.Marshal(payload)
 	frame, _ := json.Marshal(protocol.ChannelMessage{Type: "event", Event: event, Payload: data})
 	return frame
@@ -402,7 +394,8 @@ func runtimePayload(event string, data []byte) (map[string]json.RawMessage, erro
 			nil == json.Unmarshal(payload["phase"], &phase) && ("start" == phase || "exit" == phase)
 		if "exit" == phase {
 			var code int
-			valid = valid && 0 < len(payload["exit_code"]) && "null" != string(payload["exit_code"]) && nil == json.Unmarshal(payload["exit_code"], &code)
+			valid = valid && 0 < len(payload["exit_code"]) && "null" != string(payload["exit_code"]) &&
+				nil == json.Unmarshal(payload["exit_code"], &code)
 		}
 		if message, ok := payload["message"]; ok {
 			valid = valid && isString(message)

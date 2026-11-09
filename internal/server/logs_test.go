@@ -21,7 +21,9 @@ func TestLogsAPI(t *testing.T) {
 	for _, query := range []string{"", "?levels=warn&node=server&logger=server&search=registry"} {
 		w := perform(t, s, "GET", "/api/logs"+query, "")
 		var page logPage
-		if http.StatusOK != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &page) || 1 != len(page.Entries) || "" == page.Entries[0].Rendered || `"first line\nRegistry DENIED"` != string(page.Entries[0].Fields["stderr"]) {
+		if http.StatusOK != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &page) || 1 != len(page.Entries) ||
+			"" == page.Entries[0].Rendered ||
+			`"first line\nRegistry DENIED"` != string(page.Entries[0].Fields["stderr"]) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
@@ -60,7 +62,8 @@ func TestLogQueries(t *testing.T) {
 	for _, path := range []string{"/api/logs", "/api/logs?levels=warning,error&limit=500&after=0", "/api/logs?before=0"} {
 		w := perform(t, s, "GET", path, "")
 		var page logPage
-		if http.StatusOK != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &page) || nil == page.Entries || 0 != len(page.Entries) || nil != page.OldestID {
+		if http.StatusOK != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &page) || nil == page.Entries || 0 != len(page.Entries) ||
+			nil != page.OldestID {
 			t.Fatal(path, w.Code, w.Body.String())
 		}
 	}
@@ -108,11 +111,11 @@ func nextLogStatus(t *testing.T, reader *bufio.Reader) logStatus {
 		if nil != err {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(line, "event: ") {
-			event = strings.TrimSpace(strings.TrimPrefix(line, "event: "))
+		if value, ok := strings.CutPrefix(line, "event: "); ok {
+			event = strings.TrimSpace(value)
 		}
-		if strings.HasPrefix(line, "data: ") {
-			if "log_status" != event || nil != json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &status) {
+		if value, ok := strings.CutPrefix(line, "data: "); ok {
+			if "log_status" != event || nil != json.Unmarshal([]byte(value), &status) {
 				t.Fatal("missing stream retention metadata", event, line)
 			}
 			return status
@@ -161,7 +164,8 @@ func TestLogStream(t *testing.T) {
 	}
 	first := nextLogEvent(t, reader)
 	second := nextLogEvent(t, reader)
-	if page.Entries[0].ID != first.ID || page.Entries[2].ID != second.ID || page.Entries[0].Rendered != first.Rendered || page.Entries[2].Rendered != second.Rendered {
+	if page.Entries[0].ID != first.ID || page.Entries[2].ID != second.ID || page.Entries[0].Rendered != first.Rendered ||
+		page.Entries[2].Rendered != second.Rendered {
 		t.Fatal("filtered backlog", first, second)
 	}
 	slog.Info("live gap")

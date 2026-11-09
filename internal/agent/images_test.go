@@ -39,21 +39,36 @@ func TestImageInspect(t *testing.T) {
 			a, _ := fixture(t)
 			dir := seed(t, a, "demo", "compose.yaml")
 			services := []service{
-				{ID: "web-id", Name: "web-1", Service: "web", Image: "nginx:latest", State: "running", CheckInterval: "30m", AutoUpdate: true},
+				{
+					ID:            "web-id",
+					Name:          "web-1",
+					Service:       "web",
+					Image:         "nginx:latest",
+					State:         "running",
+					CheckInterval: "30m",
+					AutoUpdate:    true,
+				},
 				{ID: "worker-id", Name: "worker-1", Service: "worker", Image: "redis:latest", State: "exited"},
 			}
 			inspected := []string{}
 			a.engine = &inspectionDriver{
 				Driver: a.engine,
 				containers: func(ctx context.Context, stack engine.Stack) ([]engine.Service, error) {
-					if "demo" != stack.Name || dir != stack.Dir || filepath.Join(dir, "compose.yaml") != stack.ComposeFile || nil != ctx.Err() {
+					if "demo" != stack.Name || dir != stack.Dir || filepath.Join(dir, "compose.yaml") != stack.ComposeFile ||
+						nil != ctx.Err() {
 						t.Fatalf("stack inspection: %+v %v", stack, ctx.Err())
 					}
 					return services, nil
 				},
 				inspect: func(_ context.Context, service engine.Service) engine.ImageTarget {
 					inspected = append(inspected, service.Name)
-					return engine.ImageTarget{LocalID: "local-" + service.ID, Key: engine.ImageKey{Ref: service.Image, ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"}}}
+					return engine.ImageTarget{
+						LocalID: "local-" + service.ID,
+						Key: engine.ImageKey{
+							Ref:           service.Image,
+							ImagePlatform: engine.ImagePlatform{OS: "linux", Architecture: "amd64"},
+						},
+					}
 				},
 			}
 			w := request(a, "POST", "/images/inspect", fmt.Sprintf(`{"stack":"demo","container":%q}`, container))
@@ -70,7 +85,10 @@ func TestImageInspect(t *testing.T) {
 			}
 			for i, service := range expected {
 				image := response.Images[i]
-				if service.ID != image.ID || service.Name != image.Service.Name || service.Image != image.Target.Key.Ref || "local-"+service.ID != image.Target.LocalID || service.CheckInterval != image.Service.CheckInterval || service.AutoUpdate != image.Service.AutoUpdate {
+				if service.ID != image.ID || service.Name != image.Service.Name || service.Image != image.Target.Key.Ref ||
+					"local-"+service.ID != image.Target.LocalID ||
+					service.CheckInterval != image.Service.CheckInterval ||
+					service.AutoUpdate != image.Service.AutoUpdate {
 					t.Fatalf("inspection identity/target: %+v", image)
 				}
 			}
@@ -137,7 +155,8 @@ func TestImageInspectResults(t *testing.T) {
 			}
 			w := request(a, "POST", "/images/inspect", `{"stack":"demo"}`)
 			var response protocol.ImageInspectResponse
-			if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &response) || 1 != len(response.Images) || target != response.Images[0].Target {
+			if 200 != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &response) || 1 != len(response.Images) ||
+				target != response.Images[0].Target {
 				t.Fatalf("typed inspection result: %d %s", w.Code, w.Body)
 			}
 		})
@@ -207,7 +226,9 @@ func TestImageInspectNative(t *testing.T) {
 				args := strings.Join(cmd.Args, " ")
 				switch {
 				case strings.Contains(args, "ps --all --format json"):
-					return []byte(`[{"ID":"container-id","Name":"demo-web-1","Service":"web","Image":"docker.io/library/nginx:latest","State":"running"}]`), nil, nil
+					return []byte(
+						`[{"ID":"container-id","Name":"demo-web-1","Service":"web","Image":"docker.io/library/nginx:latest","State":"running"}]`,
+					), nil, nil
 				case strings.Contains(args, "{{json .Config.Labels}}"):
 					return []byte(`{}`), nil, nil
 				case strings.Contains(args, "container inspect"):
@@ -216,7 +237,9 @@ func TestImageInspectNative(t *testing.T) {
 				case strings.Contains(args, "image inspect"):
 					calls++
 					if "podman" == name {
-						return []byte(`[{"Os":"linux","Architecture":"amd64","RepoTags":["docker.io/library/nginx:latest"],"RepoDigests":["docker.io/library/nginx@sha256:manifest"]}]`), nil, nil
+						return []byte(
+							`[{"Os":"linux","Architecture":"amd64","RepoTags":["docker.io/library/nginx:latest"],"RepoDigests":["docker.io/library/nginx@sha256:manifest"]}]`,
+						), nil, nil
 					}
 					return []byte(`{"os":"linux","architecture":"amd64","digests":["docker.io/library/nginx@sha256:manifest"]}`), nil, nil
 				default:
@@ -234,7 +257,9 @@ func TestImageInspectNative(t *testing.T) {
 				t.Fatalf("native inspection: %d %s calls=%d", w.Code, w.Body, calls)
 			}
 			image := response.Images[0]
-			if "container-id" != image.ID || id != image.Target.LocalID || "docker.io/library/nginx:latest" != image.Target.Key.Ref || "amd64" != image.Target.Key.Architecture || "" != image.Target.Status {
+			if "container-id" != image.ID || id != image.Target.LocalID || "docker.io/library/nginx:latest" != image.Target.Key.Ref ||
+				"amd64" != image.Target.Key.Architecture ||
+				"" != image.Target.Status {
 				t.Fatalf("native target: %+v", image)
 			}
 		})
@@ -264,12 +289,17 @@ func TestImagesInvalidated(t *testing.T) {
 	a.invalidateImages("demo", map[string]bool{"docker.io/library/alpine:latest": true, "nginx:latest": true})
 	e := <-subscriber.events
 	var invalidated protocol.ImageInvalidated
-	if "images.invalidated" != e.name || nil != json.Unmarshal(e.data, &invalidated) || "demo" != invalidated.Stack || !reflect.DeepEqual(invalidated.Refs, []string{"docker.io/library/alpine:latest", "docker.io/library/nginx:latest", "docker.io/library/redis:latest"}) {
+	if "images.invalidated" != e.name || nil != json.Unmarshal(e.data, &invalidated) || "demo" != invalidated.Stack ||
+		!reflect.DeepEqual(
+			invalidated.Refs,
+			[]string{"docker.io/library/alpine:latest", "docker.io/library/nginx:latest", "docker.io/library/redis:latest"},
+		) {
 		t.Fatalf("invalidation refs: %s %s", e.name, e.data)
 	}
 	a.invalidateImages("missing", nil)
 	e = <-subscriber.events
-	if nil != json.Unmarshal(e.data, &invalidated) || "missing" != invalidated.Stack || 0 != len(invalidated.Refs) || strings.Contains(string(e.data), `"refs":null`) {
+	if nil != json.Unmarshal(e.data, &invalidated) || "missing" != invalidated.Stack || 0 != len(invalidated.Refs) ||
+		strings.Contains(string(e.data), `"refs":null`) {
 		t.Fatalf("unknown refs lost stack invalidation: %s", e.data)
 	}
 }
@@ -298,7 +328,8 @@ func TestImageOperationInvalidation(t *testing.T) {
 							continue
 						}
 						var invalidated protocol.ImageInvalidated
-						if "images.invalidated" != e.name || nil != json.Unmarshal(e.data, &invalidated) || "demo" != invalidated.Stack || !reflect.DeepEqual(invalidated.Refs, []string{"docker.io/library/nginx:latest"}) {
+						if "images.invalidated" != e.name || nil != json.Unmarshal(e.data, &invalidated) || "demo" != invalidated.Stack ||
+							!reflect.DeepEqual(invalidated.Refs, []string{"docker.io/library/nginx:latest"}) {
 							t.Fatalf("operation invalidation: %s %s", e.name, e.data)
 						}
 					default:
@@ -345,7 +376,9 @@ func TestRuntimeExecutionOnly(t *testing.T) {
 		t.Fatal("channel connect or registry sync made an image decision")
 	}
 	argv, err := os.ReadFile(filepath.Join(fake, "argv"))
-	if nil != err || strings.Contains(string(argv), "<image><inspect>") || strings.Contains(string(argv), `{"id":`) || strings.Contains(string(argv), "<pull>") || strings.Contains(string(argv), "<up>") {
+	if nil != err || strings.Contains(string(argv), "<image><inspect>") || strings.Contains(string(argv), `{"id":`) ||
+		strings.Contains(string(argv), "<pull>") ||
+		strings.Contains(string(argv), "<up>") {
 		t.Fatalf("runtime observation executed image inspection or an update: %s %v", argv, err)
 	}
 }

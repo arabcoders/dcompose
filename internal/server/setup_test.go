@@ -24,7 +24,8 @@ func TestSetup(t *testing.T) {
 	}
 	s := New(c, nil)
 	w := perform(t, s, "GET", "/api/auth/status", "")
-	if 200 != w.Code || !strings.Contains(w.Body.String(), `"setup_required":true`) || !strings.Contains(w.Body.String(), `"authenticated":false`) {
+	if 200 != w.Code || !strings.Contains(w.Body.String(), `"setup_required":true`) ||
+		!strings.Contains(w.Body.String(), `"authenticated":false`) {
 		t.Fatal(w.Body.String())
 	}
 	for _, path := range []string{"/api/nodes", "/api/settings", "/api/auth/user"} {
@@ -63,7 +64,8 @@ func TestSetup(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 	c, err = LoadConfig(path)
-	if nil != err || c.Auth.setupRequired() || "file:secrets/password.hash" != c.Auth.Password || nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("test-password")) {
+	if nil != err || c.Auth.setupRequired() || "file:secrets/password.hash" != c.Auth.Password ||
+		nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("test-password")) {
 		t.Fatal("setup not persisted", err)
 	}
 	data, err := os.ReadFile(path)
@@ -171,7 +173,11 @@ func TestSetupSaveFailure(t *testing.T) {
 		Level   string `json:"level"`
 		Error   string `json:"error"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &record); nil != err || "ERROR" != record.Level || "" == record.Error || !strings.Contains(record.Message, c.path) || !strings.Contains(record.Message, record.Error) || strings.Contains(output.String(), "setup-secret-password") {
+	if err := json.Unmarshal(
+		output.Bytes(),
+		&record,
+	); nil != err || "ERROR" != record.Level || "" == record.Error || !strings.Contains(record.Message, c.path) || !strings.Contains(record.Message, record.Error) ||
+		strings.Contains(output.String(), "setup-secret-password") {
 		t.Fatal("setup message hides failure context or leaks password", output.String(), err)
 	}
 }
@@ -180,7 +186,11 @@ func TestSetupKeepsConfig(t *testing.T) {
 	up := httptest.NewTLSServer(nil)
 	defer up.Close()
 	path := filepath.Join(t.TempDir(), "dcompose.toml")
-	data := fmt.Sprintf("[global]\nlisten = '127.0.0.1:8085'\norigin = 'https://app.example'\nsecure_cookie = true\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'node-secret'\n", up.URL, testFingerprint(up))
+	data := fmt.Sprintf(
+		"[global]\nlisten = '127.0.0.1:8085'\norigin = 'https://app.example'\nsecure_cookie = true\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'node-secret'\n",
+		up.URL,
+		testFingerprint(up),
+	)
 	if err := os.WriteFile(path, []byte(data), 0600); nil != err {
 		t.Fatal(err)
 	}
@@ -193,7 +203,8 @@ func TestSetupKeepsConfig(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	c, err = LoadConfig(path)
-	if nil != err || "127.0.0.1:8085" != c.Global.Listen || "https://app.example" != c.Global.Origin || "node-secret" != c.Nodes["home"].token {
+	if nil != err || "127.0.0.1:8085" != c.Global.Listen || "https://app.example" != c.Global.Origin ||
+		"node-secret" != c.Nodes["home"].token {
 		t.Fatal("setup lost existing configuration", err)
 	}
 }

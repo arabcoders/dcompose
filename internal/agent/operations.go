@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -156,18 +157,34 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 			return
 		}
 		code, reason := 500, "operation startup failed"
-		var apiErr *apiError
-		var engineErr *engine.Error
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*apiError](err); ok {
 			code, reason = apiErr.code, apiErr.message
-		} else if errors.As(err, &engineErr) {
+		} else if engineErr, ok := errors.AsType[*engine.Error](err); ok {
 			code, reason = engineErr.Code, engineErr.Message
 		}
 		level := slog.LevelError
 		if http.StatusConflict == code {
 			level = slog.LevelDebug
 		}
-		slog.Log(ctx, level, fmt.Sprintf("Automatic update could not start for stack %q, service %q (HTTP %d): %s", name, service, code, reason), "automatic", true, "stack", name, "service", service, "operation", id, "status", "rejected", "http_status", code, "reason", reason)
+		slog.Log(
+			ctx,
+			level,
+			fmt.Sprintf("Automatic update could not start for stack %q, service %q (HTTP %d): %s", name, service, code, reason),
+			"automatic",
+			true,
+			"stack",
+			name,
+			"service",
+			service,
+			"operation",
+			id,
+			"status",
+			"rejected",
+			"http_status",
+			code,
+			"reason",
+			reason,
+		)
 	}()
 	switch action {
 	case "deploy", "start", "stop", "restart", "pull", "update", "down", "delete":
@@ -206,14 +223,7 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 		if nil != err {
 			return err
 		}
-		found := false
-		for _, candidate := range services {
-			if service == candidate {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(services, service) {
 			return fault(400, "service is not defined in the Compose file")
 		}
 	}
@@ -238,7 +248,7 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 			return fmt.Errorf("relay ID: %w", err)
 		}
 		id = hex.EncodeToString(randomID[:])
-		op = &operation{operationSnapshot: operationSnapshot{ID: id, Stack: name, Action: action, Status: "running"}, automatic: automatic, service: service}
+		op = &operation{ID: id, Stack: name, Action: action, Status: "running", automatic: automatic, service: service}
 		if err := a.prepareDetached(op, base, service); nil != err {
 			return err
 		}
@@ -291,7 +301,9 @@ func (a *agent) startOperation(ctx context.Context, w http.ResponseWriter, name,
 		a.active--
 		delete(a.busy, name)
 		a.setStackBusy(name, false)
-		a.publishRuntime(event("stack.action", protocol.StackAction{Name: name, Action: action, Phase: "exit", ExitCode: &code, Message: message}))
+		a.publishRuntime(
+			event("stack.action", protocol.StackAction{Name: name, Action: action, Phase: "exit", ExitCode: &code, Message: message}),
+		)
 		a.mu.Unlock()
 		a.signalRuntime(name)
 	}()
@@ -373,7 +385,14 @@ func (a *agent) logAction(name, action, service string, automatic bool, status s
 		level = slog.LevelError
 		message = fmt.Sprintf("%s on node %q", failure, a.config.Global.NodeID)
 	}
-	attrs := []slog.Attr{slog.Bool("automatic", automatic), slog.String("action", action), slog.String("stack", name), slog.String("service", service), slog.String("node", a.config.Global.NodeID), slog.String("status", status)}
+	attrs := []slog.Attr{
+		slog.Bool("automatic", automatic),
+		slog.String("action", action),
+		slog.String("stack", name),
+		slog.String("service", service),
+		slog.String("node", a.config.Global.NodeID),
+		slog.String("status", status),
+	}
 	if nil != code {
 		attrs = append(attrs, slog.Int("exit_code", *code))
 	}
@@ -408,7 +427,23 @@ func (a *agent) logOperationResult(op *operation) {
 		message += fmt.Sprintf(", node %q", a.config.Global.NodeID)
 	}
 	message += fmt.Sprintf(" failed (exit code %d): %s", *snapshot.ExitCode, detail)
-	slog.Error(message, "operation", snapshot.ID, "action", snapshot.Action, "stack", snapshot.Stack, "service", op.service, "node", a.config.Global.NodeID, "status", snapshot.Status, "exit_code", *snapshot.ExitCode)
+	slog.Error(
+		message,
+		"operation",
+		snapshot.ID,
+		"action",
+		snapshot.Action,
+		"stack",
+		snapshot.Stack,
+		"service",
+		op.service,
+		"node",
+		a.config.Global.NodeID,
+		"status",
+		snapshot.Status,
+		"exit_code",
+		*snapshot.ExitCode,
+	)
 }
 
 func (op *operation) logAutomatic() {
@@ -438,7 +473,13 @@ func (op *operation) logAutomatic() {
 			message += ": " + detail
 		}
 	}
-	attrs := []slog.Attr{slog.Bool("automatic", true), slog.String("stack", snapshot.Stack), slog.String("service", op.service), slog.String("operation", snapshot.ID), slog.String("status", snapshot.Status)}
+	attrs := []slog.Attr{
+		slog.Bool("automatic", true),
+		slog.String("stack", snapshot.Stack),
+		slog.String("service", op.service),
+		slog.String("operation", snapshot.ID),
+		slog.String("status", snapshot.Status),
+	}
 	if nil != snapshot.ExitCode {
 		attrs = append(attrs, slog.Int("exit_code", *snapshot.ExitCode))
 	}

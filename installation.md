@@ -21,7 +21,13 @@ curl -fL https://raw.githubusercontent.com/arabcoders/dcompose/master/install.sh
 bash install.sh
 ```
 
-Use `bash install.sh --help` to see its options.
+Running without flags previews the installation. To install:
+
+```sh
+bash install.sh --execute
+```
+
+Use `bash install.sh --help` to see all options.
 
 ## Choose the deployment
 
@@ -30,16 +36,16 @@ Use `bash install.sh --help` to see its options.
 - **Node only:** manage this host from a DCompose server you already have.
 
 Choose **Compose** or **native systemd**. Both Docker and Podman are supported, including rootless and rootful Podman.
-Choose where to store your stacks and, for Compose, where to install DCompose. The user running the node needs write access to your stacks.
+Choose your stack and installation directories when prompted.
 
-Compose uses the `master` image by default. Native installs require a tagged
-[GitHub Release](https://github.com/arabcoders/dcompose/releases) and use the latest release unless you choose a tag:
+Compose uses `ghcr.io/arabcoders/dcompose:latest` by default. Native installs use the latest
+[GitHub Release](https://github.com/arabcoders/dcompose/releases). To choose a specific version:
 
 ```sh
-bash install.sh --version TAG
+bash install.sh --execute --version TAG
 ```
 
-Replace `TAG` with a published release tag. If no native release is available, use Compose.
+Replace `TAG` with a published release tag. For Compose, use `--version dev` to install the development image.
 If you're installing the server, the wizard asks you to create an account before starting it.
 
 ## After installation
@@ -67,7 +73,7 @@ pre-verifying the fingerprint.
 Back up configuration, secrets and application data first. The installer doesn't upgrade existing installations.
 
 For Compose, change the image tags in `compose.yaml` if you want a specific release, then run `docker compose pull`
-and `docker compose up -d` from its directory. The `master` tag follows ongoing development.
+and `docker compose up -d` from its directory. The `latest` tag tracks releases; `dev` tracks ongoing development.
 
 For native services, download the release archive for your architecture and verify its binary with
 `sha256sum --check SHA256SUMS` from the extracted directory. For the server:

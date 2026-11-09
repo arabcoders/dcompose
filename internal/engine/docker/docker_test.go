@@ -17,7 +17,17 @@ func testStack() engine.Stack {
 func TestEvents(t *testing.T) {
 	d := New(nil)
 	cmd := d.Events(time.Unix(12, 34))
-	want := []string{"events", "--since", "12.000000034", "--format", "{{json .}}", "--filter", "type=container", "--filter", "label=com.docker.compose.project"}
+	want := []string{
+		"events",
+		"--since",
+		"12.000000034",
+		"--format",
+		"{{json .}}",
+		"--filter",
+		"type=container",
+		"--filter",
+		"label=com.docker.compose.project",
+	}
 	if !reflect.DeepEqual(want, cmd.Args) {
 		t.Fatalf("events: %+v", cmd)
 	}
@@ -46,7 +56,24 @@ func TestShell(t *testing.T) {
 		t.Fatalf("container: %s %v", container, err)
 	}
 	cmd := d.Shell(container, "bash", "session")
-	if !reflect.DeepEqual([]string{"exec", "-it", "--detach-keys=", "--env", "DOCKER_NODE_SHELL_ID=session", "--env", "TERM=xterm-256color", id, "sh", "-c", shellBootstrap, "docker-node-shell", "bash"}, cmd.Args) {
+	if !reflect.DeepEqual(
+		[]string{
+			"exec",
+			"-it",
+			"--detach-keys=",
+			"--env",
+			"DOCKER_NODE_SHELL_ID=session",
+			"--env",
+			"TERM=xterm-256color",
+			id,
+			"sh",
+			"-c",
+			shellBootstrap,
+			"docker-node-shell",
+			"bash",
+		},
+		cmd.Args,
+	) {
 		t.Fatalf("shell: %+v", cmd)
 	}
 }

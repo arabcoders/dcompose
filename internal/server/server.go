@@ -34,6 +34,7 @@ type Server struct {
 	loginNext      time.Time
 	oidcMu         sync.Mutex
 	oidcPending    map[string]oidcLogin
+	oidcCache      oidcProviderCache
 	ticketMu       sync.Mutex
 	tickets        map[string]websocketTicket
 	hubMu          sync.Mutex
@@ -56,7 +57,17 @@ type Server struct {
 }
 
 func New(config Config, assets fs.FS, versions ...string) *Server {
-	s := &Server{config: cloneConfig(config), assets: assets, version: "dev", nodes: make(map[string]*http.Client), oidcPending: make(map[string]oidcLogin), tickets: make(map[string]websocketTicket), channels: make(map[string]*nodeChannel), runtime: make(map[string]*nodeRuntime), watchers: make(map[chan []byte]struct{})}
+	s := &Server{
+		config:      cloneConfig(config),
+		assets:      assets,
+		version:     "dev",
+		nodes:       make(map[string]*http.Client),
+		oidcPending: make(map[string]oidcLogin),
+		tickets:     make(map[string]websocketTicket),
+		channels:    make(map[string]*nodeChannel),
+		runtime:     make(map[string]*nodeRuntime),
+		watchers:    make(map[chan []byte]struct{}),
+	}
 	s.registrySync = registrySnapshot(config.Registries)
 	s.registryClient = registry.NewClient(&http.Client{Transport: registryTransport{server: s}, Timeout: 30 * time.Second})
 	s.images = newImageChecks()
@@ -78,10 +89,10 @@ func (s *Server) snapshot() (Config, map[string]*http.Client) {
 }
 
 func apiError(w http.ResponseWriter, status int, message string) {
-	jsonResponse(w, status, map[string]interface{}{"error": map[string]interface{}{"code": status, "message": message}})
+	jsonResponse(w, status, map[string]any{"error": map[string]any{"code": status, "message": message}})
 }
 
-func jsonResponse(w http.ResponseWriter, status int, payload interface{}) {
+func jsonResponse(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
@@ -102,7 +113,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	if "/api/version" == path && "GET" == r.Method {
-		jsonResponse(w, 200, map[string]interface{}{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI})
+		jsonResponse(
+			w,
+			200,
+			map[string]any{"version": s.version, "api_version": protocol.ServerAPI, "agent_api_version": protocol.AgentAPI},
+		)
 		return
 	}
 	if "/api/auth/login" == path && "POST" == r.Method {
@@ -148,7 +163,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createWebsocketTicket(w, r)
 	case "/api/auth/user" == path && "GET" == r.Method:
 		config, _ := s.snapshot()
-		jsonResponse(w, 200, map[string]interface{}{"account": map[string]string{"username": config.Auth.Username}, "authenticated": true})
+		jsonResponse(w, 200, map[string]any{"account": map[string]string{"username": config.Auth.Username}, "authenticated": true})
 	case "/api/settings" == path || strings.HasPrefix(path, "/api/settings/"):
 		s.settings(w, r, path)
 	case "/api/auth/logout" == path && "POST" == r.Method:
@@ -173,7 +188,10 @@ func sameOrigin(r *http.Request) bool {
 		return true
 	}
 	parsed, err := url.Parse(origin)
-	if nil != err || ("http" != parsed.Scheme && "https" != parsed.Scheme) || "" == parsed.Host || "" != parsed.Path || "" != parsed.RawQuery || "" != parsed.Fragment || nil != parsed.User {
+	if nil != err || ("http" != parsed.Scheme && "https" != parsed.Scheme) || "" == parsed.Host || "" != parsed.Path ||
+		"" != parsed.RawQuery ||
+		"" != parsed.Fragment ||
+		nil != parsed.User {
 		return false
 	}
 	return strings.EqualFold(parsed.Host, r.Host)
@@ -252,12 +270,15 @@ func credentialRevision(auth AuthConfig) string {
 }
 
 func sessionToken(auth AuthConfig, expires time.Time) (string, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: []byte(auth.sessionKey)}, (&jose.SignerOptions{}).WithType("JWT"))
+	signer, err := jose.NewSigner(
+		jose.SigningKey{Algorithm: jose.HS256, Key: []byte(auth.sessionKey)},
+		(&jose.SignerOptions{}).WithType("JWT"),
+	)
 	if nil != err {
 		return "", err
 	}
 	return jwt.Signed(signer).Claims(sessionClaims{
-		Claims:             jwt.Claims{Expiry: jwt.NewNumericDate(expires)},
+		Expiry:             jwt.NewNumericDate(expires),
 		CredentialRevision: credentialRevision(auth),
 	}).Serialize()
 }
@@ -273,24 +294,46 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request, config Co
 		apiError(w, 500, "Could not sign you in. Try again.")
 		return false
 	}
-	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", HttpOnly: true, Secure: secure || nil != r.TLS, SameSite: http.SameSiteStrictMode, MaxAge: 86400, Expires: expires})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "session",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure || nil != r.TLS,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400,
+			Expires:  expires,
+		},
+	)
 	return true
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	config, _ := s.snapshot()
-	http.SetCookie(w, &http.Cookie{Name: "session", Path: "/", HttpOnly: true, Secure: config.Global.SecureCookie || nil != r.TLS, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     "session",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   config.Global.SecureCookie || nil != r.TLS,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   -1,
+		},
+	)
 	jsonResponse(w, 200, map[string]bool{"authenticated": false})
 }
 
-func decodeBody(w http.ResponseWriter, r *http.Request, target interface{}, limit int64) bool {
+func decodeBody(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); nil != err {
 		apiError(w, 400, "Invalid JSON request.")
 		return false
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
+	if err := decoder.Decode(new(any)); io.EOF != err {
 		apiError(w, 400, "Invalid JSON request.")
 		return false
 	}
@@ -311,7 +354,7 @@ func (s *Server) listNodes(w http.ResponseWriter) {
 		node := config.Nodes[id]
 		nodes = append(nodes, publicNodeInfo{ID: id, Name: node.Name, PublicHost: strings.Trim(node.PublicHost, "[]"), Paused: node.Paused})
 	}
-	jsonResponse(w, 200, map[string]interface{}{"nodes": nodes})
+	jsonResponse(w, 200, map[string]any{"nodes": nodes})
 }
 
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {

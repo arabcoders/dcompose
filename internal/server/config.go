@@ -41,10 +41,10 @@ type GlobalConfig struct {
 
 type AuthConfig struct {
 	Username     string      `toml:"username"`
-	Password     string      `toml:"password" json:"-"`
+	Password     string      `toml:"password"              json:"-"`
 	SessionKey   string      `toml:"session_key,omitempty" json:"-"`
-	APIKey       string      `toml:"api_key,omitempty" json:"-"`
-	OIDC         *OIDCConfig `toml:"oidc,omitempty" json:"-"`
+	APIKey       string      `toml:"api_key,omitempty"     json:"-"`
+	OIDC         *OIDCConfig `toml:"oidc,omitempty"        json:"-"`
 	passwordHash string
 	sessionKey   string
 	apiKey       string
@@ -63,11 +63,11 @@ func (c AuthConfig) setupRequired() bool {
 }
 
 type NodeConfig struct {
-	Name        string `toml:"name" json:"name"`
-	URL         string `toml:"url" json:"url"`
-	Token       string `toml:"token" json:"-"`
-	Fingerprint string `toml:"fingerprint" json:"fingerprint"`
-	PublicHost  string `toml:"public_host" json:"public_host"`
+	Name        string `toml:"name"             json:"name"`
+	URL         string `toml:"url"              json:"url"`
+	Token       string `toml:"token"            json:"-"`
+	Fingerprint string `toml:"fingerprint"      json:"fingerprint"`
+	PublicHost  string `toml:"public_host"      json:"public_host"`
 	Paused      bool   `toml:"paused,omitempty" json:"paused,omitempty"`
 	token       string
 }
@@ -85,7 +85,11 @@ func LoadConfig(path string) (Config, error) {
 			return c, err
 		}
 		if err := saveConfig(c); nil != err {
-			return c, fmt.Errorf("cannot initialize %s: %w. Make the configuration directory writable by the runtime user (Docker: set DCOMPOSE_UID and DCOMPOSE_GID to its owner)", c.path, err)
+			return c, fmt.Errorf(
+				"cannot initialize %s: %w. Make the configuration directory writable by the runtime user (Docker: set DCOMPOSE_UID and DCOMPOSE_GID to its owner)",
+				c.path,
+				err,
+			)
 		}
 	}
 	c, err = validateConfig(c)
@@ -200,13 +204,16 @@ func validateResolvedConfig(c Config) (Config, error) {
 	}
 	if "" != c.Global.Origin {
 		u, err := url.Parse(c.Global.Origin)
-		if nil != err || ("https" != u.Scheme && "http" != u.Scheme) || "" == u.Host || "" != u.Path || nil != u.User || "" != u.RawQuery || "" != u.Fragment {
+		if nil != err || ("https" != u.Scheme && "http" != u.Scheme) || "" == u.Host || "" != u.Path || nil != u.User || "" != u.RawQuery ||
+			"" != u.Fragment {
 			return c, fmt.Errorf("global.origin must be an HTTP(S) origin without a path")
 		}
 	}
 	for _, origin := range c.Global.WebsocketOrigins {
 		if _, valid := validWebsocketOrigin(origin); !valid {
-			return c, fmt.Errorf("global.websocket_origins must contain exact HTTP(S) origins without user information, paths, queries, fragments or wildcards")
+			return c, fmt.Errorf(
+				"global.websocket_origins must contain exact HTTP(S) origins without user information, paths, queries, fragments or wildcards",
+			)
 		}
 	}
 	if nil != c.Auth.OIDC {
@@ -223,7 +230,8 @@ func validateResolvedConfig(c Config) (Config, error) {
 		}
 		for name, value := range map[string]string{"issuer": oidc.Issuer, "redirect_uri": oidc.RedirectURI} {
 			u, err := url.Parse(value)
-			if nil != err || ("https" != u.Scheme && "http" != u.Scheme) || "" == u.Host || nil != u.User || "" != u.RawQuery || "" != u.Fragment {
+			if nil != err || ("https" != u.Scheme && "http" != u.Scheme) || "" == u.Host || nil != u.User || "" != u.RawQuery ||
+				"" != u.Fragment {
 				return c, fmt.Errorf("auth.oidc.%s must be an HTTP(S) URL", name)
 			}
 		}
@@ -354,9 +362,7 @@ func cloneConfig(c Config) Config {
 	c.Global.NodeOrder = slices.Clone(c.Global.NodeOrder)
 	c.Global.WebsocketOrigins = slices.Clone(c.Global.WebsocketOrigins)
 	nodes := make(map[string]NodeConfig, len(c.Nodes))
-	for id, node := range c.Nodes {
-		nodes[id] = node
-	}
+	maps.Copy(nodes, c.Nodes)
 	c.Nodes = nodes
 	return c
 }

@@ -40,7 +40,13 @@ func (s *Server) discoverRelays(ctx context.Context, node string) {
 	}
 	if err := s.imageRequest(ctx, node, "GET", "/relays", nil, &response); nil != err {
 		if nil == ctx.Err() && !errors.Is(err, errNodePaused) {
-			slog.Warn(fmt.Sprintf("Could not discover self-update relays on node %q: %s", node, safeTransportError(err)), "node", node, "error", safeTransportError(err))
+			slog.Warn(
+				fmt.Sprintf("Could not discover self-update relays on node %q: %s", node, safeTransportError(err)),
+				"node",
+				node,
+				"error",
+				safeTransportError(err),
+			)
 		}
 		return
 	}
@@ -63,16 +69,14 @@ func (s *Server) startRelay(node, id string) {
 		return
 	}
 	s.relays[key] = true
-	s.hubWorkers.Add(1)
-	go func() {
-		defer s.hubWorkers.Done()
+	s.hubWorkers.Go(func() {
 		defer func() {
 			s.hubMu.Lock()
 			delete(s.relays, key)
 			s.hubMu.Unlock()
 		}()
 		s.relaySelfUpdate(s.hubContext, key)
-	}()
+	})
 }
 
 func (s *Server) relaySelfUpdate(ctx context.Context, key relayKey) {
@@ -101,7 +105,9 @@ func (s *Server) relaySelfUpdate(ctx context.Context, key relayKey) {
 						switch message.Event {
 						case "relay.snapshot", "relay.done":
 							var snapshot relaySnapshot
-							if nil != json.Unmarshal(message.Payload, &snapshot) || key.id != snapshot.ID || !stackName.MatchString(snapshot.Stack) || "" == snapshot.Action {
+							if nil != json.Unmarshal(message.Payload, &snapshot) || key.id != snapshot.ID ||
+								!stackName.MatchString(snapshot.Stack) ||
+								"" == snapshot.Action {
 								return false
 							}
 							stack, action = snapshot.Stack, snapshot.Action

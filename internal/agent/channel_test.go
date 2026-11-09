@@ -28,7 +28,11 @@ func openChannel(t *testing.T, server *httptest.Server) *websocket.Conn {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer test-secret")
 	headers.Set(protocol.Header, strconv.Itoa(protocol.AgentAPI))
-	conn, _, err := websocket.Dial(ctx, strings.Replace(server.URL, "https://", "wss://", 1)+"/channel", &websocket.DialOptions{HTTPClient: server.Client(), HTTPHeader: headers})
+	conn, _, err := websocket.Dial(
+		ctx,
+		strings.Replace(server.URL, "https://", "wss://", 1)+"/channel",
+		&websocket.DialOptions{HTTPClient: server.Client(), HTTPHeader: headers},
+	)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -82,13 +86,16 @@ func TestChannelRuntime(t *testing.T) {
 	server := channelServer(t, a)
 	conn := openChannel(t, server)
 	message := channelNext(t, conn)
-	if "event" != message.Type || "node.snapshot" != message.Event || !strings.Contains(string(message.Payload), `"name":"demo"`) || strings.Contains(string(message.Payload), "SECRET") {
+	if "event" != message.Type || "node.snapshot" != message.Event || !strings.Contains(string(message.Payload), `"name":"demo"`) ||
+		strings.Contains(string(message.Payload), "SECRET") {
 		t.Fatalf("initial snapshot: %+v", message)
 	}
 	var snapshot struct {
 		Health nodeHealth `json:"health"`
 	}
-	if nil != json.Unmarshal(message.Payload, &snapshot) || "ok" != snapshot.Health.Status || protocol.AgentAPI != snapshot.Health.APIVersion || a.config.Global.ImageCheckInterval != snapshot.Health.ImageCheckInterval {
+	if nil != json.Unmarshal(message.Payload, &snapshot) || "ok" != snapshot.Health.Status ||
+		protocol.AgentAPI != snapshot.Health.APIVersion ||
+		a.config.Global.ImageCheckInterval != snapshot.Health.ImageCheckInterval {
 		t.Fatal("invalid channel health")
 	}
 	message = channelUntil(t, conn, "event", "stack.runtime")
@@ -106,7 +113,8 @@ func TestChannelRuntime(t *testing.T) {
 	}
 	conn = openChannel(t, server)
 	message = channelNext(t, conn)
-	if "node.snapshot" != message.Event || !strings.Contains(string(message.Payload), `"name":"external"`) || strings.Contains(string(message.Payload), `"name":"demo"`) {
+	if "node.snapshot" != message.Event || !strings.Contains(string(message.Payload), `"name":"external"`) ||
+		strings.Contains(string(message.Payload), `"name":"demo"`) {
 		t.Fatalf("reconnect inventory: %s", message.Payload)
 	}
 	data, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
@@ -158,7 +166,8 @@ func TestChannelShell(t *testing.T) {
 	}
 	channelSend(t, conn, protocol.ChannelMessage{Type: "shell.close", Shell: s.op.ID})
 	message = channelUntil(t, conn, "shell.event", "operation.done")
-	if nil != json.Unmarshal(message.Payload, &snapshot) || "succeeded" != snapshot.Status || nil == snapshot.ExitCode || 0 != *snapshot.ExitCode {
+	if nil != json.Unmarshal(message.Payload, &snapshot) || "succeeded" != snapshot.Status || nil == snapshot.ExitCode ||
+		0 != *snapshot.ExitCode {
 		t.Fatalf("close: %s", message.Payload)
 	}
 }
@@ -291,15 +300,20 @@ func TestChannelErrors(t *testing.T) {
 			if err := json.Unmarshal([]byte(logs.text()), &record); nil != err {
 				t.Fatal(err)
 			}
-			if test.level != record.Level || !strings.Contains(record.Message, "127.0.0.1:42") || !strings.Contains(record.Message, a.config.Global.NodeID) {
+			if test.level != record.Level || !strings.Contains(record.Message, "127.0.0.1:42") ||
+				!strings.Contains(record.Message, a.config.Global.NodeID) {
 				t.Fatal("incorrect connection log", logs.text())
 			}
 			if "WARN" == test.level {
-				if test.err.Error() != record.Error || (!errors.Is(test.err, io.ErrUnexpectedEOF) && !strings.Contains(record.Message, record.Error)) {
+				if test.err.Error() != record.Error ||
+					(!errors.Is(test.err, io.ErrUnexpectedEOF) && !strings.Contains(record.Message, record.Error)) {
 					t.Fatal("connection failure cause was lost", logs.text())
 				}
 			}
-			if status := websocket.CloseStatus(test.err); "DEBUG" == test.level && !strings.Contains(record.Message, strconv.Itoa(int(status))) {
+			if status := websocket.CloseStatus(
+				test.err,
+			); "DEBUG" == test.level &&
+				!strings.Contains(record.Message, strconv.Itoa(int(status))) {
 				t.Fatal("connection close code was lost", logs.text())
 			}
 		})
@@ -363,14 +377,14 @@ func TestChannelInputIsolation(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	cmd := exec.Command("stty", "raw", "-echo")
 	cmd.Stdin = slave
 	if err := cmd.Run(); nil != err {
 		t.Fatal(err)
 	}
-	s := &shellSession{op: &operation{operationSnapshot: operationSnapshot{ID: "blocked", Status: "running"}}, terminal: master}
+	s := &shellSession{op: &operation{ID: "blocked", Status: "running"}, terminal: master}
 	a.shells["blocked"] = s
 	conn := openChannel(t, channelServer(t, a))
 	channelUntil(t, conn, "event", "node.snapshot")
@@ -399,7 +413,7 @@ func TestChannelInputIsolation(t *testing.T) {
 
 func TestChannelLargeSnapshot(t *testing.T) {
 	a, _ := fixture(t)
-	a.shells["large"] = &shellSession{op: &operation{operationSnapshot: operationSnapshot{ID: "large", Status: "succeeded", Output: strings.Repeat("\x00", 1<<20)}}}
+	a.shells["large"] = &shellSession{op: &operation{ID: "large", Status: "succeeded", Output: strings.Repeat("\x00", 1<<20)}}
 	conn := openChannel(t, channelServer(t, a))
 	channelSend(t, conn, protocol.ChannelMessage{Type: "shell.attach", Shell: "large"})
 	message := channelUntil(t, conn, "shell.event", "operation.snapshot")
@@ -441,7 +455,8 @@ func TestChannelCleanupRetry(t *testing.T) {
 	channelSend(t, conn, protocol.ChannelMessage{Type: "shell.close", Shell: s.op.ID})
 	message := channelUntil(t, conn, "shell.event", "operation.done")
 	var snapshot operationSnapshot
-	if nil != json.Unmarshal(message.Payload, &snapshot) || "succeeded" != snapshot.Status || nil == snapshot.ExitCode || 0 != *snapshot.ExitCode {
+	if nil != json.Unmarshal(message.Payload, &snapshot) || "succeeded" != snapshot.Status || nil == snapshot.ExitCode ||
+		0 != *snapshot.ExitCode {
 		t.Fatalf("cleanup retry: %s", message.Payload)
 	}
 	channelSend(t, conn, protocol.ChannelMessage{Type: "shell.close", Shell: s.op.ID})

@@ -172,7 +172,7 @@ func (a *agent) saveFiles(ctx context.Context, name, compose, env string, valida
 		return fault(409, "destination stack directory already exists.")
 	}
 	if created {
-		defer os.Remove(dir)
+		defer func() { _ = os.Remove(dir) }()
 	} // Only removes an empty, rejected creation.
 	file, err := composeFile(dir)
 	var apiErr *apiError
@@ -194,12 +194,12 @@ func (a *agent) saveFiles(ctx context.Context, name, compose, env string, valida
 	if nil != err {
 		return err
 	}
-	defer os.Remove(composeTemp)
+	defer func() { _ = os.Remove(composeTemp) }()
 	envTemp, err := tempFile(dir, ".dagent-env-*", env)
 	if nil != err {
 		return err
 	}
-	defer os.Remove(envTemp)
+	defer func() { _ = os.Remove(envTemp) }()
 	if validate {
 		// Validation resolves interpolation from the staged env, not service env_file
 		// entries that may refer to the not-yet-installed .env.

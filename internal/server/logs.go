@@ -11,7 +11,13 @@ import (
 
 func parseLogFilter(r *http.Request, stream bool) (logFilter, error) {
 	query := r.URL.Query()
-	filter := logFilter{limit: 100, node: query.Get("node"), logger: query.Get("logger"), search: strings.ToLower(query.Get("search")), levels: make(map[string]bool)}
+	filter := logFilter{
+		limit:  100,
+		node:   query.Get("node"),
+		logger: query.Get("logger"),
+		search: strings.ToLower(query.Get("search")),
+		levels: make(map[string]bool),
+	}
 	for key, values := range query {
 		switch key {
 		case "limit", "before", "after", "levels", "node", "logger", "search":
@@ -46,7 +52,7 @@ func parseLogFilter(r *http.Request, stream bool) (logFilter, error) {
 		*target = value
 	}
 	if query.Has("levels") {
-		for _, level := range strings.Split(query.Get("levels"), ",") {
+		for level := range strings.SplitSeq(query.Get("levels"), ",") {
 			level = strings.ToLower(strings.TrimSpace(level))
 			if "warn" == level {
 				level = "warning"
@@ -113,13 +119,13 @@ func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 		if nil != err {
 			return false
 		}
-		return write([]byte(fmt.Sprintf("event: log_lines\nid: %d\ndata: %s\n\n", entry.ID, data)))
+		return write(fmt.Appendf(nil, "event: log_lines\nid: %d\ndata: %s\n\n", entry.ID, data))
 	}
 	if !write([]byte(": connected\n\n")) {
 		return
 	}
 	metadata, _ := json.Marshal(status)
-	if !write([]byte(fmt.Sprintf("event: log_status\ndata: %s\n\n", metadata))) {
+	if !write(fmt.Appendf(nil, "event: log_status\ndata: %s\n\n", metadata)) {
 		return
 	}
 	ticker := time.NewTicker(15 * time.Second)

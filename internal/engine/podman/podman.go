@@ -126,7 +126,8 @@ func (p *Podman) EventStack(line []byte) string {
 		Status     string            `json:"Status"`
 		Attributes map[string]string `json:"Attributes"`
 	}
-	if nil != json.Unmarshal(line, &event) || "container" != event.Type || "exec" == event.Status || strings.HasPrefix(event.Status, "exec_") {
+	if nil != json.Unmarshal(line, &event) || "container" != event.Type || "exec" == event.Status ||
+		strings.HasPrefix(event.Status, "exec_") {
 		return ""
 	}
 	return event.Attributes["com.docker.compose.project"]

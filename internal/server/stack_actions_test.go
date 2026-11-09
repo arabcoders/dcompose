@@ -19,7 +19,8 @@ func TestStackAccepted(t *testing.T) {
 	var requests atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		if !(http.MethodPost == r.Method && "/stacks/demo/actions" == r.URL.Path) && !(http.MethodDelete == r.Method && "/stacks/demo" == r.URL.Path) {
+		if !(http.MethodPost == r.Method && "/stacks/demo/actions" == r.URL.Path) &&
+			!(http.MethodDelete == r.Method && "/stacks/demo" == r.URL.Path) {
 			t.Error("unexpected upstream action", r.Method, r.URL.Path)
 		}
 		jsonResponse(w, http.StatusAccepted, map[string]string{"status": "accepted"})
@@ -35,7 +36,8 @@ func TestStackAccepted(t *testing.T) {
 	} {
 		w := perform(t, s, input.method, input.path, input.body)
 		var accepted map[string]string
-		if http.StatusAccepted != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &accepted) || 1 != len(accepted) || "accepted" != accepted["status"] {
+		if http.StatusAccepted != w.Code || nil != json.Unmarshal(w.Body.Bytes(), &accepted) || 1 != len(accepted) ||
+			"accepted" != accepted["status"] {
 			t.Fatal("action returned an operation instead of acceptance", w.Code, w.Body.String())
 		}
 		r := httptest.NewRequest(input.method, input.path, strings.NewReader(input.body))
@@ -142,7 +144,10 @@ func TestStackLiveOutput(t *testing.T) {
 		var action struct {
 			Node, Name, Action, Phase string
 		}
-		if nil != json.Unmarshal(message.Payload, &action) || "event" != message.Type || "" != message.Stream || "home" != action.Node || "demo" != action.Name || "deploy" != action.Action || "start" != action.Phase {
+		if nil != json.Unmarshal(message.Payload, &action) || "event" != message.Type || "" != message.Stream || "home" != action.Node ||
+			"demo" != action.Name ||
+			"deploy" != action.Action ||
+			"start" != action.Phase {
 			t.Fatal("live action lost trusted node context", message, string(message.Payload))
 		}
 	}
@@ -158,7 +163,8 @@ func TestStackLiveOutput(t *testing.T) {
 			var output struct {
 				Node, Name, Output string
 			}
-			if nil != json.Unmarshal(message.Payload, &output) || "" != message.Stream || "home" != output.Node || "demo" != output.Name || chunk != output.Output {
+			if nil != json.Unmarshal(message.Payload, &output) || "" != message.Stream || "home" != output.Node || "demo" != output.Name ||
+				chunk != output.Output {
 				t.Fatal("live PTY bytes or node context changed", string(message.Payload))
 			}
 		}
@@ -175,7 +181,11 @@ func TestStackLiveOutput(t *testing.T) {
 			Node, Name, Action, Phase, Message string
 			ExitCode                           *int `json:"exit_code"`
 		}
-		if nil != json.Unmarshal(message.Payload, &exit) || "home" != exit.Node || "demo" != exit.Name || "deploy" != exit.Action || "exit" != exit.Phase || nil == exit.ExitCode || 1 != *exit.ExitCode || "" == exit.Message {
+		if nil != json.Unmarshal(message.Payload, &exit) || "home" != exit.Node || "demo" != exit.Name || "deploy" != exit.Action ||
+			"exit" != exit.Phase ||
+			nil == exit.ExitCode ||
+			1 != *exit.ExitCode ||
+			"" == exit.Message {
 			t.Fatal("failure completion lost live context", string(message.Payload))
 		}
 	}

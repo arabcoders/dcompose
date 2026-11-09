@@ -75,8 +75,8 @@ func newAgent(ctx context.Context, c config) *agent {
 	return a
 }
 
-// interface{} is limited to JSON encoding of the concrete response structs below.
-func respond(w http.ResponseWriter, code int, data interface{}) {
+// any (the interface{} alias) is limited to JSON encoding of the concrete response structs below.
+func respond(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(data)
@@ -85,12 +85,10 @@ func respond(w http.ResponseWriter, code int, data interface{}) {
 func respondError(w http.ResponseWriter, r *http.Request, err error) {
 	code := 500
 	message := "Could not complete the request. Try again."
-	var apiErr *apiError
-	var engineErr *engine.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*apiError](err); ok {
 		code = apiErr.code
 		message = apiErr.message
-	} else if errors.As(err, &engineErr) {
+	} else if engineErr, ok := errors.AsType[*engine.Error](err); ok {
 		code = engineErr.Code
 		message = engineErr.Message
 	}
@@ -102,19 +100,43 @@ func respondError(w http.ResponseWriter, r *http.Request, err error) {
 		if context.Canceled == r.Context().Err() {
 			level = slog.LevelDebug
 		}
-		slog.Log(r.Context(), level, fmt.Sprintf("%s %s from peer %s failed (HTTP %d): %v", r.Method, r.URL.Path, r.RemoteAddr, code, err), "peer", r.RemoteAddr, "method", r.Method, "resource", r.URL.Path, "status", code, "error", err)
+		slog.Log(
+			r.Context(),
+			level,
+			fmt.Sprintf("%s %s from peer %s failed (HTTP %d): %v", r.Method, r.URL.Path, r.RemoteAddr, code, err),
+			"peer",
+			r.RemoteAddr,
+			"method",
+			r.Method,
+			"resource",
+			r.URL.Path,
+			"status",
+			code,
+			"error",
+			err,
+		)
 	}
 	respond(w, code, struct {
 		Error string `json:"error"`
 	}{message})
 }
 
-func decodeBody(r *http.Request, target interface{}) error {
-	// interface{} is the standard JSON decoder boundary; callers use typed request structs.
+func decodeBody(r *http.Request, target any) error {
+	// any (the interface{} alias) is the standard JSON decoder boundary; callers use typed request structs.
 	decoder := json.NewDecoder(io.LimitReader(r.Body, (2<<20)+1))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); nil != err {
-		slog.Warn(fmt.Sprintf("Could not decode %s %s from peer %s: %v", r.Method, r.URL.Path, r.RemoteAddr, err), "peer", r.RemoteAddr, "method", r.Method, "resource", r.URL.Path, "error", err)
+		slog.Warn(
+			fmt.Sprintf("Could not decode %s %s from peer %s: %v", r.Method, r.URL.Path, r.RemoteAddr, err),
+			"peer",
+			r.RemoteAddr,
+			"method",
+			r.Method,
+			"resource",
+			r.URL.Path,
+			"error",
+			err,
+		)
 		return fault(400, "Invalid JSON request.")
 	}
 	var extra json.RawMessage
@@ -178,7 +200,10 @@ func (a *agent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, a.health())
 		return
 	}
-	if supplied := r.Header.Values(protocol.Header); 0 != len(supplied) && (1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
+	if supplied := r.Header.Values(
+		protocol.Header,
+	); 0 != len(supplied) &&
+		(1 != len(supplied) || strconv.Itoa(protocol.AgentAPI) != supplied[0]) {
 		respondError(w, r, fault(http.StatusUpgradeRequired, "Node version is incompatible. Update the node and server."))
 		return
 	}
@@ -282,15 +307,13 @@ func (a *agent) listStacks(ctx context.Context, w http.ResponseWriter) error {
 	close(jobs)
 	var workers sync.WaitGroup
 	for i := 0; 4 > i && len(names) > i; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for index := range jobs {
 				if state, err := a.runtimeStatus(ctx, names[index]); nil == err {
 					stacks[index].Status = state.Status
 				}
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	respond(w, 200, struct {

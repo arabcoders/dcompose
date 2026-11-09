@@ -16,9 +16,9 @@ func readPassword(input *os.File, output io.Writer, confirm bool) (string, error
 	var data []byte
 	var err error
 	if interactive {
-		fmt.Fprint(output, "Password: ")
+		_, _ = fmt.Fprint(output, "Password: ")
 		data, err = term.ReadPassword(fd)
-		fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output)
 	} else {
 		data, err = io.ReadAll(io.LimitReader(input, 4096))
 	}
@@ -35,9 +35,9 @@ func readPassword(input *os.File, output io.Writer, confirm bool) (string, error
 	}
 
 	if interactive && confirm {
-		fmt.Fprint(output, "Confirm password: ")
+		_, _ = fmt.Fprint(output, "Confirm password: ")
 		repeated, err := term.ReadPassword(fd)
-		fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output)
 		if nil != err {
 			return "", err
 		}

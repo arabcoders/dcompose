@@ -31,10 +31,19 @@ type safeNode struct {
 }
 
 func publicNode(id string, node NodeConfig) safeNode {
-	return safeNode{ID: id, Name: node.Name, URL: node.URL, Fingerprint: node.Fingerprint, PublicHost: node.PublicHost, HasToken: "" != node.token, Token: node.token, Paused: node.Paused}
+	return safeNode{
+		ID:          id,
+		Name:        node.Name,
+		URL:         node.URL,
+		Fingerprint: node.Fingerprint,
+		PublicHost:  node.PublicHost,
+		HasToken:    "" != node.token,
+		Token:       node.token,
+		Paused:      node.Paused,
+	}
 }
 
-func (s *Server) publicSettings(c Config) interface{} {
+func (s *Server) publicSettings(c Config) any {
 	nodes := make([]safeNode, 0, len(c.Nodes))
 	for _, id := range orderedNodeIDs(c) {
 		nodes = append(nodes, publicNode(id, c.Nodes[id]))
@@ -68,7 +77,15 @@ type nodeConnectionRequest struct {
 }
 
 func (input nodeInput) node(existing NodeConfig) NodeConfig {
-	node := NodeConfig{Name: input.Name, URL: input.URL, Fingerprint: input.Fingerprint, PublicHost: input.PublicHost, Token: existing.Token, token: existing.token, Paused: existing.Paused}
+	node := NodeConfig{
+		Name:        input.Name,
+		URL:         input.URL,
+		Fingerprint: input.Fingerprint,
+		PublicHost:  input.PublicHost,
+		Token:       existing.Token,
+		token:       existing.token,
+		Paused:      existing.Paused,
+	}
 	if nil != input.Paused {
 		node.Paused = *input.Paused
 	}
@@ -118,8 +135,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request, path string) {
 		s.saveNode(w, r, "")
 		return
 	}
-	if strings.HasPrefix(path, "/api/settings/nodes/") {
-		id := strings.TrimPrefix(path, "/api/settings/nodes/")
+	if id, ok := strings.CutPrefix(path, "/api/settings/nodes/"); ok {
 		if identity.MatchString(id) {
 			if "PUT" == r.Method {
 				s.saveNode(w, r, id)
@@ -222,7 +238,15 @@ func (s *Server) saveNode(w http.ResponseWriter, r *http.Request, id string) {
 	if !decodeBody(w, r, &connection, 32<<10) {
 		return
 	}
-	input := nodeInput{ID: id, Name: connection.Name, URL: connection.URL, Token: connection.Token, Fingerprint: connection.Fingerprint, PublicHost: connection.PublicHost, Paused: connection.Paused}
+	input := nodeInput{
+		ID:          id,
+		Name:        connection.Name,
+		URL:         connection.URL,
+		Token:       connection.Token,
+		Fingerprint: connection.Fingerprint,
+		PublicHost:  connection.PublicHost,
+		Paused:      connection.Paused,
+	}
 	if "" == id {
 		var identity [8]byte
 		if _, err := rand.Read(identity[:]); nil != err {
@@ -315,7 +339,13 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request, id string) {
 	if err := resetNodePairing(r.Context(), node, s.nodes[id]); nil != err {
 		detail := strings.TrimSuffix(strings.TrimSpace(safeTransportError(err)), ".")
 		result.Warning = "Node was removed, but pairing could not be reset."
-		slog.Warn(fmt.Sprintf("Removed %s from server configuration, but could not reset its pairing: %s.", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "error", detail)
+		slog.Warn(
+			fmt.Sprintf("Removed %s from server configuration, but could not reset its pairing: %s.", nodeLogLabel(node), detail),
+			"node",
+			nodeLogLabel(node),
+			"error",
+			detail,
+		)
 	} else {
 		slog.Info(fmt.Sprintf("Disconnected %s and reset its pairing.", nodeLogLabel(node)), "node", nodeLogLabel(node))
 	}
@@ -352,10 +382,15 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	health, err := checkNode(ctx, node, client)
 	if nil != err {
-		var incompatible incompatibleAgent
 		detail := safeTransportError(err)
-		slog.Error(fmt.Sprintf("Connection test for %s failed: %s", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "error", detail)
-		if errors.As(err, &incompatible) {
+		slog.Error(
+			fmt.Sprintf("Connection test for %s failed: %s", nodeLogLabel(node), detail),
+			"node",
+			nodeLogLabel(node),
+			"error",
+			detail,
+		)
+		if incompatible, ok := errors.AsType[incompatibleAgent](err); ok {
 			apiError(w, 426, incompatible.Error())
 		} else {
 			apiError(w, 502, "Cannot connect to the node. Check its token, address and public-key fingerprint.")

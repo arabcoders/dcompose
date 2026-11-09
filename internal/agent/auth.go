@@ -50,7 +50,7 @@ func sourceHostname(host string) bool {
 	if 0 == len(host) || 253 < len(host) {
 		return false
 	}
-	for _, label := range strings.Split(host, ".") {
+	for label := range strings.SplitSeq(host, ".") {
 		if 0 == len(label) || 63 < len(label) || '-' == label[0] || '-' == label[len(label)-1] {
 			return false
 		}
@@ -75,7 +75,15 @@ func (c *hostCache) addresses(ctx context.Context, host string) []netip.Addr {
 	addresses, err := c.lookup(lookupCtx, "ip", host)
 	if nil != err {
 		addresses = nil
-		slog.Warn(fmt.Sprintf("Could not resolve authentication hostname %q: %v. Retrying in %s.", host, err, sourceDNSCacheTTL.String()), "host", host, "error", err, "retry_in", sourceDNSCacheTTL)
+		slog.Warn(
+			fmt.Sprintf("Could not resolve authentication hostname %q: %v. Retrying in %s.", host, err, sourceDNSCacheTTL.String()),
+			"host",
+			host,
+			"error",
+			err,
+			"retry_in",
+			sourceDNSCacheTTL,
+		)
 	}
 	c.entries[host] = hostAddresses{addresses: addresses, expires: time.Now().Add(sourceDNSCacheTTL)}
 	return addresses
@@ -128,12 +136,32 @@ func (a *agent) sourceIP(r *http.Request) (netip.Addr, error) {
 func (a *agent) authorized(w http.ResponseWriter, r *http.Request) bool {
 	ip, err := a.sourceIP(r)
 	if nil != err {
-		slog.Warn(fmt.Sprintf("Rejected %s %s from peer %s: cannot determine the connection source: %v", r.Method, r.URL.Path, r.RemoteAddr, err), "peer", r.RemoteAddr, "error", err)
+		slog.Warn(
+			fmt.Sprintf("Rejected %s %s from peer %s: cannot determine the connection source: %v", r.Method, r.URL.Path, r.RemoteAddr, err),
+			"peer",
+			r.RemoteAddr,
+			"error",
+			err,
+		)
 		respondError(w, r, fault(403, "Cannot determine the connection source. Check trusted proxy and forwarding settings."))
 		return false
 	}
 	if !a.matchesSource(ip, a.config.allowed, a.config.allowedHosts) {
-		slog.Warn(fmt.Sprintf("Rejected %s %s from source %s via peer %s: connection source is not allowed by auth.allowed_ips.", r.Method, r.URL.Path, ip, r.RemoteAddr), "peer", r.RemoteAddr, "source", ip, "allowed_ips", a.config.Auth.AllowedIPs)
+		slog.Warn(
+			fmt.Sprintf(
+				"Rejected %s %s from source %s via peer %s: connection source is not allowed by auth.allowed_ips.",
+				r.Method,
+				r.URL.Path,
+				ip,
+				r.RemoteAddr,
+			),
+			"peer",
+			r.RemoteAddr,
+			"source",
+			ip,
+			"allowed_ips",
+			a.config.Auth.AllowedIPs,
+		)
 		respondError(w, r, fault(403, "Connection source is not allowed by auth.allowed_ips."))
 		return false
 	}
@@ -146,7 +174,19 @@ func (a *agent) authorized(w http.ResponseWriter, r *http.Request) bool {
 	hash := sha256.Sum256([]byte(token))
 	if 1 != subtle.ConstantTimeCompare(hash[:], a.config.token[:]) || "" == token {
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		slog.Warn(fmt.Sprintf("Rejected %s %s from source %s via peer %s: missing or invalid bearer token.", r.Method, r.URL.Path, ip, r.RemoteAddr), "peer", r.RemoteAddr, "source", ip)
+		slog.Warn(
+			fmt.Sprintf(
+				"Rejected %s %s from source %s via peer %s: missing or invalid bearer token.",
+				r.Method,
+				r.URL.Path,
+				ip,
+				r.RemoteAddr,
+			),
+			"peer",
+			r.RemoteAddr,
+			"source",
+			ip,
+		)
 		respondError(w, r, fault(401, "invalid bearer token"))
 		return false
 	}

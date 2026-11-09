@@ -88,7 +88,7 @@ func (a *agent) applyRegistries(snapshot protocol.RegistrySync) error {
 	if err := os.Symlink(filepath.Base(dir), link); nil != err {
 		return errors.New("could not publish managed registry snapshot")
 	}
-	defer os.Remove(link)
+	defer func() { _ = os.Remove(link) }()
 	previous, _ := os.Readlink(filepath.Join(root, "current"))
 	if err := os.Rename(link, filepath.Join(root, "current")); nil != err {
 		return errors.New("could not publish managed registry snapshot")

@@ -54,7 +54,10 @@ type podmanInfo struct {
 func (p *Podman) info(ctx context.Context) (*podmanInfo, error) {
 	if "" != p.host {
 		endpoint, err := url.Parse(p.host)
-		if nil != err || "unix" != endpoint.Scheme || "" != endpoint.Host || nil != endpoint.User || !strings.HasPrefix(endpoint.Path, "/") || "" != endpoint.RawQuery || "" != endpoint.Fragment {
+		if nil != err || "unix" != endpoint.Scheme || "" != endpoint.Host || nil != endpoint.User ||
+			!strings.HasPrefix(endpoint.Path, "/") ||
+			"" != endpoint.RawQuery ||
+			"" != endpoint.Fragment {
 			return nil, errors.New("CONTAINER_HOST must be an absolute unix:/// socket URL")
 		}
 	}
@@ -74,9 +77,27 @@ func (p *Podman) info(ctx context.Context) (*podmanInfo, error) {
 
 func nodeInfoError(command string, err error, stderr []byte) error {
 	if detail := bytes.TrimSpace(stderr); 0 < len(detail) {
-		slog.Error(fmt.Sprintf("Could not read Podman node information with %s: %v: %s", command, err, detail), "runtime", "podman", "command", command, "error", err, "stderr", string(detail))
+		slog.Error(
+			fmt.Sprintf("Could not read Podman node information with %s: %v: %s", command, err, detail),
+			"runtime",
+			"podman",
+			"command",
+			command,
+			"error",
+			err,
+			"stderr",
+			string(detail),
+		)
 	} else {
-		slog.Error(fmt.Sprintf("Could not read Podman node information with %s: %v", command, err), "runtime", "podman", "command", command, "error", err)
+		slog.Error(
+			fmt.Sprintf("Could not read Podman node information with %s: %v", command, err),
+			"runtime",
+			"podman",
+			"command",
+			command,
+			"error",
+			err,
+		)
 	}
 	return &engine.Error{Code: 502, Message: "Could not load node information. Try again."}
 }

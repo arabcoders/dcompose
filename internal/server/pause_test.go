@@ -21,7 +21,14 @@ func savePause(t *testing.T, s *Server, paused *bool) {
 	t.Helper()
 	c, _ := s.snapshot()
 	node := c.Nodes["home"]
-	body := nodeConnectionRequest{Name: node.Name, URL: node.URL, Token: node.token, Fingerprint: node.Fingerprint, PublicHost: node.PublicHost, Paused: paused}
+	body := nodeConnectionRequest{
+		Name:        node.Name,
+		URL:         node.URL,
+		Token:       node.token,
+		Fingerprint: node.Fingerprint,
+		PublicHost:  node.PublicHost,
+		Paused:      paused,
+	}
 	data, err := json.Marshal(body)
 	if nil != err {
 		t.Fatal(err)
@@ -119,7 +126,11 @@ func TestPausedRequests(t *testing.T) {
 	if _, err := (registryTransport{server: s}).RoundTrip(request); !errors.Is(err, errNodePaused) {
 		t.Fatal("unguarded registry request", err)
 	}
-	if _, failure := s.attachNode(ctx, protocol.ChannelMessage{Type: "relay.attach", Node: "home", Resource: "update"}); nil == failure || 409 != failure.Status {
+	if _, failure := s.attachNode(
+		ctx,
+		protocol.ChannelMessage{Type: "relay.attach", Node: "home", Resource: "update"},
+	); nil == failure ||
+		409 != failure.Status {
 		t.Fatal("unguarded stream attachment", failure)
 	}
 	s.discoverRelays(ctx, "home")
@@ -140,7 +151,10 @@ func TestPauseChannel(t *testing.T) {
 	nextConnection(t, f)
 	awaitCache(t, s, `"stacks"`, "")
 	watcher, _ := s.subscribeWorkspace()
-	subscription, failure := s.attachNode(context.Background(), protocol.ChannelMessage{Type: "logs.attach", Node: "home", Resource: "demo"})
+	subscription, failure := s.attachNode(
+		context.Background(),
+		protocol.ChannelMessage{Type: "logs.attach", Node: "home", Resource: "demo"},
+	)
 	if nil != failure {
 		t.Fatal(failure)
 	}
@@ -155,7 +169,8 @@ func TestPauseChannel(t *testing.T) {
 		t.Fatal("pause did not cancel active node work")
 	}
 	s.hubMu.Lock()
-	if nil != s.channels["home"] || nil != channel.conn || 0 != len(channel.streams) || 0 != len(channel.shells) || nil != s.runtime["home"].snapshot {
+	if nil != s.channels["home"] || nil != channel.conn || 0 != len(channel.streams) || 0 != len(channel.shells) ||
+		nil != s.runtime["home"].snapshot {
 		t.Fatal("pause retained channel or cached runtime")
 	}
 	for key := range s.images.stacks {
@@ -175,7 +190,12 @@ func TestPauseChannel(t *testing.T) {
 	if message := <-shell.subscriber; "shell.error" != message.Type || 409 != message.Status {
 		t.Fatal("active shell did not receive paused status", message)
 	}
-	if failure := s.browserShellCommand(context.Background(), shell, protocol.ChannelMessage{Type: "shell.input", Stream: "terminal", Data: "ls"}); nil == failure || 409 != failure.Status {
+	if failure := s.browserShellCommand(
+		context.Background(),
+		shell,
+		protocol.ChannelMessage{Type: "shell.input", Stream: "terminal", Data: "ls"},
+	); nil == failure ||
+		409 != failure.Status {
 		t.Fatal("paused shell accepted input", failure)
 	}
 	newWatcher, initial := s.subscribeWorkspace()

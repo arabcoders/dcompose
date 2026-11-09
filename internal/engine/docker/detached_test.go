@@ -50,10 +50,14 @@ func TestSelfContainer(t *testing.T) {
 		if "docker" != cmd.Program || !reflect.DeepEqual(want, cmd.Args) {
 			t.Fatalf("inspect: %+v", cmd)
 		}
-		return []byte(`{"ID":"` + self.ID + `","Image":"` + self.Image + `","Project":"node","Mounts":[{"Type":"volume","Source":"/data/cache","Destination":"/cache","RW":true}]}`), nil, nil
+		return []byte(
+			`{"ID":"` + self.ID + `","Image":"` + self.Image + `","Project":"node","Mounts":[{"Type":"volume","Source":"/data/cache","Destination":"/cache","RW":true}]}`,
+		), nil, nil
 	})
 	got, err := d.SelfContainer(context.Background())
-	if nil != err || nil == got || self.ID != got.ID || self.Image != got.Image || self.Project != got.Project || 1 != len(got.Mounts) || !got.Mounts[0].RW || 2 != calls {
+	if nil != err || nil == got || self.ID != got.ID || self.Image != got.Image || self.Project != got.Project || 1 != len(got.Mounts) ||
+		!got.Mounts[0].RW ||
+		2 != calls {
 		t.Fatalf("self: %+v, %v", got, err)
 	}
 	if strings.Contains(selfContainerFormat, "{{json .}}") || strings.Contains(selfContainerFormat, ".Config.Env") {
@@ -138,7 +142,9 @@ func TestDetachedMounts(t *testing.T) {
 				return
 			}
 			var fault *engine.Error
-			if !errors.As(err, &fault) || 409 != fault.Code || "" == fault.Message || nil == fault.Cause || strings.Contains(fault.Message, requestFile) || strings.Contains(fault.Message, "/private") {
+			if !errors.As(err, &fault) || 409 != fault.Code || "" == fault.Message || nil == fault.Cause ||
+				strings.Contains(fault.Message, requestFile) ||
+				strings.Contains(fault.Message, "/private") {
 				t.Fatalf("mount error: %v", err)
 			}
 		})
@@ -151,7 +157,21 @@ func TestStartDetached(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
 	self, name, requestFile := detachedSelf(), "dagent-operation-test", "/cache/operations/request.json"
 	d := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-		prefix := []string{"run", "--detach", "--name", name, "--label", "io.dcompose.operation=test", "--restart=no", "--pull", "never", "--volumes-from", self.ID, "--user", strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())}
+		prefix := []string{
+			"run",
+			"--detach",
+			"--name",
+			name,
+			"--label",
+			"io.dcompose.operation=test",
+			"--restart=no",
+			"--pull",
+			"never",
+			"--volumes-from",
+			self.ID,
+			"--user",
+			strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid()),
+		}
 		if "docker" != cmd.Program || len(prefix) >= len(cmd.Args) || !reflect.DeepEqual(prefix, cmd.Args[:len(prefix)]) {
 			t.Fatalf("run: %+v", cmd)
 		}
@@ -220,7 +240,15 @@ func TestDetachedState(t *testing.T) {
 				}
 				return []byte("stdout\n"), []byte("stderr\n"), nil
 			}
-			want := []string{"inspect", "--type", "container", "--format", `{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`, "--", "dagent-operation-test"}
+			want := []string{
+				"inspect",
+				"--type",
+				"container",
+				"--format",
+				`{"Running":{{json .State.Running}},"ExitCode":{{json .State.ExitCode}}}`,
+				"--",
+				"dagent-operation-test",
+			}
 			if !reflect.DeepEqual(want, cmd.Args) {
 				t.Fatalf("state inspect: %+v", cmd)
 			}
@@ -252,7 +280,9 @@ func TestDetachedLogsError(t *testing.T) {
 	})
 	state, err := d.DetachedState(context.Background(), "dagent-operation-test")
 	var fault *engine.Error
-	if !errors.As(err, &fault) || 502 != fault.Code || state.Running || 17 != state.ExitCode || "partial logs\nlogs unavailable" != state.Output || 2 != calls {
+	if !errors.As(err, &fault) || 502 != fault.Code || state.Running || 17 != state.ExitCode ||
+		"partial logs\nlogs unavailable" != state.Output ||
+		2 != calls {
 		t.Fatalf("state: %+v, error: %v", state, err)
 	}
 }
@@ -283,14 +313,23 @@ func TestDetachedCommandErrors(t *testing.T) {
 			case "inspect":
 				_, err = d.SelfContainer(context.Background())
 			case "start":
-				err = d.StartDetached(context.Background(), detachedSelf(), "dagent-operation-test", "/cache/operations/request.json", testStack())
+				err = d.StartDetached(
+					context.Background(),
+					detachedSelf(),
+					"dagent-operation-test",
+					"/cache/operations/request.json",
+					testStack(),
+				)
 			case "state":
 				_, err = d.DetachedState(context.Background(), "dagent-operation-test")
 			case "remove":
 				err = d.RemoveDetached(context.Background(), "dagent-operation-test")
 			}
 			var fault *engine.Error
-			if 1 != calls || !errors.As(err, &fault) || 502 != fault.Code || !errors.Is(err, cause) || !strings.Contains(fault.Cause.Error(), "daemon diagnostic") || strings.Contains(fault.Message, "diagnostic") || strings.Contains(err.Error(), "stdout-secret") {
+			if 1 != calls || !errors.As(err, &fault) || 502 != fault.Code || !errors.Is(err, cause) ||
+				!strings.Contains(fault.Cause.Error(), "daemon diagnostic") ||
+				strings.Contains(fault.Message, "diagnostic") ||
+				strings.Contains(err.Error(), "stdout-secret") {
 				t.Fatalf("calls=%d error=%v", calls, err)
 			}
 		})

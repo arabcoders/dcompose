@@ -28,7 +28,7 @@ func TestPasswordInput(t *testing.T) {
 			if nil != err {
 				t.Fatal(err)
 			}
-			defer input.Close()
+			defer func() { _ = input.Close() }()
 			if _, err := output.WriteString(tc.input); nil != err {
 				t.Fatal(err)
 			}
@@ -65,14 +65,14 @@ func TestPasswordPrompt(t *testing.T) {
 			if nil != err {
 				t.Fatal(err)
 			}
-			defer master.Close()
-			defer slave.Close()
+			defer func() { _ = master.Close() }()
+			defer func() { _ = slave.Close() }()
 			prompts, output, err := os.Pipe()
 			if nil != err {
 				t.Fatal(err)
 			}
-			defer prompts.Close()
-			defer output.Close()
+			defer func() { _ = prompts.Close() }()
+			defer func() { _ = output.Close() }()
 
 			driven := make(chan error, 1)
 			go func() {

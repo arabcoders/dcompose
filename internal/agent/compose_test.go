@@ -30,7 +30,7 @@ exit `+strconv.Itoa(code)+"\n")
 			if nil != err {
 				t.Fatal(err)
 			}
-			op := &operation{operationSnapshot: operationSnapshot{Stack: "demo", Action: "pull"}}
+			op := &operation{Stack: "demo", Action: "pull"}
 			err = a.runOperation(op, dir, base, "")
 			if code != exitCode(err) {
 				t.Fatalf("exit: %v", err)
@@ -75,7 +75,8 @@ func TestPortBindings(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &result); nil != err {
 				t.Fatal(err)
 			}
-			if 1 != len(result.Services) || test.ports != result.Services[0].Ports || !reflect.DeepEqual(test.bindings, result.Services[0].PortBindings) {
+			if 1 != len(result.Services) || test.ports != result.Services[0].Ports ||
+				!reflect.DeepEqual(test.bindings, result.Services[0].PortBindings) {
 				t.Fatalf("unexpected services: %+v", result.Services)
 			}
 		})
@@ -105,7 +106,22 @@ func TestComposeEnv(t *testing.T) {
 		if nil != err {
 			t.Fatal(err)
 		}
-		cmd := exec.CommandContext(ctx, "docker", "compose", "--project-name", s.Name, "--project-directory", s.Dir, "--env-file", s.EnvFile, "--file", s.ComposeFile, "config", "--format", "json")
+		cmd := exec.CommandContext(
+			ctx,
+			"docker",
+			"compose",
+			"--project-name",
+			s.Name,
+			"--project-directory",
+			s.Dir,
+			"--env-file",
+			s.EnvFile,
+			"--file",
+			s.ComposeFile,
+			"config",
+			"--format",
+			"json",
+		)
 		cmd.Dir = dir
 		cmd.Env = append(cmd.Environ(), a.engine.Action(s, "update", "").Env...)
 		output, err := cmd.CombinedOutput()
@@ -125,7 +141,8 @@ func TestComposeEnv(t *testing.T) {
 			t.Fatal(err)
 		}
 		web := parsed.Services["web"]
-		if image != web.Image || "updated" != web.Environment["DOCKER_NODE_TEST_VALUE"] || 1 != len(web.Volumes) || filepath.Join(dir, "data") != web.Volumes[0].Source {
+		if image != web.Image || "updated" != web.Environment["DOCKER_NODE_TEST_VALUE"] || 1 != len(web.Volumes) ||
+			filepath.Join(dir, "data") != web.Volumes[0].Source {
 			t.Fatalf("wrong env/context: %+v", web)
 		}
 		data, _ := os.ReadFile(filepath.Join(dir, "compose.yaml"))

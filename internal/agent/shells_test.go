@@ -30,7 +30,12 @@ func shellFixture(t *testing.T) (*agent, string) {
 }
 
 func shellInspect(stack string, running bool) string {
-	return fmt.Sprintf(`[{"Id":%q,"State":{"Running":%t},"Config":{"Labels":{"com.docker.compose.project":%q}}}]`, strings.Repeat("a", 64), running, stack)
+	return fmt.Sprintf(
+		`[{"Id":%q,"State":{"Running":%t},"Config":{"Labels":{"com.docker.compose.project":%q}}}]`,
+		strings.Repeat("a", 64),
+		running,
+		stack,
+	)
 }
 
 func createdShell(t *testing.T, a *agent, body string) *shellSession {
@@ -87,7 +92,10 @@ func TestShellTerminal(t *testing.T) {
 		t.Fatal("readiness marker leaked")
 	}
 	argv, _ := os.ReadFile(filepath.Join(fake, "argv"))
-	if !strings.Contains(string(argv), "<exec><-it><--detach-keys=><--env><DOCKER_NODE_SHELL_ID="+s.op.ID+"><--env><TERM=xterm-256color><"+s.container+"><sh><-c>") {
+	if !strings.Contains(
+		string(argv),
+		"<exec><-it><--detach-keys=><--env><DOCKER_NODE_SHELL_ID="+s.op.ID+"><--env><TERM=xterm-256color><"+s.container+"><sh><-c>",
+	) {
 		t.Fatalf("exec not pinned to ID: %s", argv)
 	}
 	for i := 0; 2 > i; i++ {
@@ -295,12 +303,13 @@ func TestShellNaturalExit(t *testing.T) {
 	s := createdShell(t, a, `{"container":"web"}`)
 	shellInput(t, a, s, "printf 'final-output\\n'; exit 7\n")
 	eventually(t, func() bool { return "running" != s.op.snapshot().Status })
-	if op := s.op.snapshot(); "failed" != op.Status || nil == op.ExitCode || 7 != *op.ExitCode || !strings.Contains(op.Output, "final-output") {
+	if op := s.op.snapshot(); "failed" != op.Status || nil == op.ExitCode || 7 != *op.ExitCode ||
+		!strings.Contains(op.Output, "final-output") {
 		t.Fatalf("shell exit lost: %+v", op)
 	}
 	<-s.done
 	var stopped bool
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		var record struct {
 			Level, Shell, Stack, Container, Reason string
 			Message                                string `json:"msg"`
@@ -332,8 +341,8 @@ func TestShellInputDeadline(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer func() { _ = master.Close() }()
+	defer func() { _ = slave.Close() }()
 	if err := pty.Setsize(slave, &pty.Winsize{Cols: 90, Rows: 30}); nil != err {
 		t.Fatal(err)
 	}
@@ -354,13 +363,13 @@ func TestShellInputDeadline(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		_ = slave.Close()
-		<-done
+		_ = <-done
 		t.Fatal("blocked shell input ignored write deadline")
 	}
 }
 
 func TestShellOutputTail(t *testing.T) {
-	op := &operation{operationSnapshot: operationSnapshot{ID: "shell", Action: "shell", Status: "running"}, retainTail: true}
+	op := &operation{ID: "shell", Action: "shell", Status: "running", retainTail: true}
 	s := newSubscriber()
 	op.subscribers = map[*eventSubscriber]struct{}{s: {}}
 	_, _ = op.Write([]byte("old-prefix" + strings.Repeat("€", (1<<20)/3)))
@@ -375,7 +384,8 @@ func TestShellOutputTail(t *testing.T) {
 		t.Fatal("live output stopped at cap")
 	}
 	output := op.snapshot().Output
-	if 1<<20 < len(output) || !utf8.ValidString(output) || strings.HasPrefix(output, "old-prefix") || !strings.HasSuffix(output, "new-output") {
+	if 1<<20 < len(output) || !utf8.ValidString(output) || strings.HasPrefix(output, "old-prefix") ||
+		!strings.HasSuffix(output, "new-output") {
 		t.Fatal("shell snapshot is not bounded UTF-8 suffix")
 	}
 }

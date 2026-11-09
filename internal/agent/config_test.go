@@ -34,7 +34,17 @@ func configFixture(t *testing.T, extra string, auth string) string {
 	token := filepath.Join(dir, "token")
 	write(t, token, "test-secret\n")
 	path := filepath.Join(dir, "config.toml")
-	write(t, path, fmt.Sprintf("[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[auth]\ntoken = %q\n%s\n[global]\nstacks_dir = %q\n%s", "file:"+token, auth, dir, extra))
+	write(
+		t,
+		path,
+		fmt.Sprintf(
+			"[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[auth]\ntoken = %q\n%s\n[global]\nstacks_dir = %q\n%s",
+			"file:"+token,
+			auth,
+			dir,
+			extra,
+		),
+	)
 	return path
 }
 
@@ -61,7 +71,15 @@ func TestToken(t *testing.T) {
 	if _, err := generateCert(dir); nil != err {
 		t.Fatal(err)
 	}
-	write(t, configPath, fmt.Sprintf("[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[global]\nstacks_dir = %q\n[auth]\ntoken = %q", dir, "file:"+path))
+	write(
+		t,
+		configPath,
+		fmt.Sprintf(
+			"[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[global]\nstacks_dir = %q\n[auth]\ntoken = %q",
+			dir,
+			"file:"+path,
+		),
+	)
 	c, err := loadConfig(configPath)
 	if nil != err || sha256.Sum256([]byte(secret)) != c.token {
 		t.Fatalf("generated token cannot be loaded: %v", err)
@@ -88,7 +106,10 @@ func TestConfig(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	if "docker" != c.Global.Engine || "127.0.0.1:9077" != c.Global.Listen || "info" != c.Global.LogLevel || "6h" != c.Global.ImageCheckInterval || 2 != len(c.allowed) || sha256.Sum256([]byte("test-secret")) != c.token {
+	if "docker" != c.Global.Engine || "127.0.0.1:9077" != c.Global.Listen || "info" != c.Global.LogLevel ||
+		"6h" != c.Global.ImageCheckInterval ||
+		2 != len(c.allowed) ||
+		sha256.Sum256([]byte("test-secret")) != c.token {
 		t.Fatalf("unexpected config: %+v", c)
 	}
 	c, err = loadConfig(configFixture(t, "log_level = 'warn'", "allowed_ips = []"))
@@ -146,11 +167,21 @@ func TestConfigSources(t *testing.T) {
 		return nil, context.Canceled
 	}}
 	t.Cleanup(func() { net.DefaultResolver = resolver })
-	c, err := loadConfig(configFixture(t, "", "allowed_ips = ['192.0.2.3', 'dash_service.invalid', 'node.invalid.']\ntrusted_proxies = ['198.51.100.0/24', 'proxy_service.invalid']"))
+	c, err := loadConfig(
+		configFixture(
+			t,
+			"",
+			"allowed_ips = ['192.0.2.3', 'dash_service.invalid', 'node.invalid.']\ntrusted_proxies = ['198.51.100.0/24', 'proxy_service.invalid']",
+		),
+	)
 	if nil != err {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.allowed, []netip.Prefix{netip.MustParsePrefix("192.0.2.3/32")}) || !slices.Equal(c.allowedHosts, []string{"dash_service.invalid", "node.invalid."}) || !slices.Equal(c.trusted, []netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}) || !slices.Equal(c.trustedHosts, []string{"proxy_service.invalid"}) || 2 != len(c.Auth.TrustedProxies) {
+	if !slices.Equal(c.allowed, []netip.Prefix{netip.MustParsePrefix("192.0.2.3/32")}) ||
+		!slices.Equal(c.allowedHosts, []string{"dash_service.invalid", "node.invalid."}) ||
+		!slices.Equal(c.trusted, []netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}) ||
+		!slices.Equal(c.trustedHosts, []string{"proxy_service.invalid"}) ||
+		2 != len(c.Auth.TrustedProxies) {
 		t.Fatalf("source entries were not separated: %+v", c)
 	}
 	if a := newAgent(context.Background(), c); 0 != len(a.dns.entries) {
@@ -163,7 +194,9 @@ func TestConfigSources(t *testing.T) {
 
 func TestSourceEntries(t *testing.T) {
 	prefixes, hosts, err := parseSourceEntries([]string{"192.0.2.3", "2001:db8::/64", "dash_service", "Node.Example."})
-	if nil != err || !slices.Equal(prefixes, []netip.Prefix{netip.MustParsePrefix("192.0.2.3/32"), netip.MustParsePrefix("2001:db8::/64")}) || !slices.Equal(hosts, []string{"dash_service", "node.example."}) {
+	if nil != err ||
+		!slices.Equal(prefixes, []netip.Prefix{netip.MustParsePrefix("192.0.2.3/32"), netip.MustParsePrefix("2001:db8::/64")}) ||
+		!slices.Equal(hosts, []string{"dash_service", "node.example."}) {
 		t.Fatalf("valid source entries: %v %v %v", prefixes, hosts, err)
 	}
 	for _, entry := range []string{"", "https://node.example", "node.example:80", "*.example", "bad..example", "-bad.example", "bad-.example", strings.Repeat("a", 64) + ".example"} {
@@ -193,7 +226,15 @@ func TestConfigToken(t *testing.T) {
 			path := configFixture(t, "", "")
 			dir := filepath.Dir(path)
 			write(t, filepath.Join(dir, "token"), test.content)
-			write(t, path, fmt.Sprintf("[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[global]\nstacks_dir = %q\n[auth]\ntoken = %q", dir, test.value))
+			write(
+				t,
+				path,
+				fmt.Sprintf(
+					"[tls]\ncert_file = 'node.crt'\nkey_file = 'node.key'\n[global]\nstacks_dir = %q\n[auth]\ntoken = %q",
+					dir,
+					test.value,
+				),
+			)
 			t.Chdir(t.TempDir())
 			c, err := loadConfig(path)
 			if !test.valid {
@@ -243,7 +284,8 @@ func TestConfigImageInterval(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	if metadata.IsDefined("global", "image_check_config_file") || !metadata.IsDefined("global", "image_check_interval") || "30m" != stored.Global.ImageCheckInterval {
+	if metadata.IsDefined("global", "image_check_config_file") || !metadata.IsDefined("global", "image_check_interval") ||
+		"30m" != stored.Global.ImageCheckInterval {
 		t.Fatal("obsolete credential option remains or image scheduling option was removed")
 	}
 }

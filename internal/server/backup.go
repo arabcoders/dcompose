@@ -73,13 +73,29 @@ func (s *Server) backup(w http.ResponseWriter, r *http.Request) {
 			var upstream nodeHTTPError
 			_ = errors.As(err, &upstream)
 			detail := safeTransportError(err)
-			slog.Error(fmt.Sprintf("Could not back up %s: %s", nodeLogLabel(node), detail), "node", nodeLogLabel(node), "operation", "backup", "status", upstream.status, "error", detail)
+			slog.Error(
+				fmt.Sprintf("Could not back up %s: %s", nodeLogLabel(node), detail),
+				"node",
+				nodeLogLabel(node),
+				"operation",
+				"backup",
+				"status",
+				upstream.status,
+				"error",
+				detail,
+			)
 			apiError(w, http.StatusBadGateway, fmt.Sprintf("Could not back up node %s. Try again.", node.Name))
 			return
 		}
 		for _, file := range backup.Files {
 			if !fs.ValidPath(file.Path) {
-				slog.Error(fmt.Sprintf("Could not back up %s: the node returned an invalid relative file path.", nodeLogLabel(node)), "node", nodeLogLabel(node), "operation", "backup")
+				slog.Error(
+					fmt.Sprintf("Could not back up %s: the node returned an invalid relative file path.", nodeLogLabel(node)),
+					"node",
+					nodeLogLabel(node),
+					"operation",
+					"backup",
+				)
 				apiError(w, http.StatusBadGateway, fmt.Sprintf("Could not back up node %s. Check the server logs.", node.Name))
 				return
 			}
@@ -128,13 +144,17 @@ func collectNodeBackup(ctx context.Context, node NodeConfig, client *http.Client
 	if nil != err {
 		return backup, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
 	if err := decoder.Decode(&backup); nil != err {
 		return backup, nodeHTTPError{operation: "read backup files", status: response.StatusCode, message: err.Error()}
 	}
-	if err := decoder.Decode(new(interface{})); io.EOF != err {
-		return backup, nodeHTTPError{operation: "read backup files", status: response.StatusCode, message: fmt.Sprintf("unexpected trailing data: %v", err)}
+	if err := decoder.Decode(new(any)); io.EOF != err {
+		return backup, nodeHTTPError{
+			operation: "read backup files",
+			status:    response.StatusCode,
+			message:   fmt.Sprintf("unexpected trailing data: %v", err),
+		}
 	}
 	if http.StatusOK != response.StatusCode {
 		return backup, nodeHTTPError{operation: "backup", status: response.StatusCode, message: backup.Error}

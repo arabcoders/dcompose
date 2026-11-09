@@ -12,6 +12,7 @@ import (
 
 type websocketTicket struct {
 	expires time.Time
+	auth    http.Header
 }
 
 func (s *Server) createWebsocketTicket(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +31,12 @@ func (s *Server) createWebsocketTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value := base64.RawURLEncoding.EncodeToString(token[:])
+	auth := make(http.Header)
+	if authorization := r.Header.Get("Authorization"); "" != authorization {
+		auth.Set("Authorization", authorization)
+	} else if cookie, err := r.Cookie("session"); nil == err {
+		auth.Set("Cookie", cookie.String())
+	}
 	now := time.Now()
 	s.ticketMu.Lock()
 	for value, ticket := range s.tickets {
@@ -37,10 +44,10 @@ func (s *Server) createWebsocketTicket(w http.ResponseWriter, r *http.Request) {
 			delete(s.tickets, value)
 		}
 	}
-	s.tickets[value] = websocketTicket{expires: now.Add(30 * time.Second)}
+	s.tickets[value] = websocketTicket{expires: now.Add(30 * time.Second), auth: auth}
 	s.ticketMu.Unlock()
 
-	jsonResponse(w, http.StatusCreated, map[string]interface{}{"ticket": value, "expires_in": 30})
+	jsonResponse(w, http.StatusCreated, map[string]any{"ticket": value, "expires_in": 30})
 }
 
 func (s *Server) consumeWebsocketTicket(value string) (websocketTicket, bool) {
@@ -74,7 +81,10 @@ func ticketOrigin(r *http.Request, origins []string) bool {
 
 func validWebsocketOrigin(value string) (*url.URL, bool) {
 	u, err := url.Parse(value)
-	if nil != err || ("http" != u.Scheme && "https" != u.Scheme) || "" == u.Hostname() || nil != u.User || "" != u.Path || "" != u.RawQuery || "" != u.Fragment || strings.ContainsAny(value, "*?#") {
+	if nil != err || ("http" != u.Scheme && "https" != u.Scheme) || "" == u.Hostname() || nil != u.User || "" != u.Path ||
+		"" != u.RawQuery ||
+		"" != u.Fragment ||
+		strings.ContainsAny(value, "*?#") {
 		return nil, false
 	}
 	if strings.HasPrefix(u.Host, "[") {

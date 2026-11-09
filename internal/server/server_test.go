@@ -37,9 +37,25 @@ func testServer(t *testing.T, upstream *httptest.Server) *Server {
 	if nil != err {
 		t.Fatal(err)
 	}
-	c := Config{Auth: AuthConfig{Username: "admin", Password: string(hash), passwordHash: string(hash), SessionKey: strings.Repeat("ab", 32), sessionKey: strings.Repeat("\xab", 32)}, Nodes: map[string]NodeConfig{}}
+	c := Config{
+		Auth: AuthConfig{
+			Username:     "admin",
+			Password:     string(hash),
+			passwordHash: string(hash),
+			SessionKey:   strings.Repeat("ab", 32),
+			sessionKey:   strings.Repeat("\xab", 32),
+		},
+		Nodes: map[string]NodeConfig{},
+	}
 	if nil != upstream {
-		c.Nodes["home"] = NodeConfig{Name: "Home", URL: upstream.URL, Token: "agent-test-token", token: "agent-test-token", PublicHost: "public.example", Fingerprint: testFingerprint(upstream)}
+		c.Nodes["home"] = NodeConfig{
+			Name:        "Home",
+			URL:         upstream.URL,
+			Token:       "agent-test-token",
+			token:       "agent-test-token",
+			PublicHost:  "public.example",
+			Fingerprint: testFingerprint(upstream),
+		}
 	}
 	s := New(c, fstest.MapFS{"index.html": {Data: []byte("<html>SPA</html>")}, "assets/app.js": {Data: []byte("script")}})
 	s.registryClient = registry.NewClient(&http.Client{Transport: registryTestTransport(func(r *http.Request) (*http.Response, error) {
@@ -174,7 +190,8 @@ func TestForward(t *testing.T) {
 	var requests atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) || "" != r.Header.Get("Cookie") {
+		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) ||
+			"" != r.Header.Get("Cookie") {
 			t.Error("incorrect upstream credentials")
 		}
 		if "/stacks/demo/actions" != r.URL.Path || "POST" != r.Method || "" != r.URL.RawQuery {
@@ -215,7 +232,8 @@ func TestNodeInfo(t *testing.T) {
 	info := readFixture(t, "node-info.json")
 	var requests atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) || "" != r.Header.Get("Cookie") {
+		if "Bearer agent-test-token" != r.Header.Get("Authorization") || strconv.Itoa(protocol.AgentAPI) != r.Header.Get(protocol.Header) ||
+			"" != r.Header.Get("Cookie") {
 			t.Error("incorrect upstream credentials or API version")
 		}
 		requests.Add(1)
@@ -228,7 +246,10 @@ func TestNodeInfo(t *testing.T) {
 	defer up.Close()
 	s := testServer(t, up)
 	w := perform(t, s, http.MethodGet, "/api/nodes/home/info?command=destroy&token=browser-secret", "untrusted")
-	if 200 != w.Code || 1 != requests.Load() || !strings.Contains(w.Body.String(), `"runtime":`) || strings.Contains(w.Body.String(), `"docker":`) || !strings.Contains(w.Body.String(), `"cpu":"2.50%"`) || !strings.Contains(w.Body.String(), `"memory_bytes":16777216000`) {
+	if 200 != w.Code || 1 != requests.Load() || !strings.Contains(w.Body.String(), `"runtime":`) ||
+		strings.Contains(w.Body.String(), `"docker":`) ||
+		!strings.Contains(w.Body.String(), `"cpu":"2.50%"`) ||
+		!strings.Contains(w.Body.String(), `"memory_bytes":16777216000`) {
 		t.Fatalf("info: %d %s", w.Code, w.Body)
 	}
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
@@ -263,7 +284,11 @@ func TestNodeInfoError(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message || strings.Contains(w.Body.String(), "secret") {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&response,
+	); nil != err || 502 != w.Code || 502 != response.Error.Code || "" == response.Error.Message ||
+		strings.Contains(w.Body.String(), "secret") {
 		t.Fatalf("info error: %d %s", w.Code, w.Body)
 	}
 }
@@ -360,18 +385,26 @@ func TestStatic(t *testing.T) {
 func TestAggregate(t *testing.T) {
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if http.MethodGet == r.Method && "/relays" == r.URL.Path {
-			jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+			jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 			return
 		}
 		conn, err := websocket.Accept(w, r, nil)
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		if !ackRegistrySync(t, r.Context(), conn) {
 			return
 		}
-		_ = wsjson.Write(r.Context(), conn, protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: json.RawMessage(`{"node":"forged","health":{"status":"ok"},"stacks":[]}`)})
+		_ = wsjson.Write(
+			r.Context(),
+			conn,
+			protocol.ChannelMessage{
+				Type:    "event",
+				Event:   "node.snapshot",
+				Payload: json.RawMessage(`{"node":"forged","health":{"status":"ok"},"stacks":[]}`),
+			},
+		)
 		_, _, _ = conn.Read(r.Context())
 	}))
 	defer up.Close()
@@ -424,7 +457,7 @@ func TestReconnect(t *testing.T) {
 	var attempts atomic.Int32
 	up := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if http.MethodGet == r.Method && "/relays" == r.URL.Path {
-			jsonResponse(w, http.StatusOK, map[string]interface{}{"relays": []interface{}{}})
+			jsonResponse(w, http.StatusOK, map[string]any{"relays": []any{}})
 			return
 		}
 		attempt := attempts.Add(1)
@@ -436,11 +469,19 @@ func TestReconnect(t *testing.T) {
 		if nil != err {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		if !ackRegistrySync(t, r.Context(), conn) {
 			return
 		}
-		_ = wsjson.Write(r.Context(), conn, protocol.ChannelMessage{Type: "event", Event: "node.snapshot", Payload: json.RawMessage(`{"health":{"status":"ok"},"stacks":[]}`)})
+		_ = wsjson.Write(
+			r.Context(),
+			conn,
+			protocol.ChannelMessage{
+				Type:    "event",
+				Event:   "node.snapshot",
+				Payload: json.RawMessage(`{"health":{"status":"ok"},"stacks":[]}`),
+			},
+		)
 		_, _, _ = conn.Read(r.Context())
 	}))
 	defer up.Close()
@@ -502,7 +543,12 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte("test-password"), bcrypt.MinCost)
-	config := fmt.Sprintf("[global]\nlisten = '127.0.0.1:8080'\n[auth]\nusername = 'admin'\npassword = '%s'\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'file:token'\n", hash, up.URL, testFingerprint(up))
+	config := fmt.Sprintf(
+		"[global]\nlisten = '127.0.0.1:8080'\n[auth]\nusername = 'admin'\npassword = '%s'\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'file:token'\n",
+		hash,
+		up.URL,
+		testFingerprint(up),
+	)
 	path := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(path, []byte(config), 0600); nil != err {
 		t.Fatal(err)

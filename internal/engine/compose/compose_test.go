@@ -33,7 +33,8 @@ func TestCommands(t *testing.T) {
 		t.Run(test.action, func(t *testing.T) {
 			cmd := c.Action(s, test.action, test.service)
 			want := append(append([]string{}, base...), test.args...)
-			if "docker" != cmd.Program || s.Dir != cmd.Dir || !reflect.DeepEqual(want, cmd.Args) || !reflect.DeepEqual([]string{"COMPOSE_ANSI=always", "COMPOSE_PROGRESS=tty"}, cmd.Env) {
+			if "docker" != cmd.Program || s.Dir != cmd.Dir || !reflect.DeepEqual(want, cmd.Args) ||
+				!reflect.DeepEqual([]string{"COMPOSE_ANSI=always", "COMPOSE_PROGRESS=tty"}, cmd.Env) {
 				t.Fatalf("command: %+v", cmd)
 			}
 		})
@@ -71,7 +72,14 @@ func TestValidation(t *testing.T) {
 			t.Fatalf("validation diagnostic separation: %v", err)
 		}
 	}
-	if cmd := c.Action(s, "start", ""); !reflect.DeepEqual(append(append([]string{}, env...), "COMPOSE_ANSI=always", "COMPOSE_PROGRESS=tty"), cmd.Env) {
+	if cmd := c.Action(
+		s,
+		"start",
+		"",
+	); !reflect.DeepEqual(
+		append(append([]string{}, env...), "COMPOSE_ANSI=always", "COMPOSE_PROGRESS=tty"),
+		cmd.Env,
+	) {
 		t.Fatalf("action lost runtime environment: %+v", cmd)
 	}
 	if cmd := c.Logs(s); !reflect.DeepEqual(env, cmd.Env) {
@@ -124,7 +132,8 @@ func TestContainerOutputErrors(t *testing.T) {
 		if !errors.As(err, &apiErr) || 502 != apiErr.Code || "" == apiErr.Message || !errors.As(err, &cause) {
 			t.Fatalf("parse error: %v", err)
 		}
-		if strings.Contains(apiErr.Message, "secret-token") || strings.Contains(apiErr.Message, "/tmp/private") || !strings.Contains(err.Error(), cause.Error()) {
+		if strings.Contains(apiErr.Message, "secret-token") || strings.Contains(apiErr.Message, "/tmp/private") ||
+			!strings.Contains(err.Error(), cause.Error()) {
 			t.Fatalf("parse diagnostic separation: %v", err)
 		}
 	}
@@ -150,10 +159,12 @@ func TestRuntime(t *testing.T) {
 			return []byte(data), []byte("warning must stay out of JSON"), nil
 		}, nil)
 		services, err := c.Containers(context.Background(), testStack())
-		if nil != err || 1 != len(services) || "one" != services[0].ID || ":::8080->80/tcp" != services[0].Ports || 8080 != services[0].PortBindings[0].HostPort {
+		if nil != err || 1 != len(services) || "one" != services[0].ID || ":::8080->80/tcp" != services[0].Ports ||
+			8080 != services[0].PortBindings[0].HostPort {
 			t.Fatalf("runtime: %+v %v", services, err)
 		}
-		if "Up 2 hours (healthy)" != services[0].Status || "2026-10-25 09:00:00 +0000 UTC" != services[0].CreatedAt || "2 days ago" != services[0].RunningFor {
+		if "Up 2 hours (healthy)" != services[0].Status || "2026-10-25 09:00:00 +0000 UTC" != services[0].CreatedAt ||
+			"2 days ago" != services[0].RunningFor {
 			t.Fatalf("timing: %+v", services[0])
 		}
 	}

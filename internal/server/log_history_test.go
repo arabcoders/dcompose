@@ -47,17 +47,25 @@ func historyPage(t *testing.T, h *logHistory, filter logFilter) logPage {
 func TestHistoryCapture(t *testing.T) {
 	s := testServer(t, nil)
 	stderr := startLogHistory(t, s)
-	slog.With("service", "web").WithGroup("details").Error("diagnostic", "error", errors.New("manifest failure"), "codes", []int{401, 403}, "automatic", true, "attempt", int64(9_007_199_254_740_993))
+	slog.With("service", "web").
+		WithGroup("details").
+		Error("diagnostic", "error", errors.New("manifest failure"), "codes", []int{401, 403}, "automatic", true, "attempt", int64(9_007_199_254_740_993))
 	page := historyPage(t, s.logHistory, logFilter{})
 	if 1 != len(page.Entries) || nil != page.NextBefore || page.LatestID != page.Entries[0].ID || nil == page.OldestID || page.Truncated {
 		t.Fatalf("page: %+v", page)
 	}
 	entry := page.Entries[0]
-	if "error" != entry.Level || "server" != entry.Logger || `"web"` != string(entry.Fields["service"]) || entry.Timestamp.IsZero() || nil == entry.Source || !strings.HasSuffix(entry.Source.Function, ".TestHistoryCapture") || 0 == entry.Source.Line {
+	if "error" != entry.Level || "server" != entry.Logger || `"web"` != string(entry.Fields["service"]) || entry.Timestamp.IsZero() ||
+		nil == entry.Source ||
+		!strings.HasSuffix(entry.Source.Function, ".TestHistoryCapture") ||
+		0 == entry.Source.Line {
 		t.Fatalf("entry: %+v", entry)
 	}
 	var details map[string]json.RawMessage
-	if nil != json.Unmarshal(entry.Fields["details"], &details) || `"manifest failure"` != string(details["error"]) || "9007199254740993" != string(details["attempt"]) || "true" != string(details["automatic"]) || "[401,403]" != string(details["codes"]) {
+	if nil != json.Unmarshal(entry.Fields["details"], &details) || `"manifest failure"` != string(details["error"]) ||
+		"9007199254740993" != string(details["attempt"]) ||
+		"true" != string(details["automatic"]) ||
+		"[401,403]" != string(details["codes"]) {
 		t.Fatalf("fields: %s", entry.Fields["details"])
 	}
 	if !strings.Contains(stderr.String(), "manifest failure") {
@@ -153,16 +161,21 @@ func TestHistoryNodeOrder(t *testing.T) {
 	startLogHistory(t, s)
 	slog.Info("local")
 	channel := &nodeChannel{id: "home", node: NodeConfig{Name: "Home"}, ctx: context.Background()}
-	payload := json.RawMessage(`{"entries":[{"time":"2026-10-29T12:00:00Z","level":"ERROR","msg":"newer","attrs":{"stderr":"registry denied"}},{"time":"2026-10-28T12:00:00Z","level":"WARN","msg":"buffered","attrs":{"platforms":{"linux/amd64":"example:latest"}}}]}`)
+	payload := json.RawMessage(
+		`{"entries":[{"time":"2026-10-29T12:00:00Z","level":"ERROR","msg":"newer","attrs":{"stderr":"registry denied"}},{"time":"2026-10-28T12:00:00Z","level":"WARN","msg":"buffered","attrs":{"platforms":{"linux/amd64":"example:latest"}}}]}`,
+	)
 	if err := s.nodeLogs(channel, payload); nil != err {
 		t.Fatal(err)
 	}
 	page := historyPage(t, s.logHistory, logFilter{})
-	if 3 != len(page.Entries) || page.Entries[0].ID >= page.Entries[1].ID || page.Entries[1].ID >= page.Entries[2].ID || !page.Entries[2].Timestamp.Before(page.Entries[1].Timestamp) || nil != page.Entries[1].Source {
+	if 3 != len(page.Entries) || page.Entries[0].ID >= page.Entries[1].ID || page.Entries[1].ID >= page.Entries[2].ID ||
+		!page.Entries[2].Timestamp.Before(page.Entries[1].Timestamp) ||
+		nil != page.Entries[1].Source {
 		t.Fatalf("append/source order: %+v", page)
 	}
 	filtered := historyPage(t, s.logHistory, logFilter{node: "home", search: "linux/amd64"})
-	if 1 != len(filtered.Entries) || "warning" != filtered.Entries[0].Level || `{"linux/amd64":"example:latest"}` != string(filtered.Entries[0].Fields["platforms"]) {
+	if 1 != len(filtered.Entries) || "warning" != filtered.Entries[0].Level ||
+		`{"linux/amd64":"example:latest"}` != string(filtered.Entries[0].Fields["platforms"]) {
 		t.Fatalf("platform diagnostic fields: %+v", filtered)
 	}
 }
@@ -171,7 +184,9 @@ func TestHistorySearch(t *testing.T) {
 	s := testServer(t, nil)
 	startLogHistory(t, s)
 	channel := &nodeChannel{id: "home", node: NodeConfig{Name: "Home"}, ctx: context.Background()}
-	payload := json.RawMessage(`{"entries":[{"time":"2026-10-29T12:00:00Z","level":"ERROR","msg":"diagnostic","source":{"file":"node.go","function":"node.check","line":42},"attrs":{"stderr":"Échec\nRegistry DENIED","attempt":9007199254740993}}]}`)
+	payload := json.RawMessage(
+		`{"entries":[{"time":"2026-10-29T12:00:00Z","level":"ERROR","msg":"diagnostic","source":{"file":"node.go","function":"node.check","line":42},"attrs":{"stderr":"Échec\nRegistry DENIED","attempt":9007199254740993}}]}`,
+	)
 	if err := s.nodeLogs(channel, payload); nil != err {
 		t.Fatal(err)
 	}
@@ -251,7 +266,12 @@ func TestHistoryRendered(t *testing.T) {
 	message := `node "local" path "C:\stacks\compose.yaml"`
 	for _, level := range []slog.Level{slog.LevelDebug, slog.LevelWarn, slog.LevelError} {
 		record := slog.NewRecord(stamp, level, message, 0)
-		record.AddAttrs(slog.String("image", "example:latest"), slog.String("stderr", "first line\nsecond line"), slog.Any("error", errors.New("manifest failure")), slog.Group("details", "attempt", 2, "automatic", true))
+		record.AddAttrs(
+			slog.String("image", "example:latest"),
+			slog.String("stderr", "first line\nsecond line"),
+			slog.Any("error", errors.New("manifest failure")),
+			slog.Group("details", "attempt", 2, "automatic", true),
+		)
 		if err := logger.Handler().Handle(context.Background(), record); nil != err {
 			t.Fatal(err)
 		}
@@ -294,14 +314,12 @@ func TestHistoryRenderedConcurrent(t *testing.T) {
 	logger := slog.New(newHistoryHandler(logging.NewConsoleHandler(&local, nil), h))
 	var workers sync.WaitGroup
 	for worker := 0; 8 > worker; worker++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			bound := logger.With("worker", worker).WithGroup("entry")
 			for index := 0; 20 > index; index++ {
 				bound.Info("diagnostic", "index", index, "error", errors.New("manifest failure"))
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	lines := make(map[string]int)
@@ -318,7 +336,9 @@ func TestHistoryRenderedConcurrent(t *testing.T) {
 		var fields struct {
 			Index int `json:"index"`
 		}
-		if nil != json.Unmarshal(entry.Fields["entry"], &fields) || 0 == lines[entry.Rendered] || !strings.Contains(entry.Rendered, " worker="+string(entry.Fields["worker"])+" ") || !strings.Contains(entry.Rendered, " entry.index="+strconv.Itoa(fields.Index)+" ") {
+		if nil != json.Unmarshal(entry.Fields["entry"], &fields) || 0 == lines[entry.Rendered] ||
+			!strings.Contains(entry.Rendered, " worker="+string(entry.Fields["worker"])+" ") ||
+			!strings.Contains(entry.Rendered, " entry.index="+strconv.Itoa(fields.Index)+" ") {
 			t.Fatal("concurrent rendered record mixed", entry)
 		}
 		lines[entry.Rendered]--
@@ -327,7 +347,9 @@ func TestHistoryRenderedConcurrent(t *testing.T) {
 
 func TestHistoryRenderedLegacy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dcompose.log")
-	legacy := []byte(`{"id":123,"timestamp":"2026-10-29T12:00:00.123456789Z","level":"warning","logger":"server","message":"node \"local\" path \"C:\\stacks\\compose.yaml\"","fields":{"stderr":"first line\nsecond line","error":"manifest failure","automatic":true,"attempt":9007199254740993,"codes":[401,403],"details":{"service":"web"}}}` + "\n")
+	legacy := []byte(
+		`{"id":123,"timestamp":"2026-10-29T12:00:00.123456789Z","level":"warning","logger":"server","message":"node \"local\" path \"C:\\stacks\\compose.yaml\"","fields":{"stderr":"first line\nsecond line","error":"manifest failure","automatic":true,"attempt":9007199254740993,"codes":[401,403],"details":{"service":"web"}}}` + "\n",
+	)
 	if err := os.WriteFile(path, legacy, 0600); nil != err {
 		t.Fatal(err)
 	}
@@ -339,13 +361,22 @@ func TestHistoryRenderedLegacy(t *testing.T) {
 	stamp := time.Date(2026, 10, 29, 12, 0, 0, 123456789, time.UTC)
 	message := `node "local" path "C:\stacks\compose.yaml"`
 	record := slog.NewRecord(stamp, slog.LevelWarn, message, 0)
-	record.AddAttrs(slog.Any("attempt", json.Number("9007199254740993")), slog.Bool("automatic", true), slog.Any("codes", []json.Number{"401", "403"}), slog.Any("details", map[string]string{"service": "web"}), slog.String("error", "manifest failure"), slog.String("stderr", "first line\nsecond line"))
+	record.AddAttrs(
+		slog.Any("attempt", json.Number("9007199254740993")),
+		slog.Bool("automatic", true),
+		slog.Any("codes", []json.Number{"401", "403"}),
+		slog.Any("details", map[string]string{"service": "web"}),
+		slog.String("error", "manifest failure"),
+		slog.String("stderr", "first line\nsecond line"),
+	)
 	var expected bytes.Buffer
 	if err := logging.NewConsoleHandler(&expected, nil).Handle(context.Background(), record); nil != err {
 		t.Fatal(err)
 	}
 	page := historyPage(t, h, logFilter{})
-	if 1 != len(page.Entries) || expected.String() != page.Entries[0].Rendered || !strings.Contains(page.Entries[0].Rendered, " "+message+" ") || "9007199254740993" != string(page.Entries[0].Fields["attempt"]) {
+	if 1 != len(page.Entries) || expected.String() != page.Entries[0].Rendered ||
+		!strings.Contains(page.Entries[0].Rendered, " "+message+" ") ||
+		"9007199254740993" != string(page.Entries[0].Fields["attempt"]) {
 		t.Fatal("legacy rendered fallback lost content", page)
 	}
 	subscriber, backlog, _, err := h.subscribe(logFilter{})
@@ -362,7 +393,14 @@ func TestHistoryRenderedLegacy(t *testing.T) {
 func TestHistoryRenderedPreserved(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dcompose.log")
 	rendered := "time=2026-10-29T12:00:00Z level=INFO msg=\"node \\\"local\\\"\"\n"
-	entry := logEntry{ID: 123, Timestamp: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC), Level: "info", Logger: "server", Message: `node "local"`, Rendered: rendered}
+	entry := logEntry{
+		ID:        123,
+		Timestamp: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC),
+		Level:     "info",
+		Logger:    "server",
+		Message:   `node "local"`,
+		Rendered:  rendered,
+	}
 	data, err := json.Marshal(entry)
 	if nil != err {
 		t.Fatal(err)

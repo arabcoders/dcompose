@@ -50,8 +50,7 @@ func (s *Server) Start(ctx context.Context) {
 	s.hubContext, s.hubCancel = context.WithCancel(ctx)
 	s.loadImageCooldowns()
 	s.reconcileChannelsLocked(s.config, s.nodes)
-	s.hubWorkers.Add(1)
-	go func() { defer s.hubWorkers.Done(); s.watchImages() }()
+	s.hubWorkers.Go(s.watchImages)
 }
 
 // Close cancels and joins the server-owned channels.
@@ -107,12 +106,19 @@ func (s *Server) reconcileChannelsLocked(config Config, clients map[string]*http
 			continue
 		}
 		ctx, cancel := context.WithCancel(s.hubContext)
-		channel := &nodeChannel{id: id, node: node, client: clients[id], ctx: ctx, cancel: cancel, shells: make(map[string]map[chan protocol.ChannelMessage]struct{}), streams: make(map[string]*browserSubscription)}
+		channel := &nodeChannel{
+			id:      id,
+			node:    node,
+			client:  clients[id],
+			ctx:     ctx,
+			cancel:  cancel,
+			shells:  make(map[string]map[chan protocol.ChannelMessage]struct{}),
+			streams: make(map[string]*browserSubscription),
+		}
 		s.channels[id] = channel
 		s.runtime[id] = &nodeRuntime{}
 		s.stateLocked(id, "unavailable", "Connecting to node.")
-		s.hubWorkers.Add(1)
-		go func() { defer s.hubWorkers.Done(); s.runChannel(channel) }()
+		s.hubWorkers.Go(func() { s.runChannel(channel) })
 	}
 }
 
@@ -193,14 +199,16 @@ func (s *Server) runChannel(channel *nodeChannel) {
 			}
 			channel.conn = conn
 			channel.imageContext, channel.imageCancel = context.WithCancel(channel.ctx)
-			s.hubWorkers.Add(1)
-			go func() {
-				defer s.hubWorkers.Done()
+			s.hubWorkers.Go(func() {
 				s.discoverRelays(channel.ctx, channel.id)
-			}()
+			})
 			err = s.syncRegistriesLocked(channel)
 			s.hubMu.Unlock()
-			slog.Debug(fmt.Sprintf("Connected to %s. Authentication succeeded.", nodeLogLabel(channel.node)), "node", nodeLogLabel(channel.node))
+			slog.Debug(
+				fmt.Sprintf("Connected to %s. Authentication succeeded.", nodeLogLabel(channel.node)),
+				"node",
+				nodeLogLabel(channel.node),
+			)
 			stopPing := socketHeartbeat(channel.ctx, conn, nodeLogLabel(channel.node))
 			for nil == err {
 				var message protocol.ChannelMessage
@@ -246,8 +254,7 @@ func (s *Server) runChannel(channel *nodeChannel) {
 		if s.channels[channel.id] == channel && nil == channel.ctx.Err() {
 			s.pauseNodeImagesLocked(channel.id)
 			message := "Node is unavailable. Retrying."
-			var incompatible incompatibleAgent
-			if errors.As(err, &incompatible) {
+			if incompatible, ok := errors.AsType[incompatibleAgent](err); ok {
 				message = incompatible.Error()
 			}
 			s.stateLocked(channel.id, "unavailable", message)
@@ -258,7 +265,20 @@ func (s *Server) runChannel(channel *nodeChannel) {
 		}
 		if warnings.allow(time.Now()) {
 			node, detail := nodeLogLabel(channel.node), safeTransportError(err)
-			slog.Warn(fmt.Sprintf("Connection to %s failed: %s. Retrying in %s.", node, strings.TrimSuffix(strings.TrimSpace(detail), "."), delay.String()), "node", node, "error", detail, "retry_in", delay)
+			slog.Warn(
+				fmt.Sprintf(
+					"Connection to %s failed: %s. Retrying in %s.",
+					node,
+					strings.TrimSuffix(strings.TrimSpace(detail), "."),
+					delay.String(),
+				),
+				"node",
+				node,
+				"error",
+				detail,
+				"retry_in",
+				delay,
+			)
 		}
 		timer := time.NewTimer(delay)
 		select {
@@ -305,12 +325,10 @@ func safeTransportError(err error) string {
 	if nil == err {
 		return "connection closed"
 	}
-	var incompatible incompatibleAgent
-	if errors.As(err, &incompatible) {
+	if _, ok := errors.AsType[incompatibleAgent](err); ok {
 		return fmt.Sprintf("node API version mismatch: server requires version %d", protocol.AgentAPI)
 	}
-	var address *url.Error
-	if errors.As(err, &address) {
+	if address, ok := errors.AsType[*url.Error](err); ok {
 		return safeTransportError(address.Err)
 	}
 	if errors.Is(err, context.Canceled) {
@@ -335,36 +353,28 @@ func safeTransportError(err error) string {
 	if errors.Is(err, errRuntimeEvent) {
 		return err.Error()
 	}
-	var upstream nodeHTTPError
-	if errors.As(err, &upstream) {
+	if upstream, ok := errors.AsType[nodeHTTPError](err); ok {
 		return upstream.Error()
 	}
-	var dns *net.DNSError
-	if errors.As(err, &dns) {
+	if dns, ok := errors.AsType[*net.DNSError](err); ok {
 		return fmt.Sprintf("DNS lookup for %q failed: %s", dns.Name, dns.Err)
 	}
-	var socket *net.OpError
-	if errors.As(err, &socket) {
+	if socket, ok := errors.AsType[*net.OpError](err); ok {
 		return fmt.Sprintf("%s %s failed: %s", socket.Op, socket.Net, safeTransportError(socket.Err))
 	}
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
+	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		return errno.Error()
 	}
-	var record tls.RecordHeaderError
-	if errors.As(err, &record) {
+	if record, ok := errors.AsType[tls.RecordHeaderError](err); ok {
 		return "TLS handshake failed: " + record.Msg
 	}
-	var alert tls.AlertError
-	if errors.As(err, &alert) {
+	if alert, ok := errors.AsType[tls.AlertError](err); ok {
 		return alert.Error()
 	}
-	var syntax *json.SyntaxError
-	if errors.As(err, &syntax) {
+	if syntax, ok := errors.AsType[*json.SyntaxError](err); ok {
 		return fmt.Sprintf("node sent invalid JSON at byte %d: %s", syntax.Offset, syntax.Error())
 	}
-	var field *json.UnmarshalTypeError
-	if errors.As(err, &field) {
+	if field, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		return fmt.Sprintf("node sent %s for JSON field %q, expected %s", field.Value, field.Field, field.Type)
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -422,8 +432,20 @@ func socketHeartbeat(ctx context.Context, conn *websocket.Conn, label string) fu
 
 func (s *Server) shellEvent(channel *nodeChannel, message protocol.ChannelMessage) {
 	if "shell.error" == message.Type {
-		slog.Error(fmt.Sprintf("Could not use shell %q on %s: %s", message.Shell, nodeLogLabel(channel.node), message.Error), "node", nodeLogLabel(channel.node), "shell", message.Shell, "error", message.Error)
-		message = protocol.ChannelMessage{Type: "shell.error", Shell: message.Shell, Error: "Could not use the shell. Reopen it and try again."}
+		slog.Error(
+			fmt.Sprintf("Could not use shell %q on %s: %s", message.Shell, nodeLogLabel(channel.node), message.Error),
+			"node",
+			nodeLogLabel(channel.node),
+			"shell",
+			message.Shell,
+			"error",
+			message.Error,
+		)
+		message = protocol.ChannelMessage{
+			Type:  "shell.error",
+			Shell: message.Shell,
+			Error: "Could not use the shell. Reopen it and try again.",
+		}
 	} else {
 		switch message.Event {
 		case "operation.snapshot", "operation.output", "operation.done":

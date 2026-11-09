@@ -43,7 +43,11 @@ func Run(parent context.Context, configPath, buildVersion string) error {
 		return err
 	}
 	if cacheDir, err := os.UserCacheDir(); nil != err {
-		slog.Warn(fmt.Sprintf("Could not locate the node operation storage directory: %v. Detached stack operations are unavailable.", err), "error", err)
+		slog.Warn(
+			fmt.Sprintf("Could not locate the node operation storage directory: %v. Detached stack operations are unavailable.", err),
+			"error",
+			err,
+		)
 		a.initDetached("")
 	} else {
 		a.initDetached(cacheDir)
@@ -63,7 +67,13 @@ func Run(parent context.Context, configPath, buildVersion string) error {
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdown); nil != err {
-			slog.Warn(fmt.Sprintf("Could not finish node shutdown at %s: %v. Closing active connections.", c.Global.Listen, err), "address", c.Global.Listen, "error", err)
+			slog.Warn(
+				fmt.Sprintf("Could not finish node shutdown at %s: %v. Closing active connections.", c.Global.Listen, err),
+				"address",
+				c.Global.Listen,
+				"error",
+				err,
+			)
 			_ = server.Close()
 		}
 	}()
@@ -71,7 +81,23 @@ func Run(parent context.Context, configPath, buildVersion string) error {
 	if "" != a.pairingToken {
 		fmt.Fprintf(os.Stderr, "Use this single-use pairing token in Nodes > Add node: %s\n", a.pairingToken)
 	}
-	slog.Info(fmt.Sprintf("Starting DCompose node %s at https://%s with stacks in %q and configuration %q.", version, c.Global.Listen, c.Global.StacksDir, configPath), "version", version, "address", "https://"+c.Global.Listen, "stacks_dir", c.Global.StacksDir, "config", configPath)
+	slog.Info(
+		fmt.Sprintf(
+			"Starting DCompose node %s at https://%s with stacks in %q and configuration %q.",
+			version,
+			c.Global.Listen,
+			c.Global.StacksDir,
+			configPath,
+		),
+		"version",
+		version,
+		"address",
+		"https://"+c.Global.Listen,
+		"stacks_dir",
+		c.Global.StacksDir,
+		"config",
+		configPath,
+	)
 	err = server.ListenAndServeTLS(c.TLS.CertFile, c.TLS.KeyFile)
 	// Also stop background work when bind/TLS startup fails.
 	stop()

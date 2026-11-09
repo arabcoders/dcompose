@@ -1,7 +1,9 @@
 [tools]
 air = "1.62.0"
-bun = "latest"
+bun = "1.4.4"
 go = "1.27.3"
+golangci-lint = "2.15.0"
+node = "22"
 
 [tasks."dev:server"]
 description = "Live reload: dcompose"

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +28,7 @@ type fakeOIDC struct {
 	nonce     string
 	challenge string
 	mode      string
+	discovery atomic.Int32
 }
 
 func newFakeOIDC(t *testing.T) *fakeOIDC {
@@ -39,15 +42,21 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
+			f.discovery.Add(1)
 			issuer := f.server.URL
 			if "discovery" == f.mode {
 				issuer += "/wrong"
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"issuer": issuer, "authorization_endpoint": f.server.URL + "/authorize", "token_endpoint": f.server.URL + "/token", "jwks_uri": f.server.URL + "/keys", "id_token_signing_alg_values_supported": []string{"ES256"},
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":                                issuer,
+				"authorization_endpoint":                f.server.URL + "/authorize",
+				"token_endpoint":                        f.server.URL + "/token",
+				"jwks_uri":                              f.server.URL + "/keys",
+				"id_token_signing_alg_values_supported": []string{"ES256"},
 			})
 		case "/keys":
-			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "test", Algorithm: "ES256", Use: "sig"}}})
+			_ = json.NewEncoder(w).
+				Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "test", Algorithm: "ES256", Use: "sig"}}})
 		case "/token":
 			if err := r.ParseForm(); nil != err {
 				t.Error(err)
@@ -56,7 +65,11 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 			if !ok {
 				client, secret = r.Form.Get("client_id"), r.Form.Get("client_secret")
 			}
-			if "dcompose" != client || "client-secret" != secret || "authorization_code" != r.Form.Get("grant_type") || "test-code" != r.Form.Get("code") || "http://localhost:8082/api/auth/oidc/callback" != r.Form.Get("redirect_uri") || "" == f.challenge || f.challenge != oauth2.S256ChallengeFromVerifier(r.Form.Get("code_verifier")) {
+			if "dcompose" != client || "client-secret" != secret || "authorization_code" != r.Form.Get("grant_type") ||
+				"test-code" != r.Form.Get("code") ||
+				"http://localhost:8082/api/auth/oidc/callback" != r.Form.Get("redirect_uri") ||
+				"" == f.challenge ||
+				f.challenge != oauth2.S256ChallengeFromVerifier(r.Form.Get("code_verifier")) {
 				t.Error("invalid code exchange, client authentication or PKCE verifier")
 				http.Error(w, "invalid_request", 400)
 				return
@@ -65,7 +78,14 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 				http.Error(w, "provider error", 400)
 				return
 			}
-			claims := map[string]interface{}{"iss": f.server.URL, "aud": "dcompose", "sub": "provider-user", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": f.nonce}
+			claims := map[string]any{
+				"iss":   f.server.URL,
+				"aud":   "dcompose",
+				"sub":   "provider-user",
+				"exp":   time.Now().Add(time.Hour).Unix(),
+				"iat":   time.Now().Unix(),
+				"nonce": f.nonce,
+			}
 			switch f.mode {
 			case "issuer":
 				claims["iss"] = "https://wrong.example"
@@ -97,7 +117,10 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 					return
 				}
 			}
-			signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: signingKey}, (&jose.SignerOptions{}).WithHeader("kid", "test"))
+			signer, err := jose.NewSigner(
+				jose.SigningKey{Algorithm: jose.ES256, Key: signingKey},
+				(&jose.SignerOptions{}).WithHeader("kid", "test"),
+			)
 			if nil != err {
 				t.Error(err)
 				return
@@ -113,7 +136,7 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 				t.Error(err)
 				return
 			}
-			response := map[string]interface{}{"access_token": "unused-access-token", "token_type": "Bearer", "id_token": raw}
+			response := map[string]any{"access_token": "unused-access-token", "token_type": "Bearer", "id_token": raw}
 			if "missing_token" == f.mode {
 				delete(response, "id_token")
 			}
@@ -137,7 +160,11 @@ func startOIDC(t *testing.T, s *Server, f *fakeOIDC) (*http.Cookie, string) {
 		t.Fatal(err)
 	}
 	q := u.Query()
-	if f.server.URL+"/authorize" != u.Scheme+"://"+u.Host+u.Path || "dcompose" != q.Get("client_id") || "code" != q.Get("response_type") || "openid profile email" != q.Get("scope") || "S256" != q.Get("code_challenge_method") || "" == q.Get("state") || "" == q.Get("nonce") {
+	if f.server.URL+"/authorize" != u.Scheme+"://"+u.Host+u.Path || "dcompose" != q.Get("client_id") || "code" != q.Get("response_type") ||
+		"openid profile email" != q.Get("scope") ||
+		"S256" != q.Get("code_challenge_method") ||
+		"" == q.Get("state") ||
+		"" == q.Get("nonce") {
 		t.Fatal("invalid authorization request", u)
 	}
 	f.nonce, f.challenge = q.Get("nonce"), q.Get("code_challenge")
@@ -154,7 +181,13 @@ func TestOIDC(t *testing.T) {
 			f := newFakeOIDC(t)
 			f.mode = mode
 			s := testServer(t, nil)
-			s.config.Auth.OIDC = &OIDCConfig{Issuer: f.server.URL, ClientID: "dcompose", ClientSecret: "client-secret", clientSecret: "client-secret", RedirectURI: "http://localhost:8082/api/auth/oidc/callback"}
+			s.config.Auth.OIDC = &OIDCConfig{
+				Issuer:       f.server.URL,
+				ClientID:     "dcompose",
+				ClientSecret: "client-secret",
+				clientSecret: "client-secret",
+				RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
+			}
 			if "public_origin" == mode {
 				s.config.Global.Origin = "https://public.example"
 				s.config.Global.SecureCookie = true
@@ -211,7 +244,8 @@ func TestOIDC(t *testing.T) {
 			r.AddCookie(session)
 			w = httptest.NewRecorder()
 			s.ServeHTTP(w, r)
-			if 200 != w.Code || !strings.Contains(w.Body.String(), `"username":"admin"`) || strings.Contains(w.Body.String(), "provider-user") {
+			if 200 != w.Code || !strings.Contains(w.Body.String(), `"username":"admin"`) ||
+				strings.Contains(w.Body.String(), "provider-user") {
 				t.Fatal("OIDC did not map to local administrator", w.Body.String())
 			}
 			r = httptest.NewRequest("GET", path, nil)
@@ -238,13 +272,99 @@ func TestOIDCDiscovery(t *testing.T) {
 	}
 }
 
+func TestOIDCCache(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{
+		Issuer:       f.server.URL,
+		ClientID:     "dcompose",
+		clientSecret: "client-secret",
+		RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
+	}
+	before := time.Now()
+	startOIDC(t, s, f)
+	cache := s.oidcCache
+	if cache.expires.Before(before.Add(time.Minute)) || cache.expires.After(time.Now().Add(time.Minute)) {
+		t.Fatal("provider cache does not expire after one minute")
+	}
+	startOIDC(t, s, f)
+	if 1 != f.discovery.Load() || !cache.expires.Equal(s.oidcCache.expires) {
+		t.Fatal("provider and verifier were not reused within cache TTL")
+	}
+	s.oidcCache.expires = time.Now().Add(-time.Second)
+	startOIDC(t, s, f)
+	if 2 != f.discovery.Load() || !time.Now().Before(s.oidcCache.expires) {
+		t.Fatal("expired provider cache was not refreshed")
+	}
+}
+
+func TestOIDCLoginValues(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{
+		Issuer:       f.server.URL,
+		ClientID:     "dcompose",
+		clientSecret: "client-secret",
+		RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
+	}
+	_, first := startOIDC(t, s, f)
+	firstNonce, firstChallenge := f.nonce, f.challenge
+	_, second := startOIDC(t, s, f)
+	if first == second || firstNonce == f.nonce || firstChallenge == f.challenge ||
+		s.oidcPending[first].verifier == s.oidcPending[second].verifier {
+		t.Fatal("cached discovery reused login state, nonce or PKCE verifier")
+	}
+	for _, state := range []string{first, second} {
+		login := s.oidcPending[state]
+		if state == login.nonce || state == login.verifier || login.nonce == login.verifier {
+			t.Fatal("login state, nonce and PKCE verifier are not independent")
+		}
+	}
+	if 1 != f.discovery.Load() {
+		t.Fatal("login values test did not use cached discovery")
+	}
+}
+
+func TestOIDCCacheContext(t *testing.T) {
+	f := newFakeOIDC(t)
+	s := testServer(t, nil)
+	s.config.Auth.OIDC = &OIDCConfig{
+		Issuer:       f.server.URL,
+		ClientID:     "dcompose",
+		clientSecret: "client-secret",
+		RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest("GET", "/api/auth/oidc/login", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if 302 != w.Code {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	cancel()
+	cookie, state := startOIDC(t, s, f)
+	r = httptest.NewRequest("GET", "/api/auth/oidc/callback?state="+url.QueryEscape(state)+"&code=test-code", nil)
+	r.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if 302 != w.Code || 1 != f.discovery.Load() {
+		t.Fatal("cached provider could not verify after discovery request cancellation", w.Code, w.Body.String())
+	}
+}
+
 func TestOIDCConfig(t *testing.T) {
 	s := persistedServer(t, nil)
 	dir := filepath.Dir(s.config.path)
 	if err := configutil.Write(filepath.Join(dir, "oidc.secret"), []byte("client-secret\n")); nil != err {
 		t.Fatal(err)
 	}
-	s.config.Auth.OIDC = &OIDCConfig{Issuer: "https://id.example", ClientID: "dcompose", ClientSecret: "file:oidc.secret", RedirectURI: "https://app.example/api/auth/oidc/callback"}
+	s.config.Auth.OIDC = &OIDCConfig{
+		Issuer:       "https://id.example",
+		ClientID:     "dcompose",
+		ClientSecret: "file:oidc.secret",
+		RedirectURI:  "https://app.example/api/auth/oidc/callback",
+	}
 	if err := saveConfig(s.config); nil != err {
 		t.Fatal(err)
 	}
@@ -278,7 +398,8 @@ func TestOIDCConfig(t *testing.T) {
 		t.Fatal("OIDC blocked CLI password recovery", err)
 	}
 	c, err = LoadConfig(c.path)
-	if nil != err || "file:oidc.secret" != c.Auth.OIDC.ClientSecret || nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("recovery-password")) {
+	if nil != err || "file:oidc.secret" != c.Auth.OIDC.ClientSecret ||
+		nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("recovery-password")) {
 		t.Fatal("password recovery lost OIDC configuration", err)
 	}
 	c.Auth.Username, c.Auth.Password, c.Auth.passwordHash = "", "", ""
@@ -289,7 +410,10 @@ func TestOIDCConfig(t *testing.T) {
 	}
 	for name, value := range map[string]string{"issuer": "not-a-url", "client_id": "", "client_secret": "", "redirect_uri": "invalid"} {
 		t.Run(name, func(t *testing.T) {
-			text := fmt.Sprintf("[auth.oidc]\nissuer = %q\nclient_id = 'app'\nclient_secret = 'secret'\nredirect_uri = 'https://app.example/api/auth/oidc/callback'\n", "https://id.example")
+			text := fmt.Sprintf(
+				"[auth.oidc]\nissuer = %q\nclient_id = 'app'\nclient_secret = 'secret'\nredirect_uri = 'https://app.example/api/auth/oidc/callback'\n",
+				"https://id.example",
+			)
 			switch name {
 			case "issuer":
 				text = strings.Replace(text, `"https://id.example"`, fmt.Sprintf("%q", value), 1)

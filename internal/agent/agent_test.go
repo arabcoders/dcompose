@@ -164,7 +164,9 @@ func TestHealth(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &health); nil != err {
 		t.Fatal(err)
 	}
-	if 200 != w.Code || "ok" != health.Status || version != health.Version || runtime.GOOS != health.OS || runtime.GOARCH != health.Arch || !a.startedAt.Equal(health.StartedAt) || a.config.Global.ImageCheckInterval != health.ImageCheckInterval {
+	if 200 != w.Code || "ok" != health.Status || version != health.Version || runtime.GOOS != health.OS || runtime.GOARCH != health.Arch ||
+		!a.startedAt.Equal(health.StartedAt) ||
+		a.config.Global.ImageCheckInterval != health.ImageCheckInterval {
 		t.Fatalf("health: %s", w.Body)
 	}
 	if protocol.AgentAPI != health.APIVersion || strconv.Itoa(protocol.AgentAPI) != w.Header().Get(protocol.Header) {
@@ -217,7 +219,8 @@ func TestRouteAuth(t *testing.T) {
 				if err := json.Unmarshal(w.Body.Bytes(), &body); nil != err {
 					t.Fatal(err)
 				}
-				if "" == body.Error || strings.Contains(body.Error, "192.0.2.1") || strings.Contains(body.Error, "127.0.0.1") || strings.Contains(body.Error, "test-secret") {
+				if "" == body.Error || strings.Contains(body.Error, "192.0.2.1") || strings.Contains(body.Error, "127.0.0.1") ||
+					strings.Contains(body.Error, "test-secret") {
 					t.Fatalf("forbidden response exposed access rules: %s", w.Body)
 				}
 			}
@@ -362,7 +365,8 @@ func TestSave(t *testing.T) {
 		}
 	}
 	argv, _ := os.ReadFile(filepath.Join(fake, "argv"))
-	if !strings.Contains(string(argv), "<--project-directory><"+dir+">") || !strings.Contains(string(argv), "<config><--quiet><--no-env-resolution><--services>") {
+	if !strings.Contains(string(argv), "<--project-directory><"+dir+">") ||
+		!strings.Contains(string(argv), "<config><--quiet><--no-env-resolution><--services>") {
 		t.Fatalf("wrong validation argv: %s", argv)
 	}
 	cwd, _ := os.ReadFile(filepath.Join(fake, "cwd"))
@@ -373,7 +377,11 @@ func TestSave(t *testing.T) {
 	var response struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 400 != w.Code || "" == response.Error || strings.Contains(w.Body.String(), "invalid compose") {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&response,
+	); nil != err || 400 != w.Code || "" == response.Error ||
+		strings.Contains(w.Body.String(), "invalid compose") {
 		t.Fatalf("invalid save: %d %s", w.Code, w.Body)
 	}
 	data, _ = os.ReadFile(filepath.Join(dir, "docker-compose.yml"))
@@ -508,7 +516,8 @@ func TestUpdateImages(t *testing.T) {
 			}
 			op := completed(t, a, request(a, "POST", "/stacks/demo/actions", `{"action":"update"}`))
 			argv, _ := os.ReadFile(filepath.Join(fake, "argv"))
-			if test.failed != ("failed" == op.Status) || !strings.Contains(string(argv), "<pull>") || test.start != strings.Contains(string(argv), "<up><-d>") {
+			if test.failed != ("failed" == op.Status) || !strings.Contains(string(argv), "<pull>") ||
+				test.start != strings.Contains(string(argv), "<up><-d>") {
 				t.Fatalf("update: %s %+v", argv, op)
 			}
 			if !test.failed && ("succeeded" != op.Status || nil == op.ExitCode || 0 != *op.ExitCode) {

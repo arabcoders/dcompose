@@ -49,7 +49,12 @@ func TestBrowserMux(t *testing.T) {
 		{Type: "stream.event", Stream: commands[0].Stream, Event: "message", Payload: json.RawMessage(`{"message":"log line"}`)},
 		{Type: "stream.event", Stream: commands[1].Stream, Event: "message", Payload: json.RawMessage(`{"message":"before"}`)},
 		{Type: "stream.event", Stream: commands[1].Stream, Event: "message", Payload: json.RawMessage(`{"message":"after"}`)},
-		{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: json.RawMessage(`{"id":"session","output":"before"}`)},
+		{
+			Type:    "shell.event",
+			Shell:   "session",
+			Event:   "operation.snapshot",
+			Payload: json.RawMessage(`{"id":"session","output":"before"}`),
+		},
 		{Type: "shell.event", Shell: "session", Event: "operation.output", Payload: json.RawMessage(`{"id":"session","output":"after"}`)},
 		{Type: "event", Event: "stack.runtime", Payload: json.RawMessage(readFixture(t, "stack-runtime.json"))},
 	}
@@ -73,7 +78,9 @@ func TestBrowserMux(t *testing.T) {
 		}
 		count++
 	}
-	if "message" != strings.Join(seen["logs"], ",") || "message,message" != strings.Join(seen["other-logs"], ",") || "operation.snapshot,operation.output" != strings.Join(seen["terminal"], ",") || "stack.runtime" != strings.Join(seen[""], ",") {
+	if "message" != strings.Join(seen["logs"], ",") || "message,message" != strings.Join(seen["other-logs"], ",") ||
+		"operation.snapshot,operation.output" != strings.Join(seen["terminal"], ",") ||
+		"stack.runtime" != strings.Join(seen[""], ",") {
 		t.Fatal("wrong multiplexed events", seen)
 	}
 	for index, id := range []string{"logs", "other-logs", "terminal"} {
@@ -126,7 +133,11 @@ func TestBrowserTabs(t *testing.T) {
 		}
 		browserSend(t, node, protocol.ChannelMessage{Type: "stream.event", Stream: command.Stream, Event: "message", Payload: payload})
 	}
-	if got := resourceMessage(t, one); "event" != got.Type || "same-id" != got.Stream || "message" != got.Event || !strings.Contains(string(got.Payload), "one") {
+	if got := resourceMessage(
+		t,
+		one,
+	); "event" != got.Type || "same-id" != got.Stream || "message" != got.Event ||
+		!strings.Contains(string(got.Payload), "one") {
 		t.Fatal(got)
 	}
 	if got := resourceMessage(t, two); "same-id" != got.Stream || !strings.Contains(string(got.Payload), "two") {
@@ -136,7 +147,16 @@ func TestBrowserTabs(t *testing.T) {
 	if detach := channelCommand(t, f, "stream.detach"); first.Stream != detach.Stream {
 		t.Fatal("closed another tab subscription", detach)
 	}
-	browserSend(t, node, protocol.ChannelMessage{Type: "stream.event", Stream: second.Stream, Event: "message", Payload: json.RawMessage(`{"message":"still here"}`)})
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "stream.event",
+			Stream:  second.Stream,
+			Event:   "message",
+			Payload: json.RawMessage(`{"message":"still here"}`),
+		},
+	)
 	if got := resourceMessage(t, two); !strings.Contains(string(got.Payload), "still here") {
 		t.Fatal(got)
 	}
@@ -154,13 +174,40 @@ func TestShellObservers(t *testing.T) {
 	attach := protocol.ChannelMessage{Type: "shell.attach", Stream: "same-id", Node: "home", Shell: "session"}
 	browserSend(t, one, attach)
 	nextCommand(t, f, "shell.attach")
-	browserSend(t, node, protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: json.RawMessage(`{"id":"session","output":"first"}`)})
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "shell.event",
+			Shell:   "session",
+			Event:   "operation.snapshot",
+			Payload: json.RawMessage(`{"id":"session","output":"first"}`),
+		},
+	)
 	resourceMessage(t, one)
 	browserSend(t, two, attach)
 	nextCommand(t, f, "shell.attach")
 	// A new observer ignores deltas preceding its initial snapshot.
-	browserSend(t, node, protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.output", Payload: json.RawMessage(`{"id":"session","output":"next"}`)})
-	browserSend(t, node, protocol.ChannelMessage{Type: "shell.event", Shell: "session", Event: "operation.snapshot", Payload: json.RawMessage(`{"id":"session","output":"firstnext"}`)})
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "shell.event",
+			Shell:   "session",
+			Event:   "operation.output",
+			Payload: json.RawMessage(`{"id":"session","output":"next"}`),
+		},
+	)
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "shell.event",
+			Shell:   "session",
+			Event:   "operation.snapshot",
+			Payload: json.RawMessage(`{"id":"session","output":"firstnext"}`),
+		},
+	)
 	if got := resourceMessage(t, two); "operation.snapshot" != got.Event {
 		t.Fatal("delta preceded snapshot", got)
 	}
@@ -183,7 +230,12 @@ func TestBrowserAuth(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		var message protocol.ChannelMessage
-		if err := wsjson.Read(ctx, conn, &message); nil != err || "error" != message.Type || http.StatusUnauthorized != message.Status || "" == message.Error {
+		if err := wsjson.Read(
+			ctx,
+			conn,
+			&message,
+		); nil != err || "error" != message.Type || http.StatusUnauthorized != message.Status ||
+			"" == message.Error {
 			t.Fatal("unexpected unauthenticated data", message, err)
 		}
 		if _, _, err := conn.Read(ctx); nil == err {
@@ -240,7 +292,7 @@ func TestBrowserExpiry(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	var message protocol.ChannelMessage
 	if err := wsjson.Read(ctx, conn, &message); nil != err || "error" != message.Type || 401 != message.Status || "" == message.Error {
 		t.Fatal("idle browser did not notice session expiry", message, err)
@@ -273,7 +325,16 @@ func TestBrowserNodeFailure(t *testing.T) {
 	if got := resourceMessage(t, browser); "home" != got.Stream || "error" != got.Type || 502 != got.Status {
 		t.Fatal("node failure did not invalidate its subscription", got)
 	}
-	browserSend(t, healthy, protocol.ChannelMessage{Type: "stream.event", Stream: remaining.Stream, Event: "message", Payload: json.RawMessage(`{"message":"healthy"}`)})
+	browserSend(
+		t,
+		healthy,
+		protocol.ChannelMessage{
+			Type:    "stream.event",
+			Stream:  remaining.Stream,
+			Event:   "message",
+			Payload: json.RawMessage(`{"message":"healthy"}`),
+		},
+	)
 	if got := resourceMessage(t, browser); "other" != got.Stream || "message" != got.Event {
 		t.Fatal("node failure affected another subscription", got)
 	}
@@ -386,7 +447,16 @@ func TestWorkspaceSync(t *testing.T) {
 	if 0 != len(other) || 0 != len(f.commands) {
 		t.Fatal("workspace sync affected other subscribers or node connection")
 	}
-	browserSend(t, node, protocol.ChannelMessage{Type: "stream.event", Stream: attach.Stream, Event: "message", Payload: json.RawMessage(`{"message":"after sync"}`)})
+	browserSend(
+		t,
+		node,
+		protocol.ChannelMessage{
+			Type:    "stream.event",
+			Stream:  attach.Stream,
+			Event:   "message",
+			Payload: json.RawMessage(`{"message":"after sync"}`),
+		},
+	)
 	if got := resourceMessage(t, browser); "logs" != got.Stream {
 		t.Fatal("workspace sync detached logs", got)
 	}

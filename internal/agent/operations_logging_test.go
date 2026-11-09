@@ -27,7 +27,7 @@ type operationLogRecord struct {
 func operationLogs(t *testing.T, logs *automaticLogBuffer) []operationLogRecord {
 	t.Helper()
 	var records []operationLogRecord
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		if "" == line {
 			continue
 		}
@@ -49,7 +49,10 @@ func checkFailureLog(t *testing.T, logs *automaticLogBuffer, a *agent, op *opera
 		t.Fatalf("failure records: %+v", records)
 	}
 	record := records[0]
-	if "ERROR" != record.Level || op.ID != record.Operation || op.Action != record.Action || op.Stack != record.Stack || op.service != record.Service || a.config.Global.NodeID != record.Node || code != record.ExitCode {
+	if "ERROR" != record.Level || op.ID != record.Operation || op.Action != record.Action || op.Stack != record.Stack ||
+		op.service != record.Service ||
+		a.config.Global.NodeID != record.Node ||
+		code != record.ExitCode {
 		t.Fatalf("failure context: %+v", record)
 	}
 	for _, detail := range []string{op.ID, op.Action, op.Stack, op.service, a.config.Global.NodeID, fmt.Sprint(code), cause} {
@@ -170,7 +173,7 @@ func TestManualLogBound(t *testing.T) {
 	logs := captureAutomaticLogs(t)
 	a, _ := executionFixture(t)
 	cause := "registry.example: access denied"
-	op := &operation{operationSnapshot: operationSnapshot{ID: "manual", Stack: "demo", Action: "pull", Status: "running"}}
+	op := &operation{ID: "manual", Stack: "demo", Action: "pull", Status: "running"}
 	_, _ = op.Write([]byte(strings.Repeat("progress €\r\n", 1000) + "\x1b[31m" + cause + "\x1b[0m\nError: exit status 7\n"))
 	a.finishOperation(op, 7)
 	checkFailureLog(t, logs, a, op, cause, 7)

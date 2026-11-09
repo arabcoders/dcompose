@@ -40,7 +40,10 @@ func TestImageChanged(t *testing.T) {
 					return nil, []byte("inspect failed"), errors.New("inspect failed")
 				}
 				if "container" == cmd.Args[0] {
-					if !reflect.DeepEqual(cmd.Args, []string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .Config.Image}}}`, "web"}) {
+					if !reflect.DeepEqual(
+						cmd.Args,
+						[]string{"container", "inspect", "--format", `{"id":{{json .Image}},"ref":{{json .Config.Image}}}`, "web"},
+					) {
 						t.Fatalf("container: %+v", cmd)
 					}
 					return []byte(test.container), nil, nil
@@ -108,7 +111,8 @@ func TestImageInspection(t *testing.T) {
 		return nil, nil, nil
 	})
 	result := d.InspectImage(context.Background(), engine.Service{Name: "web"})
-	if digest("a") != result.LocalID || "docker.io/library/nginx:latest" != result.Key.Ref || testPlatform != result.Key.ImagePlatform || "" != result.Status {
+	if digest("a") != result.LocalID || "docker.io/library/nginx:latest" != result.Key.Ref || testPlatform != result.Key.ImagePlatform ||
+		"" != result.Status {
 		t.Fatalf("target: %+v", result)
 	}
 }
@@ -181,10 +185,12 @@ func TestImageDiagnostics(t *testing.T) {
 			if err := json.Unmarshal(logs.Bytes(), &record); nil != err {
 				t.Fatalf("decode logs: %v", err)
 			}
-			if "WARN" != record.Level || "docker" != record.Runtime || "web" != record.Container || "nginx:latest" != record.Image || "" == record.Error {
+			if "WARN" != record.Level || "docker" != record.Runtime || "web" != record.Container || "nginx:latest" != record.Image ||
+				"" == record.Error {
 				t.Fatalf("missing diagnostics: %s", &logs)
 			}
-			if test.commandError && ("sentinel command failure" != record.Error || "sentinel command stderr" != record.Stderr || "docker "+test.fail+" inspect" != record.Command) {
+			if test.commandError &&
+				("sentinel command failure" != record.Error || "sentinel command stderr" != record.Stderr || "docker "+test.fail+" inspect" != record.Command) {
 				t.Fatalf("missing command details: %s", &logs)
 			}
 			details := []string{record.Container, record.Image, record.Stderr}

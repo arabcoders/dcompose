@@ -104,7 +104,9 @@ func resolveCredentials(data []byte, registry string) (credentials, error) {
 	}
 	for key, helper := range config.Helpers {
 		if registry == authRegistry(key) && "" != helper {
-			return credentials{}, errors.New("registry login uses a credential helper; configure an inline registry login for metadata checks")
+			return credentials{}, errors.New(
+				"registry login uses a credential helper; configure an inline registry login for metadata checks",
+			)
 		}
 	}
 	if "" != config.Store {
@@ -249,7 +251,13 @@ func (l *lookup) exchange(ctx context.Context, params map[string]string) (string
 	var body io.Reader
 	if "" != l.login.IdentityToken {
 		method = http.MethodPost
-		values = url.Values{"grant_type": {"refresh_token"}, "refresh_token": {l.login.IdentityToken}, "service": {params["service"]}, "scope": {scope}, "client_id": {"docker"}}
+		values = url.Values{
+			"grant_type":    {"refresh_token"},
+			"refresh_token": {l.login.IdentityToken},
+			"service":       {params["service"]},
+			"scope":         {scope},
+			"client_id":     {"docker"},
+		}
 		body = strings.NewReader(values.Encode())
 	} else {
 		if "" != l.login.Username {
@@ -273,7 +281,7 @@ func (l *lookup) exchange(ctx context.Context, params map[string]string) (string
 	if http.StatusOK != resp.StatusCode {
 		return "", time.Time{}, responseError(resp)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var token struct {
 		Token       string    `json:"token"`
 		AccessToken string    `json:"access_token"`

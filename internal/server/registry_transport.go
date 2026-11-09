@@ -25,7 +25,7 @@ type registryTransport struct {
 
 func (transport registryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	if nil != request.Body {
-		defer request.Body.Close()
+		defer func() { _ = request.Body.Close() }()
 	}
 	nodeID, _ := request.Context().Value(registryNodeKey{}).(string)
 	if "" == nodeID {
@@ -50,7 +50,7 @@ func (transport registryTransport) RoundTrip(request *http.Request) (*http.Respo
 	if nil != err {
 		return nil, fmt.Errorf("registry request through node %q failed: %w", nodeID, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if http.StatusOK != response.StatusCode {
 		return nil, readNodeHTTPError(response, fmt.Sprintf("registry request through node %q", nodeID))
 	}

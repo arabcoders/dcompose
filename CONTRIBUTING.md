@@ -7,9 +7,9 @@ review.
 
 ## Before you start
 
-Report vulnerabilities privately through [SECURITY.md](SECURITY.md). For a bug fix or small feature, open a GitHub issue.
-Use a discussion for larger changes or general questions. Explain what you want to change, why, your proposed approach
-and which existing behavior or use cases it affects.
+Report vulnerabilities privately through [SECURITY.md](SECURITY.md). For bugs, proposed changes or general questions,
+open a GitHub issue. Explain what you want to change, why, your proposed approach and which existing behavior or use
+cases it affects.
 
 Bug fixes, functional improvements and measurable performance work take priority. An interface change needs more than
 personal preference. I will decline a proposal or ask for a different scope or approach.
@@ -22,7 +22,17 @@ documentation will be rejected. Write tests that check behavior, not just increa
 
 ## Development setup
 
-You'll need Go 1.27.3+ and Bun 1.4+. Run commands from the repository root. Install frontend dependencies with:
+Branch from `dev`:
+
+```sh
+git switch dev
+git pull origin dev
+git switch -c feature/descriptive-name
+```
+
+Install [mise](https://mise.jdx.dev/getting-started.html), then run `mise install` to install the development tools from
+`mise.toml`. The pre-commit checks use `mise exec` so local checks and CI use the same tool versions.
+Run commands from the repository root. Install frontend dependencies with:
 
 ```sh
 bun --cwd=$PWD/frontend/ install --frozen-lockfile
@@ -40,8 +50,9 @@ Install the local pre-commit hook once per clone:
 .githooks/pre-commit --all       # all tracked files
 ```
 
-The installer preserves an existing pre-commit hook unless you pass `--force`. To keep local checks, place executable
-files in `.git/hooks/pre-commit.d/` (always run), `backend/` (Go changes), or `frontend/` (frontend changes).
+The installer preserves an existing pre-commit hook unless you pass `--force`. Put executable local checks in
+`.git/hooks/pre-commit.d/` to run them for all changes. Create `backend/` or `frontend/` subdirectories there for
+Go-only or frontend-only checks.
 
 ## Check changes
 
@@ -57,9 +68,12 @@ bun --cwd=$PWD/frontend/ format:check
 For Go changes:
 
 ```sh
-go test -race ./cmd/... ./internal/...
-go vet ./cmd/... ./internal/...
+mise exec -- golangci-lint fmt ./cmd/... ./internal/...
+mise exec -- go test -race ./cmd/... ./internal/...
+mise exec -- golangci-lint run ./cmd/... ./internal/...
 ```
+
+Go formatting uses gofmt and golines with a 140-column target. Pre-commit and CI check formatting without rewriting files.
 
 ## Local hot reload
 
@@ -113,6 +127,12 @@ go build -o dist/dagent ./cmd/dagent
 
 The deployed server includes the web interface and doesn't need Go or Bun.
 
+## Pull requests
+
+Every pull request must target `dev`, never `master`. Reference the approved issue, explain what changed
+and why, and include any breaking changes or setup steps. Run the checks that apply to your changes and update the
+documentation where needed. Pull requests targeting `master` will be closed without review.
+
 ## API versions
 
 `GET /api/version` returns the server's application version, API version and supported node API version. A node's
@@ -127,5 +147,5 @@ The image includes both binaries, Docker Compose and the Podman remote client. I
 the command with `dagent` for a node. To build it:
 
 ```sh
-docker build -t arabcoders/dcompose .
+docker build -t ghcr.io/arabcoders/dcompose .
 ```

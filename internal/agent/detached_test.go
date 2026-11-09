@@ -63,8 +63,12 @@ func detachedFixture(t *testing.T) (*agent, *detachedDriver, context.CancelFunc)
 
 func detachedOp(t *testing.T, a *agent, id string) *operation {
 	t.Helper()
-	op := &operation{operationSnapshot: operationSnapshot{ID: id, Stack: "self", Action: "update", Status: "running"}}
-	if err := a.prepareDetached(op, engine.Stack{Name: "self", Dir: "/stacks/self", ComposeFile: "/stacks/self/compose.yaml", EnvFile: "/stacks/self/.env"}, ""); nil != err {
+	op := &operation{ID: id, Stack: "self", Action: "update", Status: "running"}
+	if err := a.prepareDetached(
+		op,
+		engine.Stack{Name: "self", Dir: "/stacks/self", ComposeFile: "/stacks/self/compose.yaml", EnvFile: "/stacks/self/.env"},
+		"",
+	); nil != err {
 		t.Fatal(err)
 	}
 	a.ops[id], a.busy[op.Stack] = op, true
@@ -124,7 +128,7 @@ func TestSelfOperation(t *testing.T) {
 		if "dagent-operation-"+input.ID != name || "self" != base.Name || "update" != input.Action {
 			return errors.New("incorrect helper request")
 		}
-		op := &operation{operationSnapshot: operationSnapshot{ID: input.ID, Stack: "self", Action: "update", Output: "helper completed\n"}}
+		op := &operation{ID: input.ID, Stack: "self", Action: "update", Output: "helper completed\n"}
 		return writeDetachedResult(filepath.Join(filepath.Dir(path), "result.json"), op, 0)
 	}
 	driver.state = func(context.Context, string) (engine.DetachedState, error) {
@@ -156,7 +160,8 @@ func TestPodmanSelfOperation(t *testing.T) {
 			}
 			var started, removed atomic.Int32
 			driver := podman.New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
-				if "podman" != cmd.Program || 4 > len(cmd.Args) || "--remote" != cmd.Args[0] || "--url" != cmd.Args[1] || host != cmd.Args[2] {
+				if "podman" != cmd.Program || 4 > len(cmd.Args) || "--remote" != cmd.Args[0] || "--url" != cmd.Args[1] ||
+					host != cmd.Args[2] {
 					return nil, nil, fmt.Errorf("unexpected Podman command: %+v", cmd)
 				}
 				args := cmd.Args[3:]
@@ -179,7 +184,7 @@ func TestPodmanSelfOperation(t *testing.T) {
 						return nil, nil, fmt.Errorf("unexpected helper request: %+v", input)
 					}
 					started.Add(1)
-					op := &operation{operationSnapshot: operationSnapshot{ID: input.ID, Stack: input.Stack.Name, Action: input.Action, Output: "podman helper completed\n"}}
+					op := &operation{ID: input.ID, Stack: input.Stack.Name, Action: input.Action, Output: "podman helper completed\n"}
 					return nil, nil, writeDetachedResult(filepath.Join(filepath.Dir(path), "result.json"), op, 0)
 				case "logs":
 					return nil, nil, nil
@@ -201,7 +206,10 @@ func TestPodmanSelfOperation(t *testing.T) {
 			}
 			result := completed(t, a, request(a, method, path, body))
 			a.work.Wait()
-			if "succeeded" != result.Status || nil == result.ExitCode || 0 != *result.ExitCode || "podman helper completed\n" != result.Output || 1 != started.Load() || 1 != removed.Load() {
+			if "succeeded" != result.Status || nil == result.ExitCode || 0 != *result.ExitCode ||
+				"podman helper completed\n" != result.Output ||
+				1 != started.Load() ||
+				1 != removed.Load() {
 				t.Fatalf("Podman helper result: %+v started=%d removed=%d", result, started.Load(), removed.Load())
 			}
 		})
@@ -261,7 +269,8 @@ func TestDetachedLaunchFailure(t *testing.T) {
 	a, driver, _ := detachedFixture(t)
 	op := detachedOp(t, a, "0000000000000002")
 	driver.start = func(_ context.Context, self engine.SelfContainer, name, path string, base engine.Stack) error {
-		if "node" != self.ID || "dagent-operation-"+op.ID != name || filepath.Join(a.operationsDir, op.ID, "request.json") != path || "self" != base.Name {
+		if "node" != self.ID || "dagent-operation-"+op.ID != name || filepath.Join(a.operationsDir, op.ID, "request.json") != path ||
+			"self" != base.Name {
 			t.Fatal("incorrect launch metadata")
 		}
 		return errors.New("helper launch denied")
@@ -296,7 +305,11 @@ func TestDetachedMissingResult(t *testing.T) {
 			}
 			a.observeDetached(op)
 			result, err := readDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op)
-			if nil != err || "failed" != result.Status || nil == result.ExitCode || 0 == *result.ExitCode || (0 != code && code != *result.ExitCode) || !strings.Contains(result.Output, "helper panic details") || 1 != driver.removed.Load() || a.busy[op.Stack] {
+			if nil != err || "failed" != result.Status || nil == result.ExitCode || 0 == *result.ExitCode ||
+				(0 != code && code != *result.ExitCode) ||
+				!strings.Contains(result.Output, "helper panic details") ||
+				1 != driver.removed.Load() ||
+				a.busy[op.Stack] {
 				t.Fatalf("missing result: %+v %v", result, err)
 			}
 		})
@@ -323,7 +336,7 @@ func TestDetachedInspectOutage(t *testing.T) {
 		t.Fatalf("outage changed helper result: %+v calls=%d", snapshot, calls)
 	}
 	matches := 0
-	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.text()), "\n") {
 		var record struct {
 			Level, Operation, Error string
 			Message                 string `json:"msg"`
@@ -431,7 +444,9 @@ func TestDetachedOutputAndCleanup(t *testing.T) {
 	}
 	a.observeDetached(op)
 	result := op.snapshot()
-	if "progress € done\n" != result.Output || "failed" != result.Status || 7 != *result.ExitCode || !utf8.ValidString(result.Output) || 1 != driver.removed.Load() || a.busy[op.Stack] {
+	if "progress € done\n" != result.Output || "failed" != result.Status || 7 != *result.ExitCode || !utf8.ValidString(result.Output) ||
+		1 != driver.removed.Load() ||
+		a.busy[op.Stack] {
 		t.Fatalf("output/cleanup: %+v", result)
 	}
 }
@@ -532,7 +547,7 @@ func TestDetachedLogCap(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	log := &detachedLog{file: file, remaining: 1 << 20}
 	data := []byte(strings.Repeat("x", (1<<20)+32))
 	if n, err := log.Write(data); len(data) != n || nil != err {
@@ -554,7 +569,7 @@ func TestRunOperation(t *testing.T) {
 				t.Fatal(err)
 			}
 			a.operationsDir = filepath.Join(directory, "operations")
-			op := &operation{operationSnapshot: operationSnapshot{ID: "000000000000000a", Stack: "self", Action: "restart", Status: "running"}}
+			op := &operation{ID: "000000000000000a", Stack: "self", Action: "restart", Status: "running"}
 			if err := a.prepareDetached(op, base, "web"); nil != err {
 				t.Fatal(err)
 			}
@@ -589,14 +604,21 @@ func TestRunOperationPodman(t *testing.T) {
 	t.Setenv("DOCKER_CONTEXT", "wrong-context")
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
 	t.Setenv("DOCKER_CERT_PATH", "/wrong/certificates")
-	write(t, filepath.Join(directory, "docker"), "#!/bin/sh\nprintf '%s|%s|%s|%s\\n' \"$DOCKER_HOST\" \"${DOCKER_CONTEXT-unset}\" \"${DOCKER_TLS_VERIFY-unset}\" \"${DOCKER_CERT_PATH-unset}\" >> \"$FAKE_DIR/compose-env\"\n"+readFixture(t, "docker.sh"))
+	write(
+		t,
+		filepath.Join(directory, "docker"),
+		"#!/bin/sh\nprintf '%s|%s|%s|%s\\n' \"$DOCKER_HOST\" \"${DOCKER_CONTEXT-unset}\" \"${DOCKER_TLS_VERIFY-unset}\" \"${DOCKER_CERT_PATH-unset}\" >> \"$FAKE_DIR/compose-env\"\n"+readFixture(
+			t,
+			"docker.sh",
+		),
+	)
 	stackDir := seed(t, a, "self", "compose.yaml")
 	base, err := a.engineStack("self", stackDir)
 	if nil != err {
 		t.Fatal(err)
 	}
 	a.operationsDir = filepath.Join(directory, "operations")
-	op := &operation{operationSnapshot: operationSnapshot{ID: "000000000000000f", Stack: "self", Action: "restart", Status: "running"}}
+	op := &operation{ID: "000000000000000f", Stack: "self", Action: "restart", Status: "running"}
 	if err := a.prepareDetached(op, base, "web"); nil != err {
 		t.Fatal(err)
 	}
@@ -604,14 +626,15 @@ func TestRunOperationPodman(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := readDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op)
-	if nil != err || "succeeded" != result.Status || nil == result.ExitCode || 0 != *result.ExitCode || !strings.Contains(result.Output, "restart started") {
+	if nil != err || "succeeded" != result.Status || nil == result.ExitCode || 0 != *result.ExitCode ||
+		!strings.Contains(result.Output, "restart started") {
 		t.Fatalf("Podman helper result: %+v error=%v", result, err)
 	}
 	environment, err := os.ReadFile(filepath.Join(directory, "compose-env"))
 	if nil != err || "" == strings.TrimSpace(string(environment)) {
 		t.Fatalf("Compose environment: %q error=%v", environment, err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(environment)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(environment)), "\n") {
 		if host+"|||" != line {
 			t.Fatalf("Compose transport: %q", line)
 		}

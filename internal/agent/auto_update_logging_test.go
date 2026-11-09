@@ -58,7 +58,7 @@ func captureAutomaticLogs(t *testing.T) *automaticLogBuffer {
 func (b *automaticLogBuffer) records(t *testing.T) []automaticLogRecord {
 	t.Helper()
 	records := []automaticLogRecord{}
-	for _, line := range strings.Split(strings.TrimSpace(b.text()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(b.text()), "\n") {
 		if "" == line {
 			continue
 		}
@@ -109,7 +109,10 @@ func TestAutoUpdateLogs(t *testing.T) {
 			if failed {
 				level, status, code = "ERROR", "failed", 7
 			}
-			if "INFO" != records[0].Level || "running" != records[0].Status || nil != records[0].ExitCode || level != records[1].Level || status != records[1].Status || nil == records[1].ExitCode || code != *records[1].ExitCode {
+			if "INFO" != records[0].Level || "running" != records[0].Status || nil != records[0].ExitCode || level != records[1].Level ||
+				status != records[1].Status ||
+				nil == records[1].ExitCode ||
+				code != *records[1].ExitCode {
 				t.Fatalf("lifecycle status: %+v", records)
 			}
 			if failed && !strings.Contains(records[1].Message, fmt.Sprint(code)) {
@@ -159,7 +162,10 @@ func TestAutoUpdateStartLogs(t *testing.T) {
 				t.Fatalf("startup records: %+v", records)
 			}
 			record := records[0]
-			if test.level != record.Level || test.code != record.HTTPCode || "rejected" != record.Status || "demo" != record.Stack || target != record.Service || "" == record.Reason || test.allocated != ("" != record.Operation) {
+			if test.level != record.Level || test.code != record.HTTPCode || "rejected" != record.Status || "demo" != record.Stack ||
+				target != record.Service ||
+				"" == record.Reason ||
+				test.allocated != ("" != record.Operation) {
 				t.Fatalf("startup fields: %+v", record)
 			}
 			for _, detail := range []string{record.Stack, record.Service, record.Reason, fmt.Sprint(test.code)} {
@@ -218,7 +224,9 @@ func TestAutoDetachedLogs(t *testing.T) {
 			if launchFailed {
 				status, level, code = "failed", "ERROR", 1
 			}
-			if 2 != len(records) || "running" != records[0].Status || status != records[1].Status || level != records[1].Level || nil == records[1].ExitCode || code != *records[1].ExitCode {
+			if 2 != len(records) || "running" != records[0].Status || status != records[1].Status || level != records[1].Level ||
+				nil == records[1].ExitCode ||
+				code != *records[1].ExitCode {
 				t.Fatalf("detached lifecycle: %+v", records)
 			}
 			for _, record := range records {
@@ -243,7 +251,14 @@ func TestAutoDetachedRestoreLogs(t *testing.T) {
 			t.Run(fmt.Sprintf("%t/%d", ready, code), func(t *testing.T) {
 				logs := captureAutomaticLogs(t)
 				a, driver, _ := detachedFixture(t)
-				op := &operation{operationSnapshot: operationSnapshot{ID: "0123456789abcdef", Stack: "self", Action: "update", Status: "running"}, automatic: true, service: "web"}
+				op := &operation{
+					ID:        "0123456789abcdef",
+					Stack:     "self",
+					Action:    "update",
+					Status:    "running",
+					automatic: true,
+					service:   "web",
+				}
 				if err := a.prepareDetached(op, engine.Stack{Name: "self", Dir: "/stacks/self"}, "web"); nil != err {
 					t.Fatal(err)
 				}
@@ -270,7 +285,12 @@ func TestAutoDetachedRestoreLogs(t *testing.T) {
 				if 0 != code {
 					status, level = "failed", "ERROR"
 				}
-				if 1 != len(records) || status != records[0].Status || level != records[0].Level || "self" != records[0].Stack || "web" != records[0].Service || op.ID != records[0].Operation || nil == records[0].ExitCode || code != *records[0].ExitCode || status != restored.snapshot().Status {
+				if 1 != len(records) || status != records[0].Status || level != records[0].Level || "self" != records[0].Stack ||
+					"web" != records[0].Service ||
+					op.ID != records[0].Operation ||
+					nil == records[0].ExitCode ||
+					code != *records[0].ExitCode ||
+					status != restored.snapshot().Status {
 					t.Fatalf("restored lifecycle: %+v", records)
 				}
 				// Collected history is not a fresh automatic completion on restart.

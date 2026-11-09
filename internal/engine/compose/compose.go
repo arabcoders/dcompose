@@ -42,7 +42,11 @@ func (c *CLI) Validate(ctx context.Context, s engine.Stack) error {
 	// Do not resolve service env_file entries before staged files are installed.
 	stdout, stderr, err := c.run(ctx, c.command(s, "config", "--quiet", "--no-env-resolution", "--services"))
 	if nil != err {
-		return &engine.Error{Code: 400, Message: "Compose validation failed. Check the Compose and .env files.", Cause: fmt.Errorf("compose validation failed: %w: %s%s", err, stdout, stderr)}
+		return &engine.Error{
+			Code:    400,
+			Message: "Compose validation failed. Check the Compose and .env files.",
+			Cause:   fmt.Errorf("compose validation failed: %w: %s%s", err, stdout, stderr),
+		}
 	}
 	return nil
 }
@@ -50,7 +54,11 @@ func (c *CLI) Validate(ctx context.Context, s engine.Stack) error {
 func (c *CLI) Services(ctx context.Context, s engine.Stack) ([]string, error) {
 	stdout, stderr, err := c.run(ctx, c.command(s, "config", "--services"))
 	if nil != err {
-		return nil, &engine.Error{Code: 502, Message: "Could not read Compose services. Try again.", Cause: fmt.Errorf("compose command failed: %w: %s", err, stderr)}
+		return nil, &engine.Error{
+			Code:    502,
+			Message: "Could not read Compose services. Try again.",
+			Cause:   fmt.Errorf("compose command failed: %w: %s", err, stderr),
+		}
 	}
 	return strings.Fields(string(stdout)), nil
 }
@@ -104,7 +112,11 @@ type container struct {
 func (c *CLI) Containers(ctx context.Context, s engine.Stack) ([]engine.Service, error) {
 	stdout, stderr, err := c.run(ctx, c.command(s, "ps", "--all", "--format", "json"))
 	if nil != err {
-		return nil, &engine.Error{Code: 502, Message: "Could not read container information. Try again.", Cause: fmt.Errorf("compose ps: %w: %s", err, stderr)}
+		return nil, &engine.Error{
+			Code:    502,
+			Message: "Could not read container information. Try again.",
+			Cause:   fmt.Errorf("compose ps: %w: %s", err, stderr),
+		}
 	}
 	data := bytes.TrimSpace(stdout)
 	containers := []container{}
@@ -124,13 +136,20 @@ func (c *CLI) Containers(ctx context.Context, s engine.Stack) ([]engine.Service,
 		}
 	}
 	if nil != err {
-		return nil, &engine.Error{Code: 502, Message: "Could not read container information. Try again.", Cause: fmt.Errorf("invalid compose ps output: %w", err)}
+		return nil, &engine.Error{
+			Code:    502,
+			Message: "Could not read container information. Try again.",
+			Cause:   fmt.Errorf("invalid compose ps output: %w", err),
+		}
 	}
 	services := make([]engine.Service, 0, len(containers))
 	for _, item := range containers {
 		bindings := make([]engine.PortBinding, 0, len(item.Publishers))
 		for _, port := range item.Publishers {
-			bindings = append(bindings, engine.PortBinding{HostIP: port.URL, HostPort: port.PublishedPort, ContainerPort: port.TargetPort, Protocol: port.Protocol})
+			bindings = append(
+				bindings,
+				engine.PortBinding{HostIP: port.URL, HostPort: port.PublishedPort, ContainerPort: port.TargetPort, Protocol: port.Protocol},
+			)
 		}
 		ports := item.Ports
 		if "" == ports {

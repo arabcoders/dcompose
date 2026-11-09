@@ -11,7 +11,11 @@ import (
 	"github.com/arabcoders/dcompose/internal/protocol"
 )
 
-func (s *Server) browserShellCommand(ctx context.Context, subscription *browserSubscription, message protocol.ChannelMessage) *protocol.ChannelMessage {
+func (s *Server) browserShellCommand(
+	ctx context.Context,
+	subscription *browserSubscription,
+	message protocol.ChannelMessage,
+) *protocol.ChannelMessage {
 	if nil == subscription || "" == subscription.shell {
 		return browserError(message.Stream, 404, "Shell is not open. Reopen the shell and try again.")
 	}
@@ -44,7 +48,17 @@ func (s *Server) browserShellCommand(ctx context.Context, subscription *browserS
 			action = "resize"
 		}
 		detail := safeTransportError(err)
-		slog.Error(fmt.Sprintf("Could not %s shell %q on %s: %s", action, subscription.shell, nodeLogLabel(subscription.channel.node), detail), "node", nodeLogLabel(subscription.channel.node), "operation", action, "shell", subscription.shell, "error", detail)
+		slog.Error(
+			fmt.Sprintf("Could not %s shell %q on %s: %s", action, subscription.shell, nodeLogLabel(subscription.channel.node), detail),
+			"node",
+			nodeLogLabel(subscription.channel.node),
+			"operation",
+			action,
+			"shell",
+			subscription.shell,
+			"error",
+			detail,
+		)
 		return browserError(message.Stream, 502, "Connection lost. Reopen the shell.")
 	}
 	return nil

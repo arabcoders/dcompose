@@ -20,6 +20,7 @@ func TestTicketMint(t *testing.T) {
 		t.Run(auth, func(t *testing.T) {
 			s := testServer(t, nil)
 			r := httptest.NewRequest("POST", "/api/auth/tickets", strings.NewReader(`{}`))
+			r.AddCookie(&http.Cookie{Name: "unrelated", Value: "other-secret"})
 			if "session" == auth {
 				r.AddCookie(testSession(t, s))
 			} else {
@@ -47,6 +48,17 @@ func TestTicketMint(t *testing.T) {
 			if !exists || ticket.expires.Before(before.Add(30*time.Second)) || ticket.expires.After(time.Now().Add(30*time.Second)) {
 				t.Fatal("incorrect ticket expiry")
 			}
+			if 1 != len(ticket.auth) || !s.authenticated(&http.Request{Header: ticket.auth}) {
+				t.Fatal("ticket did not preserve its issuing credential")
+			}
+			if "session" == auth {
+				cookie, err := r.Cookie("session")
+				if nil != err || cookie.String() != ticket.auth.Get("Cookie") {
+					t.Fatal("ticket retained unrelated cookies")
+				}
+			} else if r.Header.Get("Authorization") != ticket.auth.Get("Authorization") {
+				t.Fatal("ticket did not preserve bearer authentication")
+			}
 			if 0 != len(w.Result().Cookies()) {
 				t.Fatal("ticket issuance created a session")
 			}
@@ -67,7 +79,11 @@ func TestTicketBody(t *testing.T) {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		if err := json.Unmarshal(w.Body.Bytes(), &response); nil != err || 400 != w.Code || 400 != response.Error.Code || "" == response.Error.Message {
+		if err := json.Unmarshal(
+			w.Body.Bytes(),
+			&response,
+		); nil != err || 400 != w.Code || 400 != response.Error.Code ||
+			"" == response.Error.Message {
 			t.Fatal("invalid ticket body accepted or incorrect error response", w.Code, err)
 		}
 	}
@@ -154,14 +170,12 @@ func TestTicketConcurrent(t *testing.T) {
 	var workers sync.WaitGroup
 	start := make(chan struct{})
 	for range 16 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			<-start
 			if _, valid := s.consumeWebsocketTicket("ticket"); valid {
 				winners.Add(1)
 			}
-		}()
+		})
 	}
 	close(start)
 	workers.Wait()
@@ -253,7 +267,9 @@ func TestWebsocketOrigins(t *testing.T) {
 			}
 			if test.valid {
 				stored, err := readConfig(path)
-				if nil != err || 1 != len(c.Global.WebsocketOrigins) || test.origin != c.Global.WebsocketOrigins[0] || 1 != len(stored.Global.WebsocketOrigins) || test.origin != stored.Global.WebsocketOrigins[0] {
+				if nil != err || 1 != len(c.Global.WebsocketOrigins) || test.origin != c.Global.WebsocketOrigins[0] ||
+					1 != len(stored.Global.WebsocketOrigins) ||
+					test.origin != stored.Global.WebsocketOrigins[0] {
 					t.Fatal("origins not preserved", err)
 				}
 			}

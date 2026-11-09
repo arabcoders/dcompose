@@ -106,7 +106,10 @@ func (l *lookup) refreshRoot(ctx context.Context, previous *rootObservation) (*r
 	if nil != err {
 		return nil, err
 	}
-	platforms := &platformCache{images: make(map[engine.ImagePlatform]engine.RegistryImage), pending: make(map[engine.ImagePlatform]*imageFlight)}
+	platforms := &platformCache{
+		images:  make(map[engine.ImagePlatform]engine.RegistryImage),
+		pending: make(map[engine.ImagePlatform]*imageFlight),
+	}
 	if nil != previous && previous.digest == digest {
 		platforms = previous.platforms
 	}

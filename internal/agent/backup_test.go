@@ -58,7 +58,11 @@ func TestBackupReadFailure(t *testing.T) {
 	}
 	w := request(a, "GET", "/backup", "")
 	var backup protocol.NodeBackup
-	if err := json.Unmarshal(w.Body.Bytes(), &backup); nil != err || 400 != w.Code || "" == backup.Error || 0 != len(backup.Files) || strings.Contains(w.Body.String(), dir) {
+	if err := json.Unmarshal(
+		w.Body.Bytes(),
+		&backup,
+	); nil != err || 400 != w.Code || "" == backup.Error || 0 != len(backup.Files) ||
+		strings.Contains(w.Body.String(), dir) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }

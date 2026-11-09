@@ -108,14 +108,38 @@ func (l *lookup) rateLimited(ctx context.Context, resp *http.Response) error {
 		if nil != ctx.Err() {
 			level = slog.LevelDebug
 		}
-		slog.Log(ctx, level, fmt.Sprintf("Registry %q rate-limited %s while checking image %q: %s. Metadata checks for this registry/login will retry after %s.", l.ref.registry, login, l.key.Ref, cause, until.UTC().Format(time.RFC3339)), "image", l.key.Ref, "registry", l.ref.registry, "error", cause, "retry_at", until)
+		slog.Log(
+			ctx,
+			level,
+			fmt.Sprintf(
+				"Registry %q rate-limited %s while checking image %q: %s. Metadata checks for this registry/login will retry after %s.",
+				l.ref.registry,
+				login,
+				l.key.Ref,
+				cause,
+				until.UTC().Format(time.RFC3339),
+			),
+			"image",
+			l.key.Ref,
+			"registry",
+			l.ref.registry,
+			"error",
+			cause,
+			"retry_at",
+			until,
+		)
 	}
 	return &cooldownError{state: state}
 }
 
 func retryAfter(value string, now time.Time) (time.Time, bool) {
 	value = strings.TrimSpace(value)
-	if seconds, err := strconv.ParseInt(value, 10, 64); nil == err && 0 <= seconds && seconds <= int64((time.Duration(1<<63-1))/time.Second) {
+	if seconds, err := strconv.ParseInt(
+		value,
+		10,
+		64,
+	); nil == err && 0 <= seconds &&
+		seconds <= int64((time.Duration(1<<63-1))/time.Second) {
 		return now.Add(time.Duration(seconds) * time.Second), true
 	}
 	if until, err := http.ParseTime(value); nil == err {
