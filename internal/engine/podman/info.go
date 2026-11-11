@@ -127,6 +127,15 @@ func (p *Podman) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 	if nil != err {
 		return result, nodeInfoError("podman stats", err, stderr)
 	}
+	result.Containers, err = parseStats(stdout)
+	if nil != err {
+		return result, nodeInfoError("podman stats", err, nil)
+	}
+	return result, nil
+}
+
+func parseStats(stdout []byte) ([]engine.ContainerStats, error) {
+	result := []engine.ContainerStats{}
 	var stats []struct {
 		ID            string `json:"id"`
 		Name          string `json:"name"`
@@ -140,11 +149,11 @@ func (p *Podman) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 		PIDs          string `json:"pids"`
 	}
 	if err := json.Unmarshal(stdout, &stats); nil != err {
-		return result, nodeInfoError("podman stats", fmt.Errorf("invalid JSON response: %w", err), nil)
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 	for _, stat := range stats {
 		if "" == stat.ID || "" == stat.Name {
-			return result, nodeInfoError("podman stats", errors.New("response is missing the container ID or name"), nil)
+			return nil, errors.New("response is missing the container ID or name")
 		}
 		network := stat.Network
 		if "" == network {
@@ -159,7 +168,7 @@ func (p *Podman) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 			block = stat.LegacyBlock
 		}
 
-		result.Containers = append(result.Containers, engine.ContainerStats{
+		result = append(result, engine.ContainerStats{
 			ID: stat.ID, Name: stat.Name, CPU: stat.CPU, Memory: stat.Memory, MemoryPercent: stat.MemPercent,
 			NetworkIO: network, BlockIO: block, PIDs: stat.PIDs,
 		})

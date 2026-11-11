@@ -253,18 +253,26 @@ export interface RuntimeInfo {
   storage_driver: string
 }
 
+export interface ContainerStats {
+  id: string
+  name: string
+  cpu: string
+  memory: string
+  memory_percent: string
+  network_io: string
+  block_io: string
+  pids: string
+}
+
+export interface StackStats {
+  containers: Array<ContainerStats>
+}
+
+export type StackStatsTotals = Omit<ContainerStats, 'id' | 'name' | 'memory_percent'>
+
 export interface NodeInfo {
   runtime: RuntimeInfo
-  containers: Array<{
-    id: string
-    name: string
-    cpu: string
-    memory: string
-    memory_percent: string
-    network_io: string
-    block_io: string
-    pids: string
-  }>
+  containers: Array<ContainerStats>
   checked_at: string
 }
 
@@ -322,7 +330,7 @@ export interface WorkspaceStreamError {
 
 export type RealtimeSubscription =
   | { type: 'runtime' }
-  | { type: 'logs'; node: string; resource: string }
+  | { type: 'logs' | 'stats'; node: string; resource: string }
   | { type: 'shell'; node: string; shell: string }
 
 export interface RealtimeCallbacks {

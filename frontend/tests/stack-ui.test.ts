@@ -1989,6 +1989,10 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   let leave = async (): Promise<boolean> => true
   let failAction = true
   const now = vue.ref(new Date('2026-11-03T03:55:52Z'))
+  const statsStart = mock((_subscription: { type: 'stats'; node: string; resource: string }) => {})
+  const statsStop = mock(() => {})
+  let statsMessage = (_message: WorkspaceStreamMessage) => {}
+  let statsDisconnected = () => {}
   const item = vue.reactive<WorkspaceNode>({
     id: 'node',
     name: 'Node',
@@ -2098,6 +2102,16 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
       '~/composables/useDialog': {
         useDialog: () => ({ confirmDialog: confirm }),
       },
+      '~/composables/useWorkspaceStream': {
+        useWorkspaceStream: (
+          onMessage: typeof statsMessage,
+          onDisconnect: typeof statsDisconnected,
+        ) => {
+          statsMessage = onMessage
+          statsDisconnected = onDisconnect
+          return { start: statsStart, stop: statsStop, error: vue.ref('') }
+        },
+      },
       '~/store/auth': { useAuthStore: () => auth },
       '~/store/workspace': store,
       '~/utils/stacks': await import('../app/utils/stacks'),
@@ -2187,6 +2201,72 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   expect(alerts(root)).toHaveLength(0)
 
   if ('stack' === page) {
+    expect(statsStart).toHaveBeenLastCalledWith({ type: 'stats', node: 'node', resource: 'app' })
+    const containerStats = {
+      id: '31c2c2e119e9',
+      name: 'app-1',
+      cpu: '0.03%',
+      memory: '69.16MiB / 125.5GiB',
+      memory_percent: '0.05%',
+      network_io: '5.41MB / 6.14MB',
+      block_io: '56.3MB / 2.02MB',
+      pids: '58',
+    }
+    const cpuCard = () =>
+      flatten(root).find(
+        (element) => 'stat' === element.type && 'i-lucide-cpu' === element.props.icon,
+      )
+    expect(cpuCard()?.props.value).toBe('-')
+    statsMessage({ event: 'stack.stats', data: JSON.stringify({ containers: [containerStats] }) })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe(containerStats.cpu)
+    for (const [icon, value] of [
+      ['i-lucide-memory-stick', '69.2 MiB'],
+      ['i-lucide-network', '5.2 MiB / 5.9 MiB'],
+      ['i-lucide-hard-drive', '53.7 MiB / 1.9 MiB'],
+      ['i-lucide-list-tree', containerStats.pids],
+    ]) {
+      expect(
+        flatten(root).find((element) => 'stat' === element.type && icon === element.props.icon)
+          ?.props.value,
+      ).toBe(value)
+    }
+    const containerBadges = () => {
+      const card = flatten(root).find(
+        (element) => 'stat' === element.type && 'app-1' === element.props['aria-label'],
+      )
+      return card ? flatten(card).filter((element) => 'badge' === element.type) : []
+    }
+    const badgeText = (icon: string) => {
+      const badge = containerBadges().find((element) => icon === element.props.icon)
+      return badge
+        ? flatten(badge)
+            .map((element) => element.text)
+            .join(' ')
+        : ''
+    }
+    expect(badgeText('i-lucide-cpu')).toContain(containerStats.cpu)
+    expect(badgeText('i-lucide-memory-stick')).toContain(containerStats.memory)
+    expect(badgeText('i-lucide-memory-stick')).toContain(containerStats.memory_percent)
+    statsMessage({
+      event: 'stack.stats',
+      data: JSON.stringify({ containers: [{ ...containerStats, cpu: '12.5%' }] }),
+    })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('12.5%')
+    statsMessage({
+      event: 'stack.stats',
+      data: JSON.stringify({
+        containers: [containerStats, { ...containerStats, name: 'worker', cpu: '2%' }],
+      }),
+    })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('2.03%')
+    expect(badgeText('i-lucide-cpu')).toContain(containerStats.cpu)
+    statsDisconnected()
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('-')
+
     const service = item.stacks[0]!.services[0]!
     const created = flatten(root).find((element) => 'time' === element.type)
     expect(created?.props.datetime).toBe(service.created_at)
@@ -2207,6 +2287,48 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(replace).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledWith({ query: { tab: 'logs' } })
     expect(navigate).not.toHaveBeenCalled()
+
+    const previous = item.stacks[0]!
+    item.stacks[0] = {
+      ...previous,
+      status: 'stopped',
+      services: previous.services.map((service) => ({ ...service, state: 'exited', health: '' })),
+    }
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('0%')
+    expect(containerBadges().some((element) => 'i-lucide-cpu' === element.props.icon)).toBe(false)
+    expect(statsStop).toHaveBeenCalled()
+    expect(
+      flatten(root).some(
+        (element) => 'button' === element.type && 'i-lucide-terminal' === element.props.icon,
+      ),
+    ).toBe(false)
+    expect(
+      flatten(root).some(
+        (element) =>
+          'button' === element.type &&
+          'i-lucide-play' === element.props.icon &&
+          !!element.props['aria-label'],
+      ),
+    ).toBe(true)
+
+    item.stacks[0] = {
+      ...previous,
+      services: previous.services.map((service) => ({ ...service, health: 'unhealthy' })),
+    }
+    await vue.nextTick()
+    expect(
+      flatten(root).some(
+        (element) =>
+          'badge' === element.type &&
+          'i-lucide-container' === element.props.icon &&
+          'error' === element.props.color,
+      ),
+    ).toBe(true)
+    item.stacks[0] = previous
+    await vue.nextTick()
+    expect(statsStart).toHaveBeenLastCalledWith({ type: 'stats', node: 'node', resource: 'app' })
+
     const runtime = item.stacks[0]!
     runtime.error = 'runtime-error-sentinel'
     await vue.nextTick()

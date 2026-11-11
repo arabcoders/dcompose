@@ -36,7 +36,7 @@ func (s *Server) attachBrowser(ctx context.Context, message protocol.ChannelMess
 	}
 	valid := identity.MatchString(message.Node)
 	switch message.Type {
-	case "logs.attach":
+	case "logs.attach", "stats.attach":
 		valid = valid && stackName.MatchString(message.Resource)
 	case "shell.attach":
 		valid = valid && identity.MatchString(message.Shell)
@@ -94,6 +94,8 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 	if err := writeChannel(ctx, subscription.conn, command); nil != err {
 		view := fmt.Sprintf("logs for stack %q", subscription.resource)
 		switch subscription.kind {
+		case "stats.attach":
+			view = fmt.Sprintf("stats for stack %q", subscription.resource)
 		case "relay.attach":
 			view = fmt.Sprintf("self-update relay %q", subscription.resource)
 		case "shell.attach":
@@ -178,6 +180,9 @@ func (subscription *browserSubscription) forward(outgoing chan<- browserDelivery
 			message.Stream = subscription.id
 			if "error" == message.Type && 409 != message.Status && "Connection lost. Try again." != message.Error {
 				message.Error = "Could not load logs. Try again."
+				if "stats.attach" == subscription.kind {
+					message.Error = "Could not load stats. Try again."
+				}
 			}
 			if !send(message, false) {
 				return
@@ -205,7 +210,10 @@ func (s *Server) streamEvent(channel *nodeChannel, message protocol.ChannelMessa
 			status = 502
 		}
 		view := fmt.Sprintf("logs for stack %q", subscription.resource)
-		if "relay.attach" == subscription.kind {
+		switch subscription.kind {
+		case "stats.attach":
+			view = fmt.Sprintf("stats for stack %q", subscription.resource)
+		case "relay.attach":
 			view = fmt.Sprintf("self-update relay %q", subscription.resource)
 		}
 		detail := fmt.Sprintf("Could not load %s on %s", view, nodeLogLabel(channel.node))
@@ -234,10 +242,16 @@ func (s *Server) streamEvent(channel *nodeChannel, message protocol.ChannelMessa
 		)
 		message = protocol.ChannelMessage{Type: "error", Status: status, Error: "Could not load the requested view. Try again."}
 	} else {
-		switch message.Event {
-		case "relay.snapshot", "relay.output", "relay.done", "message", "done", "error":
-		default:
-			return
+		if "stats.attach" == subscription.kind {
+			if "stack.stats" != message.Event {
+				return
+			}
+		} else {
+			switch message.Event {
+			case "relay.snapshot", "relay.output", "relay.done", "message", "done", "error":
+			default:
+				return
+			}
 		}
 		if !json.Valid(message.Payload) {
 			return

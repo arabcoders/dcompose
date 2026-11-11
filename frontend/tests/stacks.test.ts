@@ -8,6 +8,8 @@ import {
   imageUpdateLabel,
   imageUpdateTooltip,
   parseWorkspaceEvent,
+  aggregateStackStats,
+  parseStackStats,
 } from '../app/utils/stacks'
 import type { Service, StackStatus } from '../app/types'
 
@@ -73,10 +75,16 @@ describe('Container problems', () => {
 
 describe('Container timing', () => {
   const service: Service = {
-    name: 'dagent', service: 'dagent', image: 'dagent', state: 'running', health: '', ports: '',
+    name: 'dagent',
+    service: 'dagent',
+    image: 'dagent',
+    state: 'running',
+    health: '',
+    ports: '',
     created_at: '2026-11-02T00:39:58.237164057Z',
     started_at: '2026-11-03T00:39:58.706987971Z',
-    status: 'stale-status-sentinel', running_for: 'stale-age-sentinel',
+    status: 'stale-status-sentinel',
+    running_for: 'stale-age-sentinel',
   }
 
   test('live uptime', () => {
@@ -98,10 +106,12 @@ describe('Container timing', () => {
 
   test('time zones', () => {
     const now = new Date('2026-11-03T03:55:52Z')
-    expect(containerUptime({ ...service, started_at: '2026-11-03T03:39:58.706987971+03:00' }, now))
-      .toBe(containerUptime(service, now))
-    expect(containerCreatedAt('2026-11-03T03:39:58+03:00', now))
-      .toBe(containerCreatedAt('2026-11-03T00:39:58Z', now))
+    expect(
+      containerUptime({ ...service, started_at: '2026-11-03T03:39:58.706987971+03:00' }, now),
+    ).toBe(containerUptime(service, now))
+    expect(containerCreatedAt('2026-11-03T03:39:58+03:00', now)).toBe(
+      containerCreatedAt('2026-11-03T00:39:58Z', now),
+    )
   })
 
   test('live creation age', () => {
@@ -117,6 +127,85 @@ describe('Container timing', () => {
     { started_at: 'invalid' },
   ])('no uptime %j', (changes) => {
     expect(containerUptime({ ...service, ...changes }, new Date())).toBeNull()
+  })
+})
+
+describe('Stack stats', () => {
+  const container = {
+    id: '31c2c2e119e9',
+    name: 'dagent',
+    cpu: '0.03%',
+    memory: '69.16MiB / 125.5GiB',
+    memory_percent: '0.05%',
+    network_io: '5.41MB / 6.14MB',
+    block_io: '56.3MB / 2.02MB',
+    pids: '58',
+  }
+
+  test('stats samples', () => {
+    expect(parseStackStats(JSON.stringify({ containers: [container] }))).toEqual({
+      containers: [container],
+    })
+    expect(parseStackStats('{"containers":[]}')).toEqual({ containers: [] })
+  })
+
+  test('stack totals', () => {
+    const totals = aggregateStackStats([
+      {
+        ...container,
+        cpu: '0.03%',
+        memory: '1GiB / 125.5GiB',
+        network_io: '1MB / 1MiB',
+        block_io: '512KiB / 1GB',
+        pids: '58',
+      },
+      {
+        ...container,
+        id: 'worker',
+        name: 'worker',
+        cpu: '12.47%',
+        memory: '512 MiB / 125.5 GiB',
+        network_io: '48.576kB / 1024KiB',
+        block_io: '0.5MiB / 73.741824MB',
+        pids: '2',
+      },
+    ])
+    expect(totals).toEqual({
+      cpu: '12.5%',
+      memory: '1.5 GiB',
+      network_io: '1 MiB / 2 MiB',
+      block_io: '1 MiB / 1 GiB',
+      pids: '60',
+    })
+  })
+
+  test('empty totals', () => {
+    expect(aggregateStackStats([])).toEqual({
+      cpu: '0%',
+      memory: '0 B',
+      network_io: '0 B / 0 B',
+      block_io: '0 B / 0 B',
+      pids: '0',
+    })
+  })
+
+  test('unavailable totals', () => {
+    expect(
+      aggregateStackStats([
+        { ...container, cpu: '--', memory: '--', network_io: '--', block_io: '--', pids: '--' },
+      ]),
+    ).toEqual({ cpu: '-', memory: '-', network_io: '-', block_io: '-', pids: '-' })
+  })
+
+  test.each([
+    null,
+    {},
+    { containers: null },
+    { containers: [null] },
+    { containers: [{ ...container, cpu: 3 }] },
+    { containers: [{ ...container, memory: undefined }] },
+  ])('invalid stats %j', (value) => {
+    expect(() => parseStackStats(JSON.stringify(value))).toThrow()
   })
 })
 
@@ -312,7 +401,9 @@ describe('Workspace events', () => {
       ...action,
       message: undefined,
     })
-    expect(parseWorkspaceEvent('stack.output', '{"node":"node","name":"app","output":"hello"}')).toEqual({
+    expect(
+      parseWorkspaceEvent('stack.output', '{"node":"node","name":"app","output":"hello"}'),
+    ).toEqual({
       event: 'stack.output',
       node: 'node',
       name: 'app',

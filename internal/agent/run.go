@@ -77,8 +77,8 @@ func Run(parent context.Context, configPath, buildVersion string) error {
 			_ = server.Close()
 		}
 	}()
-	fmt.Fprintf(os.Stderr, "TLS fingerprint: %s\n", fingerprint)
 	if "" != a.pairingToken {
+		fmt.Fprintf(os.Stderr, "TLS fingerprint: %s\n", fingerprint)
 		fmt.Fprintf(os.Stderr, "Use this single-use pairing token in Nodes > Add node: %s\n", a.pairingToken)
 	}
 	slog.Info(

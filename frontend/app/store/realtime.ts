@@ -75,7 +75,6 @@ export const useRealtimeStore = defineStore('realtime', () => {
 
   const disconnectReaders = (message: string, manualMessage = message) => {
     for (const [id, reader] of [...readers]) {
-      // Only runtime updates resume after a connection loss.
       const manual = 'logs' === reader.subscription.type || 'shell' === reader.subscription.type
       if (manual) {
         readers.delete(id)

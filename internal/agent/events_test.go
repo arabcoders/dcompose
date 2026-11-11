@@ -158,6 +158,104 @@ func TestRuntimeSignals(t *testing.T) {
 	}
 }
 
+func TestInventoryChanges(t *testing.T) {
+	for _, removal := range []string{"directory", "compose"} {
+		t.Run(removal, func(t *testing.T) {
+			a, fake := fixture(t)
+			dir := seed(t, a, "demo", "compose.yaml")
+			seed(t, a, "unchanged", "compose.yaml")
+			reader := openEvents(t, streamServer(t, a), "/events")
+			seen := make(map[string]bool)
+			for 2 > len(seen) {
+				var state stackRuntime
+				if err := json.Unmarshal(reader.until(t, "stack.runtime"), &state); nil != err {
+					t.Fatal(err)
+				}
+				seen[state.Name] = true
+			}
+			calls, err := os.ReadFile(filepath.Join(fake, "ps-calls"))
+			if nil != err {
+				t.Fatal(err)
+			}
+			if "directory" == removal {
+				err = os.RemoveAll(dir)
+			} else {
+				err = os.Remove(filepath.Join(dir, "compose.yaml"))
+			}
+			if nil != err {
+				t.Fatal(err)
+			}
+			seed(t, a, "external", "compose.yaml")
+			removed, added := false, false
+			for !removed || !added {
+				name, data := reader.next(t)
+				switch name {
+				case "stack.removed":
+					if `{"name":"demo"}` != string(data) {
+						t.Fatalf("removed: %s", data)
+					}
+					removed = true
+				case "stack.runtime":
+					var state stackRuntime
+					if nil != json.Unmarshal(data, &state) || "external" != state.Name || "draft" != state.Status {
+						t.Fatalf("discovered runtime: %s", data)
+					}
+					added = true
+				}
+			}
+			a.events.mu.Lock()
+			_, stale := a.events.stacks["demo"]
+			a.events.mu.Unlock()
+			if stale {
+				t.Fatal("removed stack remained cached")
+			}
+			after, err := os.ReadFile(filepath.Join(fake, "ps-calls"))
+			if nil != err {
+				t.Fatal(err)
+			}
+			unchanged := filepath.Join(a.config.Global.StacksDir, "unchanged") + "\n"
+			if strings.Count(string(calls), unchanged) != strings.Count(string(after), unchanged) {
+				t.Fatal("inventory scan refreshed an unchanged stack")
+			}
+		})
+	}
+}
+
+func TestRuntimeChanges(t *testing.T) {
+	a, fake := fixture(t)
+	seed(t, a, "demo", "compose.yaml")
+	reader := openEvents(t, streamServer(t, a), "/events")
+	reader.until(t, "stack.runtime")
+	for _, change := range []struct {
+		action string
+		state  string
+		health string
+		status string
+	}{
+		{"start", "running", "starting", "running"},
+		{"health_status: healthy", "running", "healthy", "running"},
+		{"die", "exited", "", "stopped"},
+	} {
+		write(t, filepath.Join(fake, "ps"), fmt.Sprintf(
+			`[{"Name":"demo-web-1","Service":"web","State":%q,"Health":%q}]`, change.state, change.health,
+		))
+		write(t, filepath.Join(fake, "events-staged"), fmt.Sprintf(
+			`{"Type":"container","Action":%q,"Actor":{"Attributes":{"com.docker.compose.project":"demo"}}}`+"\n", change.action,
+		))
+		if err := os.Rename(filepath.Join(fake, "events-staged"), filepath.Join(fake, "events-input")); nil != err {
+			t.Fatal(err)
+		}
+		var state stackRuntime
+		data := reader.until(t, "stack.runtime")
+		if nil != json.Unmarshal(data, &state) || "demo" != state.Name || change.status != state.Status || 1 != len(state.Services) {
+			t.Fatalf("runtime after %s: %s", change.action, data)
+		}
+		if s := state.Services[0]; "demo-web-1" != s.Name || "web" != s.Service || change.state != s.State || change.health != s.Health {
+			t.Fatalf("service after %s: %+v", change.action, s)
+		}
+	}
+}
+
 func TestEventFilterBurst(t *testing.T) {
 	a, _ := fixture(t)
 	seed(t, a, "demo", "compose.yaml")

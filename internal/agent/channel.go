@@ -365,7 +365,7 @@ func (a *agent) channelCommands(
 				)
 				continue
 			}
-			if "relay.attach" == message.Type || "logs.attach" == message.Type {
+			if "relay.attach" == message.Type || "logs.attach" == message.Type || "stats.attach" == message.Type {
 				if "" == message.Stream {
 					send(protocol.ChannelMessage{Type: "stream.error", Error: "stream ID is required", Status: 400})
 					continue
@@ -391,7 +391,11 @@ func (a *agent) channelCommands(
 					streamCtx, detach := context.WithCancel(ctx)
 					attached[key] = detach
 					streams.Go(func() {
-						err := a.streamLogs(streamCtx, message.Resource, func(e streamEvent) bool {
+						stream := a.streamLogs
+						if "stats.attach" == message.Type {
+							stream = a.streamStats
+						}
+						err := stream(streamCtx, message.Resource, func(e streamEvent) bool {
 							select {
 							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
 								return true

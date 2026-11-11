@@ -80,6 +80,15 @@ func (d *Docker) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 	if nil != err {
 		return result, nodeInfoError("docker stats", err, stderr)
 	}
+	result.Containers, err = parseStats(stdout)
+	if nil != err {
+		return result, nodeInfoError("docker stats", err, nil)
+	}
+	return result, nil
+}
+
+func parseStats(stdout []byte) ([]engine.ContainerStats, error) {
+	result := []engine.ContainerStats{}
 	decoder := json.NewDecoder(bytes.NewReader(stdout))
 	for {
 		var stats *struct {
@@ -95,12 +104,12 @@ func (d *Docker) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 		if err := decoder.Decode(&stats); io.EOF == err {
 			break
 		} else if nil != err {
-			return result, nodeInfoError("docker stats", fmt.Errorf("invalid JSON response: %w", err), nil)
+			return nil, fmt.Errorf("invalid JSON response: %w", err)
 		}
 		if nil == stats || "" == stats.ID || "" == stats.Name {
-			return result, nodeInfoError("docker stats", errors.New("response is missing the container ID or name"), nil)
+			return nil, errors.New("response is missing the container ID or name")
 		}
-		result.Containers = append(result.Containers, engine.ContainerStats{
+		result = append(result, engine.ContainerStats{
 			ID: stats.ID, Name: stats.Name, CPU: stats.CPUPerc, Memory: stats.MemUsage, MemoryPercent: stats.MemPerc,
 			NetworkIO: stats.NetIO, BlockIO: stats.BlockIO, PIDs: stats.PIDs,
 		})
