@@ -158,7 +158,7 @@ export const parseStackStats = (data: string): StackStats => {
   throw new Error("Couldn't read stack resource stats.")
 }
 
-const parseBytes = (value: string): number => {
+export const parseStatBytes = (value: string): number => {
   const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*([kmgtp]?i?b)$/i)
   if (!match) {
     return Number.NaN
@@ -178,20 +178,23 @@ const formatNumber = (value: number): string =>
 
 const sumIO = (values: Array<string>): string => {
   const pairs = values.map((value) => value.split('/'))
-  const first = sum(pairs.map((pair) => parseBytes(pair[0] ?? '')))
-  const second = sum(pairs.map((pair) => parseBytes(pair[1] ?? '')))
+  const first = sum(pairs.map((pair) => parseStatBytes(pair[0] ?? '')))
+  const second = sum(pairs.map((pair) => parseStatBytes(pair[1] ?? '')))
   return Number.isFinite(first) && Number.isFinite(second)
     ? `${formatBytes(first)} / ${formatBytes(second)}`
     : '-'
 }
 
-export const aggregateStackStats = (containers: Array<ContainerStats>): StackStatsTotals => {
-  const cpu = sum(containers.map((container) => Number.parseFloat(container.cpu)))
+export const aggregateStackStats = (
+  containers: Array<ContainerStats>,
+  cpuCount = 1,
+): StackStatsTotals => {
+  const cpu = sum(containers.map((container) => Number.parseFloat(container.cpu))) / cpuCount
   return {
     cpu: Number.isFinite(cpu) ? `${formatNumber(cpu)}%` : '-',
     // Limits can refer to the same host memory, so sum usage, not limits or percentages.
     memory: formatBytes(
-      sum(containers.map((container) => parseBytes(container.memory.split('/')[0] ?? ''))),
+      sum(containers.map((container) => parseStatBytes(container.memory.split('/')[0] ?? ''))),
     ),
     network_io: sumIO(containers.map((container) => container.network_io)),
     block_io: sumIO(containers.map((container) => container.block_io)),

@@ -189,6 +189,15 @@ describe('Stack stats', () => {
     })
   })
 
+  test.each([
+    ['49.57%', 30, '1.65%'],
+    ['300%', 30, '10%'],
+    ['49.57%', 1, '49.57%'],
+    ['49.57%', 0, '-'],
+  ])('node CPU %s / %i', (cpu, cores, expected) => {
+    expect(aggregateStackStats([{ ...container, cpu }], cores).cpu).toBe(expected)
+  })
+
   test('unavailable totals', () => {
     expect(
       aggregateStackStats([

@@ -212,7 +212,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useHead } from '#app'
+import { useHead, useRoute } from '#app'
 import { useStorage } from '@vueuse/core'
 import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
@@ -238,6 +238,7 @@ import {
 } from '~/utils/logs'
 
 useHead({ title: 'Logs - DCompose' })
+const route = useRoute()
 const {
   entries,
   observedNodes,
@@ -271,12 +272,29 @@ const expanded = ref(new Set<number>())
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let mounted = false
 const storedLevels = useStorage<Array<LogLevel>>('logs_levels', [...logLevels])
+const linkedLevels = ref<Array<LogLevel> | null>(null)
 const selectedLevels = computed<Array<LogLevel>>({
-  get: () => normalizeLogLevels(storedLevels.value),
+  get: () => linkedLevels.value ?? normalizeLogLevels(storedLevels.value),
   set: (value) => {
-    storedLevels.value = normalizeLogLevels(value)
+    if (null === linkedLevels.value) {
+      storedLevels.value = normalizeLogLevels(value)
+    } else {
+      linkedLevels.value = normalizeLogLevels(value)
+    }
   },
 })
+watch(
+  () => route.query,
+  (params) => {
+    linkedLevels.value =
+      'string' === typeof params.levels
+        ? normalizeLogLevels(params.levels.split(',').map((level) => level.trim()))
+        : null
+    selectedNode.value = 'string' === typeof params.node && params.node ? params.node : 'all'
+    query.value = 'string' === typeof params.search ? params.search : ''
+  },
+  { immediate: true },
+)
 const levelItems = logLevels.map((value) => ({
   label: value.charAt(0).toUpperCase() + value.slice(1),
   value,
