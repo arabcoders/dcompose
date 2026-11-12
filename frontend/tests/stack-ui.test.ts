@@ -139,6 +139,50 @@ test('node header', async () => {
     expect(header.props['aria-expanded']).toBe(!value)
     expect(selected).not.toHaveBeenCalled()
   }
+
+  item.stacks.push({
+    name: 'app',
+    status: 'running',
+    loading: false,
+    services: [
+      {
+        name: 'app-web-1',
+        service: 'web',
+        image: 'web',
+        state: 'running',
+        health: '',
+        ports: '',
+        check_interval: '2h',
+      },
+      {
+        name: 'app-worker-1',
+        service: 'worker',
+        image: 'worker',
+        state: 'running',
+        health: '',
+        ports: '',
+      },
+    ],
+  })
+  await vue.nextTick()
+  const automationIcons = () =>
+    flatten(root).filter(
+      (element) => 'icon' === element.type && 'i-lucide-bot' === element.props.name,
+    )
+  expect(automationIcons()).toHaveLength(0)
+  const services = item.stacks[0]!.services
+  services[0]!.auto_update = true
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[1]!.auto_update = true
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[0]!.auto_update = false
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[1]!.auto_update = false
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(0)
 })
 
 const stub = (tag: string) =>
@@ -2418,6 +2462,32 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(cpuCard()?.props.value).toBe('-')
 
     const service = item.stacks[0]!.services[0]!
+    const automationBadge = () =>
+      containerBadges().find((element) => 'i-lucide-bot' === element.props.icon)
+    const checkBadge = () =>
+      containerBadges().find((element) => 'i-lucide-timer' === element.props.icon)
+    expect(automationBadge()).toBeUndefined()
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = true
+    service.check_interval = '2h'
+    await vue.nextTick()
+    expect(automationBadge()).toBeDefined()
+    expect(badgeText('i-lucide-bot')).toContain('2h')
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = false
+    await vue.nextTick()
+    expect(automationBadge()).toBeUndefined()
+    expect(checkBadge()).toBeDefined()
+    expect(badgeText('i-lucide-timer')).toContain('2h')
+    service.check_interval = undefined
+    await vue.nextTick()
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = true
+    await vue.nextTick()
+    expect(automationBadge()).toBeDefined()
+    service.auto_update = false
+    await vue.nextTick()
+
     const created = flatten(root).find((element) => 'time' === element.type)
     expect(created?.props.datetime).toBe(service.created_at)
     const createdText = created?.text

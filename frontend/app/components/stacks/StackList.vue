@@ -15,6 +15,8 @@ const route = useRoute()
 const collapsed = defineModel<Record<string, boolean>>('collapsed', { required: true })
 const hasImageUpdates = (stack: StackRuntime) =>
   stack.services.some((service) => 'available' === service.image_update?.status)
+const autoUpdateCount = (stack: StackRuntime) =>
+  stack.services.filter((service) => service.auto_update).length
 const filteredNodes = computed(() =>
   props.nodes.map((node) => {
     const stacks = node.stacks
@@ -173,6 +175,15 @@ const selected = (node: string, stack: string) =>
               :class="stack.loading ? 'animate-pulse bg-muted' : statusClass(stack.status)"
             />
             <span class="min-w-0 flex-1 truncate">{{ stack.name }}</span>
+            <UTooltip
+              v-if="autoUpdateCount(stack)"
+              :text="`${autoUpdateCount(stack)} of ${stack.services.length} containers auto-update`"
+            >
+              <span class="inline-flex shrink-0 text-primary" tabindex="0">
+                <UIcon name="i-lucide-bot" class="size-3.5" />
+                <span class="sr-only">Auto-updates</span>
+              </span>
+            </UTooltip>
             <UTooltip v-if="hasImageUpdates(stack)" text="Updates available">
               <span class="inline-flex shrink-0 text-warning">
                 <UIcon name="i-lucide-circle-arrow-up" class="size-3.5" />

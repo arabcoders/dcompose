@@ -846,6 +846,29 @@ onBeforeUnmount(() => {
                   >{{ `${service.state}${service.health ? ` / ${service.health}` : ''}` }}</UBadge
                 >
                 <UTooltip
+                  v-if="service.auto_update || service.check_interval"
+                  :text="
+                    service.auto_update
+                      ? service.check_interval
+                        ? `Automatic updates configured; checks every ${service.check_interval}.`
+                        : 'Automatic updates configured; uses the node check schedule.'
+                      : `Image checks every ${service.check_interval}; automatic updates are off.`
+                  "
+                >
+                  <UBadge
+                    :icon="service.auto_update ? 'i-lucide-bot' : 'i-lucide-timer'"
+                    :color="service.auto_update ? 'primary' : 'neutral'"
+                    size="sm"
+                    variant="subtle"
+                    tabindex="0"
+                  >
+                    {{ service.auto_update ? 'Auto' : 'Checks' }}
+                    <template v-if="service.check_interval">
+                      · {{ service.check_interval }}</template
+                    >
+                  </UBadge>
+                </UTooltip>
+                <UTooltip
                   v-if="service.image_update"
                   :text="imageUpdateTooltip(service.image_update)"
                   :ui="{ text: 'whitespace-pre-line' }"

@@ -292,7 +292,7 @@ useHead({ title: 'Overview' })
               <p
                 v-for="message in item.messages"
                 :key="message"
-                class="whitespace-pre-line break-words text-xs text-muted"
+                class="whitespace-pre-line wrap-break-word text-xs text-muted"
               >
                 {{ message }}
               </p>
@@ -524,7 +524,7 @@ useHead({ title: 'Overview' })
                 }}</time></UTooltip
               >
             </div>
-            <p class="whitespace-pre-wrap break-words text-sm">{{ entry.message }}</p>
+            <p class="whitespace-pre-wrap wrap-break-word text-sm">{{ entry.message }}</p>
           </NuxtLink>
         </li>
       </ul>
