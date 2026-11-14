@@ -5,8 +5,12 @@ import * as vue from 'vue'
 import type { Component } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type {
+  ContainerStats,
   EditorProps,
   GenericError,
+  LogEntry,
+  LogFilters,
+  NodeInfo,
   StackEvent,
   RegistriesResponse,
   RegistryCredential,
@@ -135,6 +139,50 @@ test('node header', async () => {
     expect(header.props['aria-expanded']).toBe(!value)
     expect(selected).not.toHaveBeenCalled()
   }
+
+  item.stacks.push({
+    name: 'app',
+    status: 'running',
+    loading: false,
+    services: [
+      {
+        name: 'app-web-1',
+        service: 'web',
+        image: 'web',
+        state: 'running',
+        health: '',
+        ports: '',
+        check_interval: '2h',
+      },
+      {
+        name: 'app-worker-1',
+        service: 'worker',
+        image: 'worker',
+        state: 'running',
+        health: '',
+        ports: '',
+      },
+    ],
+  })
+  await vue.nextTick()
+  const automationIcons = () =>
+    flatten(root).filter(
+      (element) => 'icon' === element.type && 'i-lucide-bot' === element.props.name,
+    )
+  expect(automationIcons()).toHaveLength(0)
+  const services = item.stacks[0]!.services
+  services[0]!.auto_update = true
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[1]!.auto_update = true
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[0]!.auto_update = false
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(1)
+  services[1]!.auto_update = false
+  await vue.nextTick()
+  expect(automationIcons()).toHaveLength(0)
 })
 
 const stub = (tag: string) =>
@@ -185,13 +233,10 @@ afterEach(() => {
 })
 
 test('overview attention', async () => {
-  let mobile = false
   let confirmation = false
   const confirm = mock(async () => ({ status: confirmation }))
-  Object.defineProperty(globalThis, 'window', {
-    value: { matchMedia: () => ({ matches: mobile }) },
-    configurable: true,
-  })
+  const logEntries = vue.ref<Array<LogEntry>>([])
+  const searchLogs = mock(async (_filters: LogFilters) => {})
   const item = vue.reactive<WorkspaceNode>({
     id: 'office',
     name: 'Office',
@@ -229,6 +274,7 @@ test('overview attention', async () => {
     sidebarOpen: false,
     isCheckingImages: () => false,
     savingNodeOrder: false,
+    moveNode: mock(async (_id: string, _target: string) => {}),
     load: () => {},
     checkImages: mock(async () => {}),
   })
@@ -243,9 +289,28 @@ test('overview attention', async () => {
     '@nuxt/ui/components/Button.vue': { default: stub('button') },
     '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
     '~/components/StatCard.vue': { default: stub('stat') },
+    '~/components/NodeResources.vue': {
+      default: vue.defineComponent({
+        setup:
+          (_, { slots }) =>
+          () =>
+            vue.h('node-resource', slots.leading?.()),
+      }),
+    },
     '~/utils/stacks': await import('../app/utils/stacks'),
+    '~/utils/logs': await import('../app/utils/logs'),
     '~/store/workspace': store,
     '~/composables/useDialog': { useDialog: () => ({ confirmDialog: confirm }) },
+    '~/composables/useLogs': {
+      useLogs: () => ({
+        entries: logEntries,
+        loading: vue.ref(false),
+        error: vue.ref(''),
+        truncated: vue.ref(false),
+        search: searchLogs,
+        refresh: mock(async () => {}),
+      }),
+    },
   })
   const wrapper = await loadComponent('../../layouts/workspace', {
     pinia: { storeToRefs: vue.toRefs },
@@ -266,22 +331,56 @@ test('overview attention', async () => {
     )
     return section ? flatten(section).filter((element) => 'li' === element.type) : []
   }
-  const attention = () =>
-    flatten(root).find((element) => 'attention-heading' === element.props['aria-labelledby'])
-  const unavailable = () =>
-    flatten(root).find((element) => 'unavailable-heading' === element.props['aria-labelledby'])
+  const count = (icon: string) =>
+    flatten(root).find((element) => 'stat' === element.type && icon === element.props.icon)?.props
+      .value
   const stack = item.stacks[0]!
   const service = stack.services[0]!
   expect(attentionRows()).toHaveLength(1)
   expect(flatten(attentionRows()[0]!).find((element) => 'a' === element.type)?.props.to).toBe(
     '/stacks/office/app',
   )
-  expect(unavailable()).toBeUndefined()
+  expect(count('i-lucide-triangle-alert')).toBe(1)
+  expect(count('i-lucide-server')).toBe('1 / 1')
+  expect(searchLogs).toHaveBeenCalledWith({ levels: ['warning', 'error'], node: '', search: '' })
+  for (const id of ['updates-heading', 'busy-heading', 'recent-errors-heading']) {
+    expect(flatten(root).some((element) => id === element.props['aria-labelledby'])).toBe(false)
+  }
+
+  stack.services.push({ ...service, name: 'app-worker-1', service: 'worker', state: 'restarting' })
+  await vue.nextTick()
+  expect(attentionRows()).toHaveLength(1)
+  expect(count('i-lucide-triangle-alert')).toBe(1)
+  stack.services.splice(1)
+  item.stacks.push({
+    name: 'unreadable',
+    status: 'unknown',
+    loading: false,
+    services: [],
+    error: 'runtime-failure',
+  })
+  await vue.nextTick()
+  expect(attentionRows()).toHaveLength(2)
+  expect(flatten(attentionRows()[0]!).find((element) => 'a' === element.type)?.props.to).toBe(
+    '/stacks/office/unreadable',
+  )
+  item.stacks.pop()
 
   service.health = 'healthy'
   await vue.nextTick()
   expect(attentionRows()).toHaveLength(0)
-  expect(attention()).toBeUndefined()
+  expect(
+    flatten(root).some((element) => 'attention-heading' === element.props['aria-labelledby']),
+  ).toBe(false)
+  stack.error = 'runtime-error-sentinel'
+  await vue.nextTick()
+  expect(attentionRows()).toHaveLength(1)
+  expect(
+    flatten(attentionRows()[0]!)
+      .map((element) => element.text)
+      .join(' '),
+  ).toContain(stack.error)
+  stack.error = ''
   service.state = 'restarting'
   await vue.nextTick()
   expect(attentionRows()).toHaveLength(1)
@@ -294,11 +393,16 @@ test('overview attention', async () => {
   expect(attentionRows()).toHaveLength(1)
 
   for (const connection of ['unavailable', 'reconnecting'] as const) {
+    stack.busy = true
+    service.image_update = { status: 'available' }
     item.connection = connection
     await vue.nextTick()
-    expect(attentionRows()).toHaveLength(0)
-    expect(unavailable()).toBeDefined()
-    expect(flatten(unavailable()!).find((element) => 'a' === element.type)?.props.to).toBe(
+    expect(attentionRows()).toHaveLength(1)
+    expect(count('i-lucide-server')).toBe('0 / 1')
+    expect(count('i-lucide-triangle-alert')).toBe(0)
+    expect(count('i-lucide-circle-arrow-up')).toBe(0)
+    expect(count('i-lucide-loader-circle')).toBe(0)
+    expect(flatten(attentionRows()[0]!).find((element) => 'a' === element.type)?.props.to).toBe(
       '/nodes/office',
     )
   }
@@ -306,12 +410,14 @@ test('overview attention', async () => {
   item.paused = true
   await vue.nextTick()
   expect(attentionRows()).toHaveLength(0)
-  expect(unavailable()).toBeUndefined()
+  expect(count('i-lucide-server')).toBe('0 / 1')
   item.paused = false
   item.connection = 'connected'
   await vue.nextTick()
   expect(attentionRows()).toHaveLength(1)
-  expect(unavailable()).toBeUndefined()
+  expect(count('i-lucide-server')).toBe('1 / 1')
+  expect(count('i-lucide-circle-arrow-up')).toBe(1)
+  expect(count('i-lucide-loader-circle')).toBe(1)
 
   service.state = 'exited'
   service.exit_code = 23
@@ -321,21 +427,109 @@ test('overview attention', async () => {
   await vue.nextTick()
   expect(attentionRows()).toHaveLength(0)
 
-  const filters = flatten(root).filter(
-    (element) => 'button' === element.type && undefined !== element.props['aria-pressed'],
-  )
-  expect(filters).toHaveLength(4)
-  for (const [index, status] of ['running', 'stopped', 'draft', 'updates'].entries()) {
-    workspace.stackSearch = 'previous-search'
-    mobile = 0 === index % 2
-    const button = filters[index]!
-    await trigger(button, 'onClick')
-    await vue.nextTick()
-    expect(workspace.stackFilter).toBe(status)
-    expect(workspace.stackSearch).toBe('')
-    expect(workspace.sidebarOpen).toBe(mobile)
-    expect(button.props['aria-pressed']).toBe(true)
+  const updates = () => {
+    const section = flatten(root).find(
+      (element) => 'updates-heading' === element.props['aria-labelledby'],
+    )
+    return section ? flatten(section).filter((element) => 'li' === element.type) : []
   }
+  expect(updates()).toHaveLength(1)
+  const checkStack = flatten(updates()[0]!).find((element) => 'button' === element.type)
+  stack.busy = false
+  await vue.nextTick()
+  await trigger(checkStack, 'onClick')
+  expect(workspace.checkImages).toHaveBeenLastCalledWith('office', 'app')
+  workspace.checkImages.mockClear()
+  for (const status of ['checking', 'error', 'current', 'unsupported'] as const) {
+    service.image_update = { status, reason: 'registry_error' }
+    await vue.nextTick()
+    expect(count('i-lucide-circle-arrow-up')).toBe(0)
+    expect(updates()).toHaveLength(['checking', 'error'].includes(status) ? 1 : 0)
+    expect(attentionRows()).toHaveLength('error' === status ? 1 : 0)
+  }
+  expect(
+    flatten(root).some((element) => 'updates-heading' === element.props['aria-labelledby']),
+  ).toBe(false)
+
+  workspace.nodes.push({ ...item, id: 'garage', name: 'Garage', stacks: [] })
+  await vue.nextTick()
+  const resource = flatten(root).find(
+    (element) => 'node-resource' === element.type && 'office' === element.props['data-node-id'],
+  )
+  const grip = resource ? flatten(resource).find((element) => 'button' === element.type) : undefined
+  expect(grip).toBeDefined()
+  const originalElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement')
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  class DragHandle {
+    setPointerCapture = mock((_id: number) => {})
+    focus = mock(() => {})
+  }
+  const handle = new DragHandle()
+  Object.defineProperty(globalThis, 'HTMLElement', { value: DragHandle, configurable: true })
+  Object.defineProperty(globalThis, 'document', {
+    value: { elementFromPoint: () => ({ closest: () => ({ dataset: { nodeId: 'garage' } }) }) },
+    configurable: true,
+  })
+  try {
+    await trigger(grip, 'onPointerdown', { button: 0, currentTarget: handle, pointerId: 1 })
+    await trigger(grip, 'onPointermove', { clientX: 1, clientY: 1 })
+    await trigger(grip, 'onPointerup')
+    expect(workspace.moveNode).toHaveBeenCalledWith('office', 'garage')
+    expect(handle.setPointerCapture).toHaveBeenCalledWith(1)
+    const callbacks: Array<unknown> = Array.isArray(grip?.props.onKeydown)
+      ? grip.props.onKeydown
+      : [grip?.props.onKeydown]
+    for (const callback of callbacks) {
+      if ('function' === typeof callback) {
+        await callback({ key: 'ArrowDown', currentTarget: handle, preventDefault: mock(() => {}) })
+      }
+    }
+    expect(workspace.moveNode).toHaveBeenCalledTimes(2)
+    expect(handle.focus).toHaveBeenCalledTimes(1)
+  } finally {
+    for (const [key, descriptor] of [
+      ['HTMLElement', originalElement],
+      ['document', originalDocument],
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor)
+      } else {
+        Reflect.deleteProperty(globalThis, key)
+      }
+    }
+  }
+
+  workspace.nodes[1]!.connection = 'unavailable'
+  workspace.nodes.push(
+    { ...item, id: 'remote', name: 'Remote', connection: 'unavailable', stacks: [] },
+    { ...item, id: 'paused', name: 'Paused', connection: 'paused', paused: true, stacks: [] },
+  )
+  await vue.nextTick()
+  expect(count('i-lucide-server')).toBe('1 / 4')
+  expect(attentionRows()).toHaveLength(2)
+  workspace.nodes[1]!.connection = 'connected'
+  workspace.nodes[2]!.connection = 'connected'
+  await vue.nextTick()
+  expect(count('i-lucide-server')).toBe('3 / 4')
+  expect(attentionRows()).toHaveLength(0)
+  workspace.nodes.splice(2)
+
+  logEntries.value = Array.from({ length: 6 }, (_, index) => ({
+    id: index + 1,
+    timestamp: '2026-11-11T10:00:00Z',
+    level: 'error',
+    logger: 'agent',
+    message: `failure-sentinel-${index}`,
+    rendered: '',
+    fields: { node_id: item.id, node_name: item.name },
+  }))
+  await vue.nextTick()
+  const logRows = flatten(root).filter((element) => undefined !== element.props['data-log-id'])
+  expect(logRows.map((element) => element.props['data-log-id'])).toEqual([6, 5, 4, 3, 2])
+  expect(flatten(logRows[0]!).find((element) => 'a' === element.type)?.props.to).toEqual({
+    path: '/logs',
+    query: { levels: 'warning,error', node: 'office' },
+  })
 
   const check = flatten(root).find(
     (element) =>
@@ -1989,6 +2183,10 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   let leave = async (): Promise<boolean> => true
   let failAction = true
   const now = vue.ref(new Date('2026-11-03T03:55:52Z'))
+  const statsStart = mock((_subscription: { type: 'stats'; node: string; resource: string }) => {})
+  const statsStop = mock(() => {})
+  let statsMessage = (_message: WorkspaceStreamMessage) => {}
+  let statsDisconnected = () => {}
   const item = vue.reactive<WorkspaceNode>({
     id: 'node',
     name: 'Node',
@@ -2098,6 +2296,16 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
       '~/composables/useDialog': {
         useDialog: () => ({ confirmDialog: confirm }),
       },
+      '~/composables/useWorkspaceStream': {
+        useWorkspaceStream: (
+          onMessage: typeof statsMessage,
+          onDisconnect: typeof statsDisconnected,
+        ) => {
+          statsMessage = onMessage
+          statsDisconnected = onDisconnect
+          return { start: statsStart, stop: statsStop, error: vue.ref('') }
+        },
+      },
       '~/store/auth': { useAuthStore: () => auth },
       '~/store/workspace': store,
       '~/utils/stacks': await import('../app/utils/stacks'),
@@ -2187,7 +2395,99 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   expect(alerts(root)).toHaveLength(0)
 
   if ('stack' === page) {
+    expect(statsStart).toHaveBeenLastCalledWith({ type: 'stats', node: 'node', resource: 'app' })
+    const containerStats = {
+      id: '31c2c2e119e9',
+      name: 'app-1',
+      cpu: '0.03%',
+      memory: '69.16MiB / 125.5GiB',
+      memory_percent: '0.05%',
+      network_io: '5.41MB / 6.14MB',
+      block_io: '56.3MB / 2.02MB',
+      pids: '58',
+    }
+    const cpuCard = () =>
+      flatten(root).find(
+        (element) => 'stat' === element.type && 'i-lucide-cpu' === element.props.icon,
+      )
+    expect(cpuCard()?.props.value).toBe('-')
+    statsMessage({ event: 'stack.stats', data: JSON.stringify({ containers: [containerStats] }) })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe(containerStats.cpu)
+    for (const [icon, value] of [
+      ['i-lucide-memory-stick', '69.2 MiB'],
+      ['i-lucide-network', '5.2 MiB / 5.9 MiB'],
+      ['i-lucide-hard-drive', '53.7 MiB / 1.9 MiB'],
+      ['i-lucide-list-tree', containerStats.pids],
+    ]) {
+      expect(
+        flatten(root).find((element) => 'stat' === element.type && icon === element.props.icon)
+          ?.props.value,
+      ).toBe(value)
+    }
+    const containerBadges = () => {
+      const card = flatten(root).find(
+        (element) => 'stat' === element.type && 'app-1' === element.props['aria-label'],
+      )
+      return card ? flatten(card).filter((element) => 'badge' === element.type) : []
+    }
+    const badgeText = (icon: string) => {
+      const badge = containerBadges().find((element) => icon === element.props.icon)
+      return badge
+        ? flatten(badge)
+            .map((element) => element.text)
+            .join(' ')
+        : ''
+    }
+    expect(badgeText('i-lucide-cpu')).toContain(containerStats.cpu)
+    expect(badgeText('i-lucide-memory-stick')).toContain(containerStats.memory)
+    expect(badgeText('i-lucide-memory-stick')).toContain(containerStats.memory_percent)
+    statsMessage({
+      event: 'stack.stats',
+      data: JSON.stringify({ containers: [{ ...containerStats, cpu: '12.5%' }] }),
+    })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('12.5%')
+    statsMessage({
+      event: 'stack.stats',
+      data: JSON.stringify({
+        containers: [containerStats, { ...containerStats, name: 'worker', cpu: '2%' }],
+      }),
+    })
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('2.03%')
+    expect(badgeText('i-lucide-cpu')).toContain(containerStats.cpu)
+    statsDisconnected()
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('-')
+
     const service = item.stacks[0]!.services[0]!
+    const automationBadge = () =>
+      containerBadges().find((element) => 'i-lucide-bot' === element.props.icon)
+    const checkBadge = () =>
+      containerBadges().find((element) => 'i-lucide-timer' === element.props.icon)
+    expect(automationBadge()).toBeUndefined()
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = true
+    service.check_interval = '2h'
+    await vue.nextTick()
+    expect(automationBadge()).toBeDefined()
+    expect(badgeText('i-lucide-bot')).toContain('2h')
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = false
+    await vue.nextTick()
+    expect(automationBadge()).toBeUndefined()
+    expect(checkBadge()).toBeDefined()
+    expect(badgeText('i-lucide-timer')).toContain('2h')
+    service.check_interval = undefined
+    await vue.nextTick()
+    expect(checkBadge()).toBeUndefined()
+    service.auto_update = true
+    await vue.nextTick()
+    expect(automationBadge()).toBeDefined()
+    service.auto_update = false
+    await vue.nextTick()
+
     const created = flatten(root).find((element) => 'time' === element.type)
     expect(created?.props.datetime).toBe(service.created_at)
     const createdText = created?.text
@@ -2207,6 +2507,48 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(replace).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledWith({ query: { tab: 'logs' } })
     expect(navigate).not.toHaveBeenCalled()
+
+    const previous = item.stacks[0]!
+    item.stacks[0] = {
+      ...previous,
+      status: 'stopped',
+      services: previous.services.map((service) => ({ ...service, state: 'exited', health: '' })),
+    }
+    await vue.nextTick()
+    expect(cpuCard()?.props.value).toBe('0%')
+    expect(containerBadges().some((element) => 'i-lucide-cpu' === element.props.icon)).toBe(false)
+    expect(statsStop).toHaveBeenCalled()
+    expect(
+      flatten(root).some(
+        (element) => 'button' === element.type && 'i-lucide-terminal' === element.props.icon,
+      ),
+    ).toBe(false)
+    expect(
+      flatten(root).some(
+        (element) =>
+          'button' === element.type &&
+          'i-lucide-play' === element.props.icon &&
+          !!element.props['aria-label'],
+      ),
+    ).toBe(true)
+
+    item.stacks[0] = {
+      ...previous,
+      services: previous.services.map((service) => ({ ...service, health: 'unhealthy' })),
+    }
+    await vue.nextTick()
+    expect(
+      flatten(root).some(
+        (element) =>
+          'badge' === element.type &&
+          'i-lucide-container' === element.props.icon &&
+          'error' === element.props.color,
+      ),
+    ).toBe(true)
+    item.stacks[0] = previous
+    await vue.nextTick()
+    expect(statsStart).toHaveBeenLastCalledWith({ type: 'stats', node: 'node', resource: 'app' })
+
     const runtime = item.stacks[0]!
     runtime.error = 'runtime-error-sentinel'
     await vue.nextTick()
@@ -2295,4 +2637,286 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('/')
   }
+})
+
+const resourceContainer = (name: string, cpu: string, memory: string): ContainerStats => ({
+  id: `private-${name}`,
+  name,
+  cpu,
+  memory: `${memory} / 8GiB`,
+  memory_percent: '0%',
+  network_io: '0B / 0B',
+  block_io: '0B / 0B',
+  pids: '1',
+})
+
+const resourceInfo = (containers: Array<ContainerStats>): NodeInfo => ({
+  runtime: {
+    name: 'host',
+    version: '1',
+    operating_system: 'Linux',
+    architecture: 'amd64',
+    kernel_version: '1',
+    cpus: 4,
+    memory_bytes: 8 * 1024 ** 3,
+    containers: containers.length,
+    containers_running: containers.length,
+    containers_stopped: 0,
+    containers_paused: 0,
+    images: 0,
+    storage_driver: 'overlay',
+  },
+  containers,
+  checked_at: '2026-11-11T12:00:00Z',
+})
+
+describe('Node resources', () => {
+  const cleanups: Array<() => void> = []
+  afterEach(() => {
+    for (const cleanup of cleanups.splice(0)) {
+      cleanup()
+    }
+  })
+
+  const mountResources = async (connection: WorkspaceNode['connection'] = 'connected') => {
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+    const originalInterval = globalThis.setInterval
+    const originalClear = globalThis.clearInterval
+    const visibility = Object.assign(new EventTarget(), { hidden: false })
+    const intervals = new Map<number, () => void>()
+    let intervalId = 0
+    const delays: Array<number> = []
+    Object.defineProperty(globalThis, 'document', { value: visibility, configurable: true })
+    Object.defineProperty(globalThis, 'setInterval', {
+      value: (callback: () => void, delay: number) => {
+        delays.push(delay)
+        intervals.set(++intervalId, callback)
+        return intervalId
+      },
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'clearInterval', {
+      value: (id: number) => intervals.delete(id),
+      configurable: true,
+    })
+    const item = vue.reactive<WorkspaceNode>({
+      id: 'node',
+      name: 'Node',
+      public_host: '',
+      stacks: [],
+      health: null,
+      connection,
+      error: '',
+      loading: false,
+    })
+    const calls: Array<{
+      url: string
+      signal: AbortSignal | null | undefined
+      reply: ReturnType<typeof Promise.withResolvers<Response>>
+    }> = []
+    const notify = mock(() => {})
+    const component = await loadComponent('../NodeResources', {
+      '#components': { NuxtLink: stub('a') },
+      '@nuxt/ui/components/Alert.vue': {
+        default: vue.defineComponent({
+          setup:
+            (_, { slots }) =>
+            () =>
+              vue.h('alert', [slots.default?.(), slots.actions?.()]),
+        }),
+      },
+      '@nuxt/ui/components/Badge.vue': { default: stub('badge') },
+      '@nuxt/ui/components/Button.vue': { default: stub('button') },
+      '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+      '~/utils/node': await import('../app/utils/node'),
+      '~/utils/stacks': await import('../app/utils/stacks'),
+      '~/utils': {
+        request: (url: string, options: RequestInit) => {
+          const reply = Promise.withResolvers<Response>()
+          calls.push({ url, signal: options.signal, reply })
+          return reply.promise
+        },
+        parse_api_response: (response: Response) => response.json(),
+        notification: notify,
+      },
+    })
+    const root = node('root')
+    const app = renderer.createApp({ setup: () => () => vue.h(component, { node: item }) })
+    app.mount(root)
+    let mounted = true
+    const unmount = () => {
+      if (mounted) {
+        app.unmount()
+        mounted = false
+      }
+    }
+    cleanups.push(() => {
+      unmount()
+      if (originalDocument) {
+        Object.defineProperty(globalThis, 'document', originalDocument)
+      } else {
+        Reflect.deleteProperty(globalThis, 'document')
+      }
+      Object.defineProperty(globalThis, 'setInterval', {
+        value: originalInterval,
+        configurable: true,
+      })
+      Object.defineProperty(globalThis, 'clearInterval', {
+        value: originalClear,
+        configurable: true,
+      })
+    })
+    return {
+      root,
+      item,
+      calls,
+      notify,
+      intervals,
+      delays,
+      unmount,
+      tick: () => {
+        for (const callback of [...intervals.values()]) {
+          callback()
+        }
+      },
+      visible: (visible: boolean) => {
+        visibility.hidden = !visible
+        visibility.dispatchEvent(new Event('visibilitychange'))
+      },
+      respond: async (index: number, payload: NodeInfo | GenericError, status = 200) => {
+        calls[index]!.reply.resolve(Response.json(payload, { status }))
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        await vue.nextTick()
+      },
+    }
+  }
+
+  test('unit-aware ranking', async () => {
+    const view = await mountResources()
+    const containers = [
+      resourceContainer('small', '30%', '900MiB'),
+      resourceContainer('large', '20%', '1GiB'),
+      resourceContainer('decimal', '10%', '1GB'),
+      resourceContainer('fourth', '5%', '2MiB'),
+      resourceContainer('loading', '99%', '8GiB'),
+      resourceContainer('failed', '99%', '8GiB'),
+      resourceContainer('unmanaged', '200%', '1GiB'),
+    ]
+    view.item.stacks = containers.slice(0, -1).map((container) => ({
+      name: container.name,
+      status: 'running',
+      loading: 'loading' === container.name,
+      error: 'failed' === container.name ? 'failure' : '',
+      services: [
+        {
+          name: container.name,
+          service: 'web',
+          image: 'nginx',
+          state: 'running',
+          health: '',
+          ports: '',
+        },
+      ],
+    }))
+    const sample = resourceInfo(containers)
+    sample.runtime.cpus = 8
+    await view.respond(0, sample)
+    const links = () =>
+      flatten(view.root)
+        .filter((element) => 'a' === element.type)
+        // The test renderer inserts moved nodes without removing their old position.
+        .filter((element, index, elements) => index === elements.lastIndexOf(element))
+        .slice(1)
+        .map((element) => element.props.to)
+    expect(links()).toEqual(['/stacks/node/small', '/stacks/node/large', '/stacks/node/decimal'])
+    const metrics = (icon: string) => [
+      ...new Set(
+        flatten(view.root).filter(
+          (element) => 'badge' === element.type && icon === element.props.icon,
+        ),
+      ),
+    ]
+    expect(metrics('i-lucide-cpu')).toHaveLength(3)
+    expect(metrics('i-lucide-memory-stick')).toHaveLength(3)
+    const toggles = flatten(view.root).filter(
+      (element) => undefined !== element.props['aria-pressed'],
+    )
+    await trigger(toggles[1], 'onClick')
+    await vue.nextTick()
+    expect(links()).toEqual(['/stacks/node/large', '/stacks/node/decimal', '/stacks/node/small'])
+    expect(metrics('i-lucide-cpu')).toHaveLength(3)
+    expect(metrics('i-lucide-memory-stick')).toHaveLength(3)
+    const values = flatten(view.root).map((element) => element.text)
+    expect(values).toContain('57.88%')
+    expect(
+      metrics('i-lucide-cpu')
+        .flatMap(flatten)
+        .map((element) => element.text),
+    ).toContain('3.75%')
+    expect(values.some((value) => value.includes('private-'))).toBe(false)
+  })
+
+  test('offline aborts and clears samples', async () => {
+    const view = await mountResources('paused')
+    expect(view.calls).toHaveLength(0)
+    view.item.connection = 'connected'
+    await vue.nextTick()
+    expect(view.calls).toHaveLength(1)
+    view.item.id = 'other'
+    await vue.nextTick()
+    expect(view.calls[0]?.signal?.aborted).toBe(true)
+    expect(view.calls[1]?.url).toBe('/api/nodes/other/info')
+    await view.respond(0, resourceInfo([resourceContainer('old', '99%', '1GiB')]))
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(false)
+    await view.respond(1, resourceInfo([]))
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(true)
+    view.tick()
+    view.item.connection = 'unavailable'
+    await vue.nextTick()
+    expect(view.calls[2]?.signal?.aborted).toBe(true)
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(false)
+    expect(view.intervals.size).toBe(0)
+    await view.respond(2, resourceInfo([]))
+    expect(view.notify).not.toHaveBeenCalled()
+  })
+
+  test('failed refresh keeps prior sample', async () => {
+    const view = await mountResources()
+    await view.respond(0, resourceInfo([resourceContainer('live', '1%', '1GiB')]))
+    const sampled = () => flatten(view.root).map((element) => element.text)
+    view.tick()
+    await view.respond(1, { error: { code: 503, message: 'failure-sentinel' } }, 503)
+    expect(sampled()).toContain('0.25%')
+    expect(view.notify).toHaveBeenCalledTimes(1)
+    const retry = flatten(view.root).find((element) => 'i-lucide-refresh-cw' === element.props.icon)
+    const pending = trigger(retry, 'onClick')
+    await view.respond(2, resourceInfo([resourceContainer('live', '2%', '1GiB')]))
+    await pending
+    expect(sampled()).toContain('0.5%')
+    expect(flatten(view.root).some((element) => 'i-lucide-refresh-cw' === element.props.icon)).toBe(
+      false,
+    )
+  })
+
+  test('visible refresh and cleanup', async () => {
+    const view = await mountResources()
+    expect(view.delays).toEqual([30_000])
+    view.tick()
+    expect(view.calls).toHaveLength(1)
+    await view.respond(0, resourceInfo([]))
+    view.visible(false)
+    expect(view.intervals.size).toBe(0)
+    view.tick()
+    expect(view.calls).toHaveLength(1)
+    view.visible(true)
+    expect(view.calls).toHaveLength(2)
+    expect(view.intervals.size).toBe(1)
+    view.unmount()
+    expect(view.calls[1]?.signal?.aborted).toBe(true)
+    expect(view.intervals.size).toBe(0)
+    view.visible(true)
+    expect(view.calls).toHaveLength(2)
+    await view.respond(1, resourceInfo([]))
+    expect(view.notify).not.toHaveBeenCalled()
+  })
 })

@@ -1,4 +1,5 @@
 import { formatTimeAgo } from '@vueuse/core'
+import { formatMemoryBytes } from '~/utils/node'
 import type {
   ImageUpdate,
   NodeHealth,
@@ -10,6 +11,9 @@ import type {
   StackAction,
   StackRuntime,
   StackStatus,
+  StackStats,
+  StackStatsTotals,
+  ContainerStats,
   WorkspaceEvent,
   WorkspaceStreamError,
   WorkspaceStreamMessage,
@@ -135,6 +139,68 @@ export const workspaceErrorMessage = (status: number, fallback: string): string 
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   'object' === typeof value && null !== value && !Array.isArray(value)
+
+const isContainerStats = (value: unknown): value is ContainerStats =>
+  isRecord(value) &&
+  ['id', 'name', 'cpu', 'memory', 'memory_percent', 'network_io', 'block_io', 'pids'].every(
+    (key) => 'string' === typeof value[key],
+  )
+
+export const parseStackStats = (data: string): StackStats => {
+  const value: unknown = JSON.parse(data)
+  if (
+    isRecord(value) &&
+    Array.isArray(value.containers) &&
+    value.containers.every(isContainerStats)
+  ) {
+    return { containers: value.containers }
+  }
+  throw new Error("Couldn't read stack resource stats.")
+}
+
+export const parseStatBytes = (value: string): number => {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*([kmgtp]?i?b)$/i)
+  if (!match) {
+    return Number.NaN
+  }
+  const unit = match[2]!.toUpperCase()
+  const power = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'].indexOf(unit.replace('I', ''))
+  return Number(match[1]) * (unit.includes('I') ? 1024 : 1000) ** power
+}
+
+const sum = (values: Array<number>): number => values.reduce((total, value) => total + value, 0)
+const formatBytes = (value: number): string =>
+  Number.isFinite(value) ? formatMemoryBytes(value) : '-'
+const formatNumber = (value: number): string =>
+  Number.isFinite(value)
+    ? new Intl.NumberFormat('en', { maximumFractionDigits: 2 }).format(value)
+    : '-'
+
+const sumIO = (values: Array<string>): string => {
+  const pairs = values.map((value) => value.split('/'))
+  const first = sum(pairs.map((pair) => parseStatBytes(pair[0] ?? '')))
+  const second = sum(pairs.map((pair) => parseStatBytes(pair[1] ?? '')))
+  return Number.isFinite(first) && Number.isFinite(second)
+    ? `${formatBytes(first)} / ${formatBytes(second)}`
+    : '-'
+}
+
+export const aggregateStackStats = (
+  containers: Array<ContainerStats>,
+  cpuCount = 1,
+): StackStatsTotals => {
+  const cpu = sum(containers.map((container) => Number.parseFloat(container.cpu))) / cpuCount
+  return {
+    cpu: Number.isFinite(cpu) ? `${formatNumber(cpu)}%` : '-',
+    // Limits can refer to the same host memory, so sum usage, not limits or percentages.
+    memory: formatBytes(
+      sum(containers.map((container) => parseStatBytes(container.memory.split('/')[0] ?? ''))),
+    ),
+    network_io: sumIO(containers.map((container) => container.network_io)),
+    block_io: sumIO(containers.map((container) => container.block_io)),
+    pids: formatNumber(sum(containers.map((container) => Number.parseFloat(container.pids)))),
+  }
+}
 
 export const parseStreamMessage = (data: string): WorkspaceStreamMessage | WorkspaceStreamError => {
   const value: unknown = JSON.parse(data)

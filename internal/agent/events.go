@@ -262,11 +262,34 @@ func (a *agent) refreshRuntimes() {
 	defer func() { close(jobs); workers.Wait() }()
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
+	inventoryTick := time.NewTicker(2 * time.Second)
+	defer inventoryTick.Stop()
 	h := a.events
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
+		case <-inventoryTick.C:
+			// File-only additions and removals produce no container events.
+			// Queue only inventory changes, not repeated Compose queries.
+			names, err := a.inventory()
+			if nil != err {
+				continue
+			}
+			h.mu.Lock()
+			present := make(map[string]bool, len(names))
+			for _, name := range names {
+				present[name] = true
+				if _, ok := h.stacks[name]; !ok {
+					h.pending[name] = true
+				}
+			}
+			for name := range h.stacks {
+				if !present[name] {
+					h.pending[name] = true
+				}
+			}
+			h.mu.Unlock()
 		case <-tick.C:
 			h.mu.Lock()
 			for name := range h.pending {

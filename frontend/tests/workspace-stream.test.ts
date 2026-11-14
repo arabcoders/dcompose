@@ -284,6 +284,45 @@ describe('Shared connection', () => {
     expect(requests).toEqual([])
   })
 
+  test('stats reader', () => {
+    const realtime = useRealtimeStore()
+    const runtime = callbacks()
+    const stats = callbacks()
+    const logs = callbacks()
+    realtime.subscribe({ type: 'runtime' }, runtime)
+    const stream = scope.run(() => useWorkspaceStream(stats.onMessage, stats.onDisconnect))!
+    stream.start({ type: 'stats', node: 'n', resource: 'app' })
+    realtime.subscribe({ type: 'logs', node: 'n', resource: 'app' }, logs)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    const attach = { type: 'stats.attach', stream: 'reader-2', node: 'n', resource: 'app' }
+    expect(socket.sent).toContainEqual(attach)
+    socket.message({
+      type: 'event',
+      stream: 'reader-2',
+      event: 'stack.stats',
+      payload: { containers: [] },
+    })
+    expect(stats.onMessage).toHaveBeenCalledTimes(1)
+    expect(runtime.onMessage).not.toHaveBeenCalled()
+    expect(logs.onMessage).not.toHaveBeenCalled()
+    socket.onerror?.()
+    expect(stats.onDisconnect).toHaveBeenCalledTimes(1)
+    jest.advanceTimersByTime(1000)
+    const replacement = TestSocket.instances[1]!
+    replacement.open()
+    expect(replacement.sent).toEqual([attach])
+    scope.stop()
+    expect(replacement.sent.at(-1)).toEqual({ type: 'stream.detach', stream: 'reader-2' })
+    replacement.message({
+      type: 'event',
+      stream: 'reader-2',
+      event: 'stack.stats',
+      payload: { containers: [] },
+    })
+    expect(stats.onMessage).toHaveBeenCalledTimes(1)
+  })
+
   test('navigation', async () => {
     const previousMessage = mock(() => {})
     const nextMessage = mock(() => {})

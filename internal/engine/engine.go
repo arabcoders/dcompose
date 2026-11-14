@@ -171,6 +171,7 @@ type Driver interface {
 	NodeInfo(context.Context) (NodeInfo, error)
 	Validate(context.Context, Stack) error
 	Containers(context.Context, Stack) ([]Service, error)
+	Stats(context.Context, Stack) ([]ContainerStats, error)
 	Services(context.Context, Stack) ([]string, error)
 	ImageRefs(context.Context, Stack) (map[string]bool, error)
 	ImageChanged(context.Context, Service) (bool, error)

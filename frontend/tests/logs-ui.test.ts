@@ -3,6 +3,7 @@ import { compileScript, parse, registerTS } from '@vue/compiler-sfc'
 import * as ts from 'typescript'
 import * as vue from 'vue'
 import type { Component } from 'vue'
+import type { LocationQuery } from 'vue-router'
 import type { LogEntry, LogFilters, LogLevel } from '../app/types'
 import * as logs from '../app/utils/logs'
 
@@ -156,8 +157,11 @@ const entry: LogEntry = {
   },
   source: { file: 'compose.go', function: 'Deploy', line: 17 },
 }
-const mountLogs = async () => {
+const mountLogs = async (
+  options: { query?: LocationQuery; storedLevels?: Array<LogLevel> } = {},
+) => {
   const storage = new Map<string, vue.Ref<boolean | Array<LogLevel>>>()
+  const route = vue.reactive({ query: options.query ?? {} })
   const state = {
     entries: vue.ref<Array<LogEntry>>([entry]),
     observedNodes: vue.ref(new Map([['kitchen', 'Kitchen']])),
@@ -173,10 +177,10 @@ const mountLogs = async () => {
   }
   const copied = mock(async (_text: string) => {})
   const dependencies: Record<string, unknown> = {
-    '#app': { useHead: () => {} },
+    '#app': { useHead: () => {}, useRoute: () => route },
     '@vueuse/core': {
       useStorage: (key: string, value: boolean | Array<LogLevel>) => {
-        const stored = vue.ref(value)
+        const stored = vue.ref('logs_levels' === key ? (options.storedLevels ?? value) : value)
         storage.set(key, stored)
         return stored
       },
@@ -215,7 +219,7 @@ const mountLogs = async () => {
   app.mount(root)
   apps.push(app)
   await vue.nextTick()
-  return { root, state, copied, storage, app }
+  return { root, state, copied, storage, app, route }
 }
 const find = (root: TestNode, predicate: (element: TestNode) => boolean): TestNode => {
   const result = flatten(root).find(predicate)
@@ -363,6 +367,77 @@ test('refresh pending filters', async () => {
   jest.advanceTimersByTime(300)
   expect(state.search).toHaveBeenCalledTimes(2)
   expect(state.refresh).not.toHaveBeenCalled()
+})
+
+test('query filters', async () => {
+  jest.useFakeTimers()
+  const { root, state, storage } = await mountLogs({
+    query: { levels: 'warning,unknown,error,error', node: 'kitchen', search: 'failure' },
+    storedLevels: ['info'],
+  })
+  expect(state.search).toHaveBeenCalledTimes(1)
+  expect(state.search).toHaveBeenLastCalledWith({
+    levels: ['warning', 'error'],
+    node: 'kitchen',
+    search: 'failure',
+  })
+  expect(find(root, (element) => 'select-menu' === element.type).props.modelValue).toEqual([
+    'warning',
+    'error',
+  ])
+  expect(find(root, (element) => 'select' === element.type).props.modelValue).toBe('kitchen')
+  expect(find(root, (element) => 'input' === element.type).props.modelValue).toBe('failure')
+  expect(storage.get('logs_levels')?.value).toEqual(['info'])
+  trigger(
+    find(root, (element) => 'select-menu' === element.type),
+    'onUpdate:modelValue',
+    ['error'],
+  )
+  await vue.nextTick()
+  jest.advanceTimersByTime(300)
+  expect(state.search).toHaveBeenLastCalledWith({
+    levels: ['error'],
+    node: 'kitchen',
+    search: 'failure',
+  })
+  expect(storage.get('logs_levels')?.value).toEqual(['info'])
+})
+
+test('query defaults', async () => {
+  const { state } = await mountLogs({ query: { node: 'server' }, storedLevels: ['debug', 'info'] })
+  expect(state.search).toHaveBeenLastCalledWith({
+    levels: ['debug', 'info'],
+    node: 'server',
+    search: '',
+  })
+  const { state: unsupported } = await mountLogs({
+    query: { levels: ['warning', 'error'], node: null, search: ['first', 'second'] },
+    storedLevels: ['info'],
+  })
+  expect(unsupported.search).toHaveBeenLastCalledWith({ levels: ['info'], node: '', search: '' })
+})
+
+test('query changes', async () => {
+  jest.useFakeTimers()
+  const { route, state, storage } = await mountLogs({ storedLevels: ['info'] })
+  route.query = { levels: 'warning,error', node: 'garage' }
+  await vue.nextTick()
+  jest.advanceTimersByTime(300)
+  expect(state.search).toHaveBeenLastCalledWith({
+    levels: ['warning', 'error'],
+    node: 'garage',
+    search: '',
+  })
+  route.query = { levels: 'error', search: 'retry' }
+  await vue.nextTick()
+  jest.advanceTimersByTime(300)
+  expect(state.search).toHaveBeenLastCalledWith({ levels: ['error'], node: '', search: 'retry' })
+  route.query = {}
+  await vue.nextTick()
+  jest.advanceTimersByTime(300)
+  expect(state.search).toHaveBeenLastCalledWith({ levels: ['info'], node: '', search: '' })
+  expect(storage.get('logs_levels')?.value).toEqual(['info'])
+  expect(state.search).toHaveBeenCalledTimes(4)
 })
 
 test('detail data and copy', async () => {

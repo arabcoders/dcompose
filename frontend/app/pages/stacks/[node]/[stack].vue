@@ -19,9 +19,17 @@ import StatCard from '~/components/StatCard.vue'
 import ContainerShell from '~/components/stacks/ContainerShell.vue'
 import StackLogs from '~/components/stacks/StackLogs.vue'
 import { useDialog } from '~/composables/useDialog'
+import { useWorkspaceStream } from '~/composables/useWorkspaceStream'
 import { useWorkspaceStore } from '~/store/workspace'
 import { useAuthStore } from '~/store/auth'
-import type { Service, Stack, StackAction } from '~/types'
+import type {
+  ContainerStats,
+  Service,
+  Stack,
+  StackAction,
+  StackStatsTotals,
+  StatCardProps,
+} from '~/types'
 import { notification, parse_api_response, request } from '~/utils'
 import {
   workspaceErrorMessage,
@@ -30,6 +38,8 @@ import {
   stackStatusLabel,
   containerCreatedAt,
   containerUptime,
+  parseStackStats,
+  aggregateStackStats,
 } from '~/utils/stacks'
 
 definePageMeta({ layout: 'workspace' })
@@ -141,6 +151,51 @@ const busy = computed(
 const active = computed(() =>
   runtime.value?.services.some((service) => 'running' === service.state),
 )
+const stats = ref<Array<ContainerStats> | null>(null)
+const statsStream = useWorkspaceStream(
+  (message) => {
+    if ('stack.stats' === message.event) {
+      stats.value = parseStackStats(message.data).containers
+    }
+  },
+  () => {
+    stats.value = null
+  },
+)
+const statsError = statsStream.error
+const startStats = () => {
+  statsStream.stop()
+  stats.value = null
+  if (connected.value && active.value && !isNew.value) {
+    statsStream.start({ type: 'stats', node: node.value, resource: name.value })
+  }
+}
+const servicesWithStats = computed(() =>
+  (runtime.value?.services ?? []).map((service) => ({
+    ...service,
+    stats: stats.value?.find((item) => service.name === item.name),
+  })),
+)
+const stackTotals = computed(() => {
+  if (connected.value && !active.value) {
+    return aggregateStackStats([])
+  }
+  return stats.value ? aggregateStackStats(stats.value) : undefined
+})
+const resourceCards = (
+  stats?: StackStatsTotals & { memory_percent?: string },
+): Array<StatCardProps> => [
+  { label: 'CPU', value: stats?.cpu || '-', icon: 'i-lucide-cpu' },
+  {
+    label: 'Memory',
+    value: stats?.memory || '-',
+    hint: stats?.memory_percent,
+    icon: 'i-lucide-memory-stick',
+  },
+  { label: 'Network I/O', value: stats?.network_io || '-', icon: 'i-lucide-network' },
+  { label: 'Block I/O', value: stats?.block_io || '-', icon: 'i-lucide-hard-drive' },
+  { label: 'PIDs', value: stats?.pids || '-', icon: 'i-lucide-list-tree' },
+]
 const checkingImages = computed(() => workspace.isCheckingImages(node.value, name.value))
 const unavailable = computed(
   () =>
@@ -521,6 +576,7 @@ watch(
   },
 )
 watch(() => [node.value, name.value], load, { immediate: true })
+watch([node, name, connected, active, isNew], startStats, { immediate: true })
 const actionCompleted = (action: StackAction | 'delete', exitCode?: number) => {
   if ('delete' === action && 0 === exitCode) {
     void navigateTo('/')
@@ -655,6 +711,21 @@ onBeforeUnmount(() => {
       />
     </template>
     <template v-if="!loading">
+      <div v-if="runtime && !isNew" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard v-for="stat in resourceCards(stackTotals)" :key="stat.icon" v-bind="stat" />
+      </div>
+      <UAlert
+        v-if="statsError && connected && active"
+        color="warning"
+        icon="i-lucide-chart-no-axes-combined"
+        :title="statsError"
+      >
+        <template #actions>
+          <UButton color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="startStats"
+            >Retry stats</UButton
+          >
+        </template>
+      </UAlert>
       <StackLogs
         v-if="!isNew"
         :key="`${node}/${name}`"
@@ -680,7 +751,7 @@ onBeforeUnmount(() => {
           />
           <template v-else>
             <StatCard
-              v-for="service in runtime.services"
+              v-for="service in servicesWithStats"
               :key="service.name"
               :label="service.service"
               :value="service.image"
@@ -775,6 +846,29 @@ onBeforeUnmount(() => {
                   >{{ `${service.state}${service.health ? ` / ${service.health}` : ''}` }}</UBadge
                 >
                 <UTooltip
+                  v-if="service.auto_update || service.check_interval"
+                  :text="
+                    service.auto_update
+                      ? service.check_interval
+                        ? `Automatic updates configured; checks every ${service.check_interval}.`
+                        : 'Automatic updates configured; uses the node check schedule.'
+                      : `Image checks every ${service.check_interval}; automatic updates are off.`
+                  "
+                >
+                  <UBadge
+                    :icon="service.auto_update ? 'i-lucide-bot' : 'i-lucide-timer'"
+                    :color="service.auto_update ? 'primary' : 'neutral'"
+                    size="sm"
+                    variant="subtle"
+                    tabindex="0"
+                  >
+                    {{ service.auto_update ? 'Auto' : 'Checks' }}
+                    <template v-if="service.check_interval">
+                      · {{ service.check_interval }}</template
+                    >
+                  </UBadge>
+                </UTooltip>
+                <UTooltip
                   v-if="service.image_update"
                   :text="imageUpdateTooltip(service.image_update)"
                   :ui="{ text: 'whitespace-pre-line' }"
@@ -797,9 +891,28 @@ onBeforeUnmount(() => {
                   >
                 </UTooltip>
               </template>
+              <div v-if="'running' === service.state" class="flex flex-wrap gap-1.5">
+                <UTooltip
+                  v-for="stat in resourceCards(service.stats)"
+                  :key="stat.icon"
+                  :text="stat.label"
+                >
+                  <UBadge
+                    :icon="stat.icon"
+                    color="neutral"
+                    variant="subtle"
+                    size="sm"
+                    tabindex="0"
+                    class="tabular-nums"
+                  >
+                    {{ stat.value }}<span v-if="stat.hint">({{ stat.hint }})</span>
+                  </UBadge>
+                </UTooltip>
+              </div>
               <div
                 v-if="service.port_bindings?.length || service.ports"
                 class="flex flex-wrap items-center gap-1.5"
+                :class="{ 'mt-3': 'running' === service.state }"
               >
                 <template v-if="service.port_bindings?.length">
                   <template v-for="port in portLinks(service)" :key="port.label">

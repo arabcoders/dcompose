@@ -113,7 +113,7 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 					s.detachBrowser(subscription)
 					delete(subscriptions, message.Stream)
 				}
-			case "logs.attach", "shell.attach":
+			case "logs.attach", "stats.attach", "shell.attach":
 				if nil != subscription {
 					s.detachBrowser(subscription)
 					delete(subscriptions, message.Stream)

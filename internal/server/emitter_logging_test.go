@@ -31,6 +31,7 @@ func TestViewWriteLogs(t *testing.T) {
 		kind, resource, shell string
 	}{
 		{kind: "logs.attach", resource: "demo"},
+		{kind: "stats.attach", resource: "demo"},
 		{kind: "relay.attach", resource: "self-helper"},
 		{kind: "shell.attach", shell: "terminal"},
 		{kind: "shell.input", shell: "terminal"},
@@ -109,7 +110,7 @@ func TestViewWriteLogs(t *testing.T) {
 }
 
 func TestViewErrorLogs(t *testing.T) {
-	for _, kind := range []string{"logs.attach", "relay.attach"} {
+	for _, kind := range []string{"logs.attach", "stats.attach", "relay.attach"} {
 		t.Run(kind, func(t *testing.T) {
 			var output bytes.Buffer
 			original := slog.Default()
