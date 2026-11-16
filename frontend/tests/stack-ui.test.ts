@@ -3012,3 +3012,84 @@ describe('Node resources', () => {
     expect(view.notify).not.toHaveBeenCalled()
   })
 })
+
+const footerLinkStub = vue.defineComponent({
+  props: {
+    to: { type: String, default: '' },
+    target: { type: String, default: '' },
+    rel: { type: String, default: '' },
+  },
+  setup:
+    (props, { slots }) =>
+    () =>
+      vue.h('a', { to: props.to, target: props.target, rel: props.rel }, slots.default?.()),
+})
+
+const footerTooltipStub = vue.defineComponent({
+  props: { text: { type: String, default: '' } },
+  setup:
+    (props, { slots }) =>
+    () =>
+      vue.h('tooltip', { text: props.text }, slots.default?.()),
+})
+
+const mountFooter = async (config: {
+  version: string
+  commitSha: string
+  buildDate: string
+  branch: string
+}) => {
+  const runtimeConfig = vue.reactive({ public: config })
+  const component = await loadComponent('../AppFooter', {
+    '#app': { useRuntimeConfig: () => runtimeConfig },
+    '#components': { NuxtLink: footerLinkStub },
+    '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+    '@nuxt/ui/components/Tooltip.vue': { default: footerTooltipStub },
+  })
+  const root = node('root')
+  const app = renderer.createApp(component)
+  app.mount(root)
+  apps.push(app)
+  return root
+}
+
+test('footer metadata', async () => {
+  const sha = '0123456789abcdef0123456789abcdef01234567'
+  const root = await mountFooter({
+    version: 'v0.1.4',
+    commitSha: sha,
+    buildDate: '2026-11-16',
+    branch: 'master',
+  })
+  const elements = flatten(root)
+  expect(
+    elements.filter((element) => 'a' === element.type).map((element) => element.props.to),
+  ).toEqual([
+    'https://github.com/arabcoders/dcompose',
+    `https://github.com/arabcoders/dcompose/commit/${sha}`,
+  ])
+  const texts = elements.map((element) => element.text)
+  expect(texts).toContain('v0.1.4')
+  expect(texts).toContain('2026-11-16')
+  expect(texts).toContain('master')
+  expect(texts).toContain(sha.slice(0, 7))
+  expect(elements.find((element) => 'tooltip' === element.type)?.props.text).toBe(sha)
+})
+
+test('footer unknown commit', async () => {
+  const root = await mountFooter({
+    version: 'dev',
+    commitSha: 'unknown',
+    buildDate: 'unknown',
+    branch: 'unknown',
+  })
+  const elements = flatten(root)
+  const links = elements.filter((element) => 'a' === element.type)
+  expect(links.map((element) => element.props.to)).toEqual([
+    'https://github.com/arabcoders/dcompose',
+  ])
+  expect(elements.some((element) => 'tooltip' === element.type)).toBe(false)
+  const texts = elements.map((element) => element.text)
+  expect(texts).toContain('dev')
+  expect(texts.filter((text) => 'unknown' === text)).toHaveLength(3)
+})

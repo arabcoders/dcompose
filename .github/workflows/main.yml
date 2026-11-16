@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [dev, master, testing]
+    branches: [dev, master]
     tags: ['v*']
     paths-ignore:
       - '**.md'
@@ -47,8 +47,14 @@ jobs:
     needs: validate-build-config
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.build-info.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Read build metadata
+        id: build-info
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
 
       - uses: jdx/mise-action@v5
         with:
@@ -84,6 +90,11 @@ jobs:
         run: ./.githooks/pre-commit --all
 
       - name: Build frontend
+        env:
+          NUXT_PUBLIC_VERSION: ${{ steps.build-info.outputs.version }}
+          NUXT_PUBLIC_COMMIT_SHA: ${{ steps.build-info.outputs.commit_sha }}
+          NUXT_PUBLIC_BUILD_DATE: ${{ steps.build-info.outputs.build_date }}
+          NUXT_PUBLIC_BRANCH: ${{ steps.build-info.outputs.branch }}
         run: bun --cwd=$PWD/frontend/ generate
 
       - name: Upload frontend build (GitHub)
@@ -110,7 +121,7 @@ jobs:
     env:
       CGO_ENABLED: '0'
       GOOS: linux
-      VERSION: ${{ github.ref_name }}
+      VERSION: ${{ needs.test.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 

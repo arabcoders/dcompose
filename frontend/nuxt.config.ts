@@ -21,7 +21,15 @@ export default defineNuxtConfig({
       scan: { globInclude: ['app/**/*.{vue,ts}', 'node_modules/@nuxt/ui/dist/shared/ui*.mjs'] },
     },
   },
-  runtimeConfig: { public: { domain: '', version: '1.0.0' } },
+  runtimeConfig: {
+    public: {
+      domain: '',
+      version: 'dev',
+      commitSha: 'unknown',
+      buildDate: 'unknown',
+      branch: 'unknown',
+    },
+  },
   app: {
     buildAssetsDir: 'assets',
     head: {

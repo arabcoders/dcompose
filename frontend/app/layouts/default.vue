@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStorage } from '@vueuse/core'
-import { useRoute, useRuntimeConfig, useRuntimeHook } from '#app'
+import { useRoute, useRuntimeHook } from '#app'
 import { useColorMode } from '#imports'
 import { NuxtLink, NuxtLoadingIndicator } from '#components'
 import UAlert from '@nuxt/ui/components/Alert.vue'
@@ -19,6 +19,7 @@ import UFieldGroup from '@nuxt/ui/components/FieldGroup.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
 import USelect from '@nuxt/ui/components/Select.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
+import AppFooter from '~/components/AppFooter.vue'
 import BackupModal from '~/components/BackupModal.vue'
 import CreateStackModal from '~/components/CreateStackModal.vue'
 import Dialog from '~/components/Dialog.vue'
@@ -31,7 +32,6 @@ import { useWorkspaceStore } from '~/store/workspace'
 import { notification } from '~/utils'
 
 const route = useRoute()
-const runtimeConfig = useRuntimeConfig()
 const colorMode = useColorMode()
 const auth = useAuthStore()
 const workspace = useWorkspaceStore()
@@ -334,9 +334,7 @@ onMounted(load)
           <NuxtLoadingIndicator />
           <div class="mx-auto flex w-full max-w-400 min-w-0 flex-1 flex-col gap-6">
             <div class="min-w-0 flex-1"><slot /></div>
-            <footer class="mt-auto border-t border-default pt-6 text-xs text-muted">
-              v{{ runtimeConfig.public.version }}
-            </footer>
+            <AppFooter />
           </div>
         </template>
       </UDashboardPanel>
