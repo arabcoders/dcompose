@@ -2,8 +2,11 @@
 
 package frontend
 
-import "io/fs"
+import (
+	"io/fs"
+	"os"
+)
 
 func Assets() fs.FS {
-	return nil
+	return os.DirFS("frontend/exported")
 }

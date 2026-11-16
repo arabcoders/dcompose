@@ -371,6 +371,7 @@ export interface StackListProps {
   workspaceLoading: boolean
   search: string
   status: StackFilter
+  compact?: boolean
 }
 
 export interface Service {

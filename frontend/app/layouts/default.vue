@@ -13,6 +13,7 @@ import UDashboardSidebar from '@nuxt/ui/components/DashboardSidebar.vue'
 import UDashboardPanel from '@nuxt/ui/components/DashboardPanel.vue'
 import UDashboardNavbar from '@nuxt/ui/components/DashboardNavbar.vue'
 import UDashboardSidebarToggle from '@nuxt/ui/components/DashboardSidebarToggle.vue'
+import UDashboardSidebarCollapse from '@nuxt/ui/components/DashboardSidebarCollapse.vue'
 import UDropdownMenu from '@nuxt/ui/components/DropdownMenu.vue'
 import UFieldGroup from '@nuxt/ui/components/FieldGroup.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
@@ -154,27 +155,50 @@ onMounted(load)
     <UDashboardGroup storage="local" storage-key="stack-workspace" class="min-h-screen">
       <UDashboardSidebar
         v-model:open="sidebarOpen"
+        collapsible
         resizable
         :default-size="18"
         :min-size="13"
         :max-size="26"
+        :collapsed-size="4"
         :ui="{
           root: 'app-shell-surface border-r border-default',
-          header: 'border-b border-default p-3',
+          header: 'p-3',
           body: 'min-h-0 gap-0 overflow-hidden p-0',
         }"
       >
-        <template #header>
-          <NuxtLink to="/" class="flex items-center gap-3" @click="sidebarOpen = false">
-            <img src="/favicon.png" alt="DCompose" class="size-8 rounded-md" />
-            <div class="min-w-0">
+        <template #header="{ collapsed: sidebarCollapsed }">
+          <NuxtLink
+            to="/"
+            class="flex w-full min-w-0 items-center gap-3 rounded-md transition-colors hover:bg-elevated/60 focus-visible:outline-2 focus-visible:outline-primary"
+            :class="{ 'justify-center': sidebarCollapsed }"
+            aria-label="DCompose home"
+            @click="sidebarOpen = false"
+          >
+            <span
+              class="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-default bg-elevated/80 shadow-sm"
+            >
+              <img src="/favicon.png" alt="DCompose" class="size-7 rounded-md object-contain" />
+            </span>
+            <div v-if="!sidebarCollapsed" class="min-w-0">
               <p class="text-sm font-semibold text-highlighted">DCompose</p>
               <p class="text-xs text-toned">Stacks Management</p>
             </div>
           </NuxtLink>
         </template>
-        <template #default>
-          <div v-if="0 < nodes.length" class="space-y-2 border-b border-default p-3">
+        <template #default="{ collapsed: sidebarCollapsed, collapse }">
+          <div v-if="sidebarCollapsed && 0 < nodes.length" class="flex justify-center p-2">
+            <UTooltip text="Search and filter stacks">
+              <UButton
+                icon="i-lucide-search"
+                color="neutral"
+                variant="ghost"
+                aria-label="Search and filter stacks"
+                @click="collapse(false)"
+              />
+            </UTooltip>
+          </div>
+          <div v-else-if="0 < nodes.length" class="space-y-2 border-b border-default p-3">
             <UFieldGroup class="w-full">
               <UInput
                 v-model="stackSearch"
@@ -209,6 +233,7 @@ onMounted(load)
             :workspace-loading="loading"
             :search="stackSearch"
             :status="stackFilter"
+            :compact="sidebarCollapsed"
             class="min-h-0 flex-1"
             @selected="sidebarOpen = false"
           />
@@ -229,6 +254,7 @@ onMounted(load)
           >
             <template #left>
               <UDashboardSidebarToggle class="lg:hidden" />
+              <UDashboardSidebarCollapse class="hidden lg:inline-flex" />
               <UBreadcrumb :items="breadcrumbs" />
             </template>
             <template #right>

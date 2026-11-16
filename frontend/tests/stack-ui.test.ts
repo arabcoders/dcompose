@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { compileScript, parse, registerTS } from '@vue/compiler-sfc'
 import * as ts from 'typescript'
 import * as vue from 'vue'
+import { createReusableTemplate } from '@vueuse/core'
 import type { Component } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type {
@@ -185,6 +186,96 @@ test('node header', async () => {
   expect(automationIcons()).toHaveLength(0)
 })
 
+test('compact stacks', async () => {
+  const item: WorkspaceNode = {
+    id: 'node',
+    name: 'Node',
+    public_host: '',
+    stacks: [
+      { name: 'app', status: 'running', loading: false, services: [] },
+      { name: 'worker', status: 'stopped', loading: false, services: [] },
+    ],
+    health: null,
+    connection: 'connected',
+    error: '',
+    loading: false,
+  }
+  const route = vue.reactive({
+    path: '/stacks/node/app',
+    params: { node: 'node', stack: 'app' },
+  })
+  const close = mock(() => {})
+  const selected = mock(() => {})
+  const component = await loadComponent('StackList', {
+    '#app': { useRoute: () => route },
+    '#components': { NuxtLink: stub('a') },
+    '@nuxt/ui/components/Alert.vue': { default: stub('alert') },
+    '@nuxt/ui/components/Badge.vue': { default: stub('badge') },
+    '@nuxt/ui/components/Button.vue': { default: stub('button') },
+    '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+    '@nuxt/ui/components/Popover.vue': {
+      default: vue.defineComponent({
+        setup:
+          (_, { slots }) =>
+          () =>
+            vue.h('popover', [slots.default?.(), slots.content?.({ close })]),
+      }),
+    },
+    '~/utils/stacks': await import('../app/utils/stacks'),
+  })
+  const collapsed = vue.reactive<Record<string, boolean>>({ node: true })
+  const filters = vue.reactive({ search: '', status: 'all', compact: true })
+  const root = node('root')
+  const app = renderer.createApp({
+    setup: () => () =>
+      vue.h(component, {
+        nodes: [item],
+        workspaceLoading: false,
+        ...filters,
+        collapsed,
+        onSelected: selected,
+      }),
+  })
+  app.mount(root)
+  apps.push(app)
+
+  expect(collapsed.node).toBe(false)
+  const links = () => flatten(root).filter((element) => 'a' === element.type)
+  expect(links().map((element) => element.props.to)).toEqual([
+    '/stacks/node/app',
+    '/stacks/node/worker',
+  ])
+  expect(links()[0]?.props['aria-current']).toBe('page')
+  filters.search = 'work'
+  await vue.nextTick()
+  expect(links().map((element) => element.props.to)).toEqual(['/stacks/node/worker'])
+  filters.status = 'running'
+  await vue.nextTick()
+  expect(links()).toHaveLength(0)
+  filters.search = ''
+  await vue.nextTick()
+  expect(links().map((element) => element.props.to)).toEqual(['/stacks/node/app'])
+
+  const link = links()[0]
+  if ('function' !== typeof link?.props.onClick) {
+    throw new Error('Missing stack selection')
+  }
+  link.props.onClick()
+  expect(close).toHaveBeenCalledTimes(1)
+  expect(selected).toHaveBeenCalledTimes(1)
+
+  filters.compact = false
+  await vue.nextTick()
+  expect(flatten(root).filter((element) => 'popover' === element.type)).toHaveLength(0)
+  collapsed.node = true
+  await vue.nextTick()
+  expect(collapsed.node).toBe(true)
+  route.path = '/stacks/node/worker'
+  route.params.stack = 'worker'
+  await vue.nextTick()
+  expect(collapsed.node).toBe(false)
+})
+
 const stub = (tag: string) =>
   vue.defineComponent({
     setup:
@@ -206,6 +297,7 @@ const loadComponent = async (file: string, dependencies: Record<string, unknown>
   })
   const imports: Record<string, unknown> = {
     vue,
+    '@vueuse/core': { createReusableTemplate },
     '@nuxt/ui/components/Tooltip.vue': { default: stub('tooltip') },
     ...dependencies,
   }
