@@ -434,7 +434,11 @@ test('overview attention', async () => {
   )
   expect(count('i-lucide-triangle-alert')).toBe(1)
   expect(count('i-lucide-server')).toBe('1 / 1')
-  expect(searchLogs).toHaveBeenCalledWith({ levels: ['warning', 'error'], node: '', search: '' })
+  expect(searchLogs).toHaveBeenCalledWith({
+    levels: ['info', 'warning', 'error'],
+    node: '',
+    search: '',
+  })
   for (const id of ['updates-heading', 'busy-heading', 'recent-errors-heading']) {
     expect(flatten(root).some((element) => id === element.props['aria-labelledby'])).toBe(false)
   }
@@ -616,12 +620,51 @@ test('overview attention', async () => {
     fields: { node_id: item.id, node_name: item.name },
   }))
   await vue.nextTick()
-  const logRows = flatten(root).filter((element) => undefined !== element.props['data-log-id'])
-  expect(logRows.map((element) => element.props['data-log-id'])).toEqual([6, 5, 4, 3, 2])
-  expect(flatten(logRows[0]!).find((element) => 'a' === element.type)?.props.to).toEqual({
+  const logRows = () =>
+    flatten(root).filter((element) => undefined !== element.props['data-log-id'])
+  expect(logRows().map((element) => element.props['data-log-id'])).toEqual([6, 5, 4, 3, 2])
+  expect(flatten(logRows()[0]!).find((element) => 'a' === element.type)?.props.to).toEqual({
     path: '/logs',
-    query: { levels: 'warning,error', node: 'office' },
+    query: { levels: 'info,warning,error', node: 'office' },
   })
+
+  const base = logEntries.value[0]!
+  logEntries.value.push(
+    { ...base, id: 7, level: 'info' },
+    { ...base, id: 8, level: 'info', fields: { automatic: true, status: 'running' } },
+    { ...base, id: 9, level: 'info', fields: { automatic: false, status: 'succeeded' } },
+    { ...base, id: 10, level: 'debug', fields: { automatic: true, status: 'succeeded' } },
+    {
+      ...base,
+      id: 11,
+      level: 'INFO',
+      fields: {
+        ...base.fields,
+        automatic: true,
+        status: 'succeeded',
+        stack: 'app',
+        service: 'web',
+      },
+    },
+  )
+  await vue.nextTick()
+  expect(logRows().map((element) => element.props['data-log-id'])).toEqual([11, 6, 5, 4, 3])
+  const success = logRows()[0]!
+  expect(
+    flatten(success).some(
+      (element) => 'badge' === element.type && 'success' === element.props.color,
+    ),
+  ).toBe(true)
+  expect(flatten(success).find((element) => 'a' === element.type)?.props.to).toEqual({
+    path: '/logs',
+    query: { levels: 'info,warning,error', node: 'office' },
+  })
+  logEntries.value.push(
+    { ...base, id: 12, level: 'warning' },
+    { ...base, id: 13, fields: { automatic: true, status: 'failed' } },
+  )
+  await vue.nextTick()
+  expect(logRows().map((element) => element.props['data-log-id'])).toEqual([13, 12, 11, 6, 5])
 
   const check = flatten(root).find(
     (element) =>
