@@ -12,8 +12,12 @@ const { nodes, ready, error, streamError } = storeToRefs(workspace)
 <template>
   <NuxtLayout name="default">
     <div class="min-w-0 space-y-5">
-      <UAlert v-if="error" color="error" variant="soft" :title="error" />
-      <UAlert v-else-if="streamError" color="warning" variant="soft" :title="streamError" />
+      <UAlert
+        v-if="error || streamError"
+        :color="error ? 'error' : 'warning'"
+        variant="soft"
+        :title="error || streamError"
+      />
       <UAlert
         v-else-if="ready && 0 === nodes.length"
         color="neutral"

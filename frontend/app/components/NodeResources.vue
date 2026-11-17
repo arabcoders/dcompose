@@ -3,11 +3,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NuxtLink } from '#components'
 import UBadge from '@nuxt/ui/components/Badge.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
-import UAlert from '@nuxt/ui/components/Alert.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
-import type { NodeInfo, WorkspaceNode } from '~/types'
-import { notification, parse_api_response, request } from '~/utils'
+import type { NodeInfo, NodeResourceStatus, WorkspaceNode } from '~/types'
+import { parse_api_response, request } from '~/utils'
 import { formatMemoryBytes } from '~/utils/node'
 import { aggregateStackStats, parseStatBytes, workspaceErrorMessage } from '~/utils/stacks'
 
@@ -32,6 +31,41 @@ const connectionLabel = computed(() => {
     unavailable: 'Unavailable',
     paused: 'Paused',
   }[props.node.connection]
+})
+
+const status = computed<NodeResourceStatus | null>(() => {
+  if (props.node.paused || 'paused' === props.node.connection) {
+    return {
+      text: 'Paused. Resume this node to reconnect.',
+      icon: 'i-lucide-pause',
+      tone: 'muted',
+    }
+  }
+  if (!connected.value) {
+    return {
+      text: props.node.error
+        ? `${props.node.error}${info.value ? ' Showing previous sample.' : ''}`
+        : connectionLabel.value,
+      icon: 'i-lucide-wifi-off',
+      tone: 'warning',
+    }
+  }
+  if (error.value) {
+    return {
+      text: info.value ? `${error.value} Showing previous sample.` : error.value,
+      icon: 'i-lucide-circle-alert',
+      tone: 'warning',
+    }
+  }
+  if (!info.value) {
+    return {
+      text: 'Loading resource usage...',
+      icon: 'i-lucide-loader-circle',
+      tone: 'muted',
+      spin: true,
+    }
+  }
+  return null
 })
 const totals = computed(() =>
   aggregateStackStats(info.value?.containers ?? [], info.value?.runtime.cpus ?? 1),
@@ -91,14 +125,10 @@ const refresh = async () => {
     error.value = ''
   } catch (cause) {
     if (!current.signal.aborted) {
-      const message =
+      error.value =
         cause instanceof Error && !(cause instanceof TypeError)
           ? cause.message
           : 'Could not load resource usage.'
-      if (!error.value) {
-        notification('error', `Resource snapshot failed for ${props.node.name}`, message)
-      }
-      error.value = message
     }
   } finally {
     if (controller === current) {
@@ -126,10 +156,13 @@ const resume = () => {
   timer = setInterval(() => void refresh(), 30_000)
 }
 
-watch([() => props.node.id, connected], () => {
+watch([() => props.node.id, connected, () => props.node.paused], ([id], [previousId]) => {
+  const reset = id !== previousId || props.node.paused || 'paused' === props.node.connection
   stop()
-  info.value = null
-  error.value = ''
+  if (reset) {
+    info.value = null
+    error.value = ''
+  }
   resume()
 })
 
@@ -179,138 +212,114 @@ onBeforeUnmount(() => {
         >{{ node.name }}</NuxtLink
       >
     </header>
-    <div v-if="connected || node.error" class="space-y-4 p-4">
-      <UAlert
-        v-if="!connected && node.error"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-wifi-off"
-        :title="node.error"
-      />
-      <template v-else>
-        <UAlert
-          v-if="error"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          :title="error"
-          :description="info ? 'Showing previous sample' : undefined"
-        >
-          <template #actions>
-            <UButton
-              color="neutral"
-              variant="outline"
-              size="sm"
-              icon="i-lucide-refresh-cw"
-              :loading="loading"
-              :disabled="loading"
-              @click="refresh"
-              >Retry</UButton
-            >
-          </template>
-        </UAlert>
-        <UAlert
-          v-else-if="!info"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-loader-circle"
-          title="Loading"
-          :ui="{ icon: 'animate-spin' }"
+    <div class="space-y-4 p-4">
+      <p
+        v-if="status"
+        role="status"
+        class="inline-flex min-w-0 items-center gap-1.5 text-xs"
+        :class="{
+          'text-warning': 'warning' === status.tone,
+          'text-muted': 'muted' === status.tone,
+        }"
+      >
+        <UIcon
+          :name="status.icon"
+          class="size-3.5 shrink-0"
+          :class="{ 'animate-spin': status.spin }"
         />
-        <template v-if="info">
-          <dl class="grid grid-cols-2 gap-4">
-            <div>
-              <dt class="text-xs text-muted">
-                <UTooltip
-                  text="Node CPU capacity used by running containers, including unmanaged ones. Excludes other host processes."
+        <span class="min-w-0">{{ status.text }}</span>
+      </p>
+      <template v-if="info">
+        <dl class="grid grid-cols-2 gap-4">
+          <div>
+            <dt class="text-xs text-muted">
+              <UTooltip
+                text="Node CPU capacity used by running containers, including unmanaged ones. Excludes other host processes."
+              >
+                <span class="inline-flex items-center gap-1.5" tabindex="0"
+                  ><UIcon name="i-lucide-cpu" class="size-3.5" />CPU</span
                 >
-                  <span class="inline-flex items-center gap-1.5" tabindex="0"
-                    ><UIcon name="i-lucide-cpu" class="size-3.5" />CPU</span
-                  >
-                </UTooltip>
-              </dt>
-              <dd class="mt-1 text-base font-semibold tabular-nums">
-                <span class="text-primary">{{ totals.cpu }}</span>
-                <span class="text-muted"> / {{ info.runtime.cpus }} cores</span>
-              </dd>
+              </UTooltip>
+            </dt>
+            <dd class="mt-1 text-base font-semibold tabular-nums">
+              <span class="text-primary">{{ totals.cpu }}</span>
+              <span class="text-muted"> / {{ info.runtime.cpus }} cores</span>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted">
+              <UTooltip
+                text="Memory across all running containers, including unmanaged ones. Excludes other host processes."
+              >
+                <span class="inline-flex items-center gap-1.5" tabindex="0"
+                  ><UIcon name="i-lucide-memory-stick" class="size-3.5" />Memory</span
+                >
+              </UTooltip>
+            </dt>
+            <dd class="mt-1 text-base font-semibold tabular-nums">
+              <span class="text-info">{{ totals.memory }}</span>
+              <span class="text-muted"> / {{ formatMemoryBytes(info.runtime.memory_bytes) }}</span>
+            </dd>
+          </div>
+        </dl>
+        <div v-if="consumers.length" class="space-y-3 border-t border-default pt-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="inline-flex items-center gap-1.5 text-sm font-medium">
+              <UIcon name="i-lucide-layers" class="size-4 text-primary" />Top stacks
+            </h3>
+            <div class="flex gap-1" role="group" aria-label="Rank stacks by resource">
+              <UButton
+                v-for="metric in ['cpu', 'memory'] as const"
+                :key="metric"
+                size="xs"
+                :color="ranking === metric ? 'primary' : 'neutral'"
+                :icon="'cpu' === metric ? 'i-lucide-cpu' : 'i-lucide-memory-stick'"
+                :variant="ranking === metric ? 'soft' : 'ghost'"
+                :aria-pressed="ranking === metric"
+                :aria-label="'cpu' === metric ? 'Sort by CPU' : 'Sort by memory'"
+                @click="ranking = metric"
+                >{{ 'cpu' === metric ? 'CPU' : 'Memory' }}</UButton
+              >
             </div>
-            <div>
-              <dt class="text-xs text-muted">
-                <UTooltip
-                  text="Memory across all running containers, including unmanaged ones. Excludes other host processes."
+          </div>
+          <ol class="space-y-2">
+            <li
+              v-for="stack in consumers"
+              :key="stack.name"
+              class="flex flex-wrap items-center justify-between gap-2 text-sm"
+            >
+              <NuxtLink
+                :to="`/stacks/${encodeURIComponent(node.id)}/${encodeURIComponent(stack.name)}`"
+                class="truncate hover:text-primary"
+                >{{ stack.name }}</NuxtLink
+              >
+              <div class="flex shrink-0 gap-1.5">
+                <UTooltip text="Share of node CPU capacity"
+                  ><UBadge
+                    icon="i-lucide-cpu"
+                    color="primary"
+                    variant="subtle"
+                    size="sm"
+                    class="w-18 justify-center font-mono tabular-nums"
+                    tabindex="0"
+                    >{{ stack.totals.cpu }}</UBadge
+                  ></UTooltip
                 >
-                  <span class="inline-flex items-center gap-1.5" tabindex="0"
-                    ><UIcon name="i-lucide-memory-stick" class="size-3.5" />Memory</span
-                  >
-                </UTooltip>
-              </dt>
-              <dd class="mt-1 text-base font-semibold tabular-nums">
-                <span class="text-info">{{ totals.memory }}</span>
-                <span class="text-muted">
-                  / {{ formatMemoryBytes(info.runtime.memory_bytes) }}</span
-                >
-              </dd>
-            </div>
-          </dl>
-          <div v-if="consumers.length" class="space-y-3 border-t border-default pt-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <h3 class="inline-flex items-center gap-1.5 text-sm font-medium">
-                <UIcon name="i-lucide-layers" class="size-4 text-primary" />Top stacks
-              </h3>
-              <div class="flex gap-1" role="group" aria-label="Rank stacks by resource">
-                <UButton
-                  v-for="metric in ['cpu', 'memory'] as const"
-                  :key="metric"
-                  size="xs"
-                  :color="ranking === metric ? 'primary' : 'neutral'"
-                  :icon="'cpu' === metric ? 'i-lucide-cpu' : 'i-lucide-memory-stick'"
-                  :variant="ranking === metric ? 'soft' : 'ghost'"
-                  :aria-pressed="ranking === metric"
-                  :aria-label="'cpu' === metric ? 'Sort by CPU' : 'Sort by memory'"
-                  @click="ranking = metric"
-                  >{{ 'cpu' === metric ? 'CPU' : 'Memory' }}</UButton
+                <UTooltip text="Memory"
+                  ><UBadge
+                    icon="i-lucide-memory-stick"
+                    color="info"
+                    variant="subtle"
+                    size="sm"
+                    class="w-24 justify-center font-mono tabular-nums"
+                    tabindex="0"
+                    >{{ stack.totals.memory }}</UBadge
+                  ></UTooltip
                 >
               </div>
-            </div>
-            <ol class="space-y-2">
-              <li
-                v-for="stack in consumers"
-                :key="stack.name"
-                class="flex flex-wrap items-center justify-between gap-2 text-sm"
-              >
-                <NuxtLink
-                  :to="`/stacks/${encodeURIComponent(node.id)}/${encodeURIComponent(stack.name)}`"
-                  class="truncate hover:text-primary"
-                  >{{ stack.name }}</NuxtLink
-                >
-                <div class="flex shrink-0 gap-1.5">
-                  <UTooltip text="Share of node CPU capacity"
-                    ><UBadge
-                      icon="i-lucide-cpu"
-                      color="primary"
-                      variant="subtle"
-                      size="sm"
-                      class="w-18 justify-center font-mono tabular-nums"
-                      tabindex="0"
-                      >{{ stack.totals.cpu }}</UBadge
-                    ></UTooltip
-                  >
-                  <UTooltip text="Memory"
-                    ><UBadge
-                      icon="i-lucide-memory-stick"
-                      color="info"
-                      variant="subtle"
-                      size="sm"
-                      class="w-24 justify-center font-mono tabular-nums"
-                      tabindex="0"
-                      >{{ stack.totals.memory }}</UBadge
-                    ></UTooltip
-                  >
-                </div>
-              </li>
-            </ol>
-          </div>
-        </template>
+            </li>
+          </ol>
+        </div>
       </template>
     </div>
   </article>

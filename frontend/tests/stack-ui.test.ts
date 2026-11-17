@@ -79,6 +79,8 @@ const flatten = (element: TestNode): Array<TestNode> => [
   ...element.children.flatMap(flatten),
 ]
 const alerts = (root: TestNode) => flatten(root).filter((element) => 'alert' === element.type)
+const statuses = (root: TestNode) =>
+  flatten(root).filter((element) => 'status' === element.props.role)
 
 test('node header', async () => {
   const item = vue.reactive<WorkspaceNode>({
@@ -91,15 +93,19 @@ test('node header', async () => {
     error: '',
     loading: false,
   })
+  const route = vue.reactive({
+    path: '/stacks/node/app',
+    params: { node: 'node', stack: 'app' },
+  })
   const component = await loadComponent('StackList', {
-    '#app': { useRoute: () => ({ params: {} }) },
+    '#app': { useRoute: () => route },
     '#components': { NuxtLink: stub('a') },
     '@nuxt/ui/components/Alert.vue': { default: stub('alert') },
     '@nuxt/ui/components/Badge.vue': { default: stub('badge') },
     '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
     '~/utils/stacks': await import('../app/utils/stacks'),
   })
-  const collapsed = vue.reactive<Record<string, boolean>>({ node: false })
+  const collapsed = vue.reactive<Record<string, boolean>>({ node: true })
   const selected = mock(() => {})
   const root = node('root')
   const app = renderer.createApp({
@@ -115,6 +121,16 @@ test('node header', async () => {
   })
   app.mount(root)
   apps.push(app)
+  expect(collapsed.node).toBe(true)
+  const header = flatten(root).find((element) => 'button' === element.type)
+  expect(header?.props['aria-expanded']).toBe(false)
+
+  route.path = '/stacks/node/worker'
+  route.params.stack = 'worker'
+  await vue.nextTick()
+  expect(collapsed.node).toBe(true)
+  expect(header?.props['aria-expanded']).toBe(false)
+
   const states: Array<WorkspaceNode['connection']> = [
     'connected',
     'loading',
@@ -128,9 +144,8 @@ test('node header', async () => {
     await vue.nextTick()
     expect(alerts(root)).toHaveLength('connected' === connection ? 1 : 0)
   }
-  const header = flatten(root).find((element) => 'button' === element.type)
-  expect(header?.props['aria-expanded']).toBe(true)
-  for (const value of [true, false]) {
+  expect(header?.props['aria-expanded']).toBe(false)
+  for (const value of [false, true]) {
     if ('function' !== typeof header?.props.onClick) {
       throw new Error('Missing node toggle')
     }
@@ -140,6 +155,10 @@ test('node header', async () => {
     expect(header.props['aria-expanded']).toBe(!value)
     expect(selected).not.toHaveBeenCalled()
   }
+  expect(collapsed.node).toBe(true)
+  collapsed.node = false
+  await vue.nextTick()
+  expect(header?.props['aria-expanded']).toBe(true)
 
   item.stacks.push({
     name: 'app',
@@ -184,6 +203,31 @@ test('node header', async () => {
   services[1]!.auto_update = false
   await vue.nextTick()
   expect(automationIcons()).toHaveLength(0)
+
+  collapsed.node = true
+  await vue.nextTick()
+  expect(header?.props['aria-expanded']).toBe(false)
+
+  app.unmount()
+  apps.splice(apps.indexOf(app), 1)
+  const remountRoot = node('root')
+  const remounted = renderer.createApp({
+    setup: () => () =>
+      vue.h(component, {
+        nodes: [item],
+        workspaceLoading: false,
+        search: '',
+        status: 'all',
+        collapsed,
+        onSelected: selected,
+      }),
+  })
+  remounted.mount(remountRoot)
+  apps.push(remounted)
+  expect(collapsed.node).toBe(true)
+  expect(
+    flatten(remountRoot).find((element) => 'button' === element.type)?.props['aria-expanded'],
+  ).toBe(false)
 })
 
 test('compact stacks', async () => {
@@ -239,7 +283,7 @@ test('compact stacks', async () => {
   app.mount(root)
   apps.push(app)
 
-  expect(collapsed.node).toBe(false)
+  expect(collapsed.node).toBe(true)
   const links = () => flatten(root).filter((element) => 'a' === element.type)
   expect(links().map((element) => element.props.to)).toEqual([
     '/stacks/node/app',
@@ -273,7 +317,24 @@ test('compact stacks', async () => {
   route.path = '/stacks/node/worker'
   route.params.stack = 'worker'
   await vue.nextTick()
-  expect(collapsed.node).toBe(false)
+  expect(collapsed.node).toBe(true)
+
+  app.unmount()
+  apps.splice(apps.indexOf(app), 1)
+  const remountRoot = node('root')
+  const remounted = renderer.createApp({
+    setup: () => () =>
+      vue.h(component, {
+        nodes: [item],
+        workspaceLoading: false,
+        ...filters,
+        collapsed,
+        onSelected: selected,
+      }),
+  })
+  remounted.mount(remountRoot)
+  apps.push(remounted)
+  expect(collapsed.node).toBe(true)
 })
 
 const stub = (tag: string) =>
@@ -818,16 +879,9 @@ const mountLogs = async (busy = false, draft = false) => {
     draft,
   })
   const component = await loadComponent('StackLogs', {
-    '@nuxt/ui/components/Alert.vue': {
-      default: vue.defineComponent({
-        setup:
-          (_, { slots }) =>
-          () =>
-            vue.h('alert', [slots.default?.(), slots.actions?.()]),
-      }),
-    },
     '@nuxt/ui/components/Button.vue': { default: stub('button') },
     '@nuxt/ui/components/Card.vue': { default: stub('section') },
+    '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
     '~/components/stacks/OutputTerminal.vue': {
       default: vue.defineComponent({
         setup: (_, { expose }) => {
@@ -1042,7 +1096,8 @@ describe('Stack logs', () => {
     view.fail()
     view.props.busy = true
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
+    expect(alerts(view.root)).toHaveLength(0)
     view.reconnect()
     expect(view.start).toHaveBeenCalledTimes(1)
     view.log('paused')
@@ -1058,11 +1113,11 @@ describe('Stack logs', () => {
 
     view.fail()
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
 
     view.props.showErrors = true
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
     view.reconnect()
     expect(view.start).toHaveBeenCalledTimes(2)
   })
@@ -1071,48 +1126,49 @@ describe('Stack logs', () => {
     const view = await mountLogs()
     view.fail()
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
+    expect(alerts(view.root)).toHaveLength(0)
 
     view.props.connected = false
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
 
     view.workspace.streamError = 'server-error-sentinel'
     view.props.connected = true
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
 
     view.workspace.streamError = ''
     view.workspace.error = 'workspace-error-sentinel'
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
 
     view.workspace.error = ''
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
 
     view.reconnect()
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
   })
 
   test('output retries', async () => {
     const view = await mountLogs()
     view.fail()
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
     view.reconnect()
     await vue.nextTick()
     expect(view.start).toHaveBeenCalledTimes(2)
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
 
     view.fail()
     await vue.nextTick()
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
     view.reconnect()
     await vue.nextTick()
     expect(view.start).toHaveBeenCalledTimes(3)
-    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(0)
   })
 
   test('offline failure output', async () => {
@@ -1272,7 +1328,7 @@ describe('Stack logs', () => {
     view.props.busy = false
     await vue.nextTick()
     expect(view.start).toHaveBeenCalledTimes(1)
-    expect(alerts(view.root)).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
     view.reconnect()
     view.log('future-container-output')
     expect(view.start).toHaveBeenCalledTimes(2)
@@ -2318,7 +2374,10 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   let leave = async (): Promise<boolean> => true
   let failAction = true
   const now = vue.ref(new Date('2026-11-03T03:55:52Z'))
-  const statsStart = mock((_subscription: { type: 'stats'; node: string; resource: string }) => {})
+  const statsError = vue.ref('')
+  const statsStart = mock((_subscription: { type: 'stats'; node: string; resource: string }) => {
+    statsError.value = ''
+  })
   const statsStop = mock(() => {})
   let statsMessage = (_message: WorkspaceStreamMessage) => {}
   let statsDisconnected = () => {}
@@ -2369,15 +2428,16 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     }),
   })
   const store = { useWorkspaceStore: () => workspace }
+  const route = vue.reactive({
+    params: { node: item.id, stack: 'app' },
+    query: { op: 'stale', tab: 'logs' },
+  })
   const child = await loadComponent(
     `../../pages/${'stack' === page ? 'stacks/[node]/[stack]' : 'nodes/[node]'}`,
     {
       pinia: { storeToRefs: vue.toRefs },
       '#app': {
-        useRoute: () => ({
-          params: { node: item.id, stack: 'app' },
-          query: { op: 'stale', tab: 'logs' },
-        }),
+        useRoute: () => route,
         useRouter: () => ({ replace }),
         navigateTo: navigate,
         useHead: () => {},
@@ -2434,11 +2494,11 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
       '~/composables/useWorkspaceStream': {
         useWorkspaceStream: (
           onMessage: typeof statsMessage,
-          onDisconnect: typeof statsDisconnected,
+          onDisconnect: typeof statsDisconnected = () => {},
         ) => {
           statsMessage = onMessage
           statsDisconnected = onDisconnect
-          return { start: statsStart, stop: statsStop, error: vue.ref('') }
+          return { start: statsStart, stop: statsStop, error: statsError }
         },
       },
       '~/store/auth': { useAuthStore: () => auth },
@@ -2494,12 +2554,14 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   })
   app.mount(root)
   apps.push(app)
-  expect(alerts(root)).toHaveLength(1)
+  expect(alerts(root)).toHaveLength(0)
+  expect(statuses(root)).toHaveLength(1)
 
   workspace.streamError = 'server-error-sentinel'
   await vue.nextTick()
   expect(alerts(root)).toHaveLength(1)
   expect(alerts(root)[0]?.props.title).toBe(workspace.streamError)
+  expect(statuses(root)).toHaveLength(0)
 
   workspace.error = 'workspace-error-sentinel'
   await vue.nextTick()
@@ -2509,8 +2571,8 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   workspace.error = ''
   workspace.streamError = ''
   await vue.nextTick()
-  expect(alerts(root)).toHaveLength(1)
-  expect(alerts(root)[0]?.props.title).toBe(item.error)
+  expect(alerts(root)).toHaveLength(0)
+  expect(statuses(root)).toHaveLength(1)
 
   item.connection = 'connected'
   item.error = ''
@@ -2521,8 +2583,8 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
   item.connection = 'paused'
   item.paused = true
   await vue.nextTick()
-  expect(alerts(root)).toHaveLength(1)
-  expect(alerts(root)[0]?.props.color).toBe('neutral')
+  expect(alerts(root)).toHaveLength(0)
+  expect(statuses(root)).toHaveLength(1)
   item.connection = 'connected'
   item.paused = false
   await new Promise<void>((resolve) => setImmediate(resolve))
@@ -2594,7 +2656,22 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(badgeText('i-lucide-cpu')).toContain(containerStats.cpu)
     statsDisconnected()
     await vue.nextTick()
-    expect(cpuCard()?.props.value).toBe('-')
+    expect(cpuCard()?.props.value).toBe('2.03%')
+    statsError.value = 'stats-error-sentinel'
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(1)
+    expect(alerts(root)).toHaveLength(0)
+    workspace.streamError = 'stream-error-sentinel'
+    await vue.nextTick()
+    expect(alerts(root)).toHaveLength(1)
+    expect(statuses(root)).toHaveLength(0)
+    expect(cpuCard()?.props.value).toBe('2.03%')
+    workspace.streamError = ''
+    statsError.value = ''
+    statsMessage({ event: 'stack.stats', data: JSON.stringify({ containers: [containerStats] }) })
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(0)
+    expect(cpuCard()?.props.value).toBe(containerStats.cpu)
 
     const service = item.stacks[0]!.services[0]!
     const automationBadge = () =>
@@ -2687,16 +2764,15 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     const runtime = item.stacks[0]!
     runtime.error = 'runtime-error-sentinel'
     await vue.nextTick()
-    expect(alerts(root)).toHaveLength(1)
-    expect(alerts(root)[0]?.props.title).toBe(runtime.error)
-    expect(alerts(root)[0]?.props.description).toBeUndefined()
+    expect(alerts(root)).toHaveLength(0)
+    expect(statuses(root)).toHaveLength(1)
     expect(flatten(root).find((element) => 'logs' === element.type)?.props.showErrors).toBe(false)
 
     item.connection = 'unavailable'
     item.error = 'node-error-sentinel'
     await vue.nextTick()
-    expect(alerts(root)).toHaveLength(1)
-    expect(alerts(root)[0]?.props.title).toBe(item.error)
+    expect(alerts(root)).toHaveLength(0)
+    expect(statuses(root)).toHaveLength(1)
 
     item.connection = 'connected'
     item.error = ''
@@ -2771,6 +2847,33 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     complete('delete', 0)
     expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('/')
+
+    route.params.stack = 'pending'
+    item.loading = true
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(1)
+    expect(alerts(root)).toHaveLength(0)
+    expect(flatten(root).find((element) => 'logs' === element.type)?.props.connected).toBe(false)
+    expect(
+      flatten(root).some(
+        (element) => 'button' === element.type && 'i-lucide-refresh-cw' === element.props.icon,
+      ),
+    ).toBe(false)
+    item.stacks = [{ ...runtime, name: 'pending', error: '' }]
+    item.loading = false
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(0)
+    expect(flatten(root).find((element) => 'logs' === element.type)?.props.connected).toBe(true)
+
+    route.params.node = 'late'
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(1)
+    expect(alerts(root)).toHaveLength(0)
+    workspace.nodes.push({ ...item, id: 'late' })
+    await vue.nextTick()
+    expect(statuses(root)).toHaveLength(0)
+    expect(alerts(root)).toHaveLength(0)
+    expect(notify).toHaveBeenCalledTimes(1)
   }
 })
 
@@ -2803,6 +2906,193 @@ const resourceInfo = (containers: Array<ContainerStats>): NodeInfo => ({
   },
   containers,
   checked_at: '2026-11-11T12:00:00Z',
+})
+
+describe('Node page recovery', () => {
+  const cleanups: Array<() => void> = []
+  afterEach(() => {
+    for (const cleanup of cleanups.splice(0)) {
+      cleanup()
+    }
+  })
+
+  const mountPage = async () => {
+    const item = vue.reactive<WorkspaceNode>({
+      id: 'node',
+      name: 'Node',
+      public_host: '',
+      stacks: [],
+      health: null,
+      connection: 'connected',
+      error: '',
+      loading: false,
+    })
+    const workspace = vue.reactive({
+      nodes: [item] as Array<WorkspaceNode>,
+      error: '',
+      streamError: '',
+    })
+    const route = vue.reactive({ params: { node: item.id } })
+    const calls: Array<{
+      url: string
+      signal: AbortSignal | null | undefined
+      reply: ReturnType<typeof Promise.withResolvers<Response>>
+    }> = []
+    const notify = mock(() => {})
+    const component = await loadComponent('../../pages/nodes/[node]', {
+      pinia: { storeToRefs: vue.toRefs },
+      '#app': { useRoute: () => route, useHead: () => {} },
+      '#imports': { definePageMeta: () => {} },
+      'vue-router': { onBeforeRouteLeave: () => {} },
+      '@nuxt/ui/components/Alert.vue': { default: stub('alert') },
+      '@nuxt/ui/components/Button.vue': { default: stub('button') },
+      '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+      '~/components/StatCard.vue': { default: stub('stat') },
+      '~/store/workspace': { useWorkspaceStore: () => workspace },
+      '~/utils/node': await import('../app/utils/node'),
+      '~/utils/stacks': await import('../app/utils/stacks'),
+      '~/utils': {
+        request: (url: string, options: RequestInit) => {
+          const reply = Promise.withResolvers<Response>()
+          calls.push({ url, signal: options.signal, reply })
+          return reply.promise
+        },
+        parse_api_response: (response: Response) => response.json(),
+        notification: notify,
+      },
+    })
+
+    const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout')
+    const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout')
+    const timers = new Map<number, () => void>()
+    let timerId = 0
+    Object.defineProperty(globalThis, 'setTimeout', {
+      value: (callback: () => void) => {
+        timers.set(++timerId, callback)
+        return timerId
+      },
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'clearTimeout', {
+      value: (id: number) => timers.delete(id),
+      configurable: true,
+    })
+
+    const root = node('root')
+    const app = renderer.createApp(component)
+    app.mount(root)
+    let mounted = true
+    const unmount = () => {
+      if (mounted) {
+        app.unmount()
+        mounted = false
+      }
+    }
+    cleanups.push(() => {
+      unmount()
+      if (originalSetTimeout) {
+        Object.defineProperty(globalThis, 'setTimeout', originalSetTimeout)
+      } else {
+        Reflect.deleteProperty(globalThis, 'setTimeout')
+      }
+      if (originalClearTimeout) {
+        Object.defineProperty(globalThis, 'clearTimeout', originalClearTimeout)
+      } else {
+        Reflect.deleteProperty(globalThis, 'clearTimeout')
+      }
+    })
+    return {
+      root,
+      item,
+      workspace,
+      calls,
+      notify,
+      timers,
+      unmount,
+      respond: async (index: number, payload: NodeInfo | GenericError, status = 200) => {
+        calls[index]!.reply.resolve(Response.json(payload, { status }))
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        await vue.nextTick()
+      },
+      fire: () => {
+        const entry = [...timers.entries()][0]
+        if (!entry) {
+          throw new Error('Missing retry timer')
+        }
+        timers.delete(entry[0])
+        entry[1]()
+      },
+    }
+  }
+
+  const renderedText = (root: TestNode) =>
+    flatten(root)
+      .map((element) => element.text)
+      .join(' ')
+  const refreshButton = (root: TestNode) =>
+    flatten(root).find(
+      (element) => 'button' === element.type && 'i-lucide-refresh-cw' === element.props.icon,
+    )
+
+  test('stats retry recovers', async () => {
+    const view = await mountPage()
+    expect(view.calls).toHaveLength(1)
+    expect(statuses(view.root)).toHaveLength(1)
+    expect(refreshButton(view.root)).toBeUndefined()
+    await view.respond(0, { error: { code: 503, message: 'failure-sentinel' } }, 503)
+    expect(view.timers.size).toBe(1)
+    expect(alerts(view.root)).toHaveLength(0)
+    expect(statuses(view.root)).toHaveLength(1)
+    expect(refreshButton(view.root)).toBeUndefined()
+    expect(view.notify).not.toHaveBeenCalled()
+
+    view.fire()
+    expect(view.calls).toHaveLength(2)
+    await view.respond(1, resourceInfo([resourceContainer('after', '2%', '1GiB')]))
+    expect(statuses(view.root)).toHaveLength(0)
+    expect(renderedText(view.root)).toContain('after')
+    expect(refreshButton(view.root)).toBeDefined()
+    expect(view.timers.size).toBe(0)
+  })
+
+  test('stats cleanup', async () => {
+    const view = await mountPage()
+    const signal = view.calls[0]?.signal
+    view.unmount()
+    expect(signal?.aborted).toBe(true)
+    expect(view.timers.size).toBe(0)
+  })
+
+  test('stats stop on reset', async () => {
+    const view = await mountPage()
+    await view.respond(0, { error: { code: 503, message: 'failure-sentinel' } }, 503)
+    expect(view.timers.size).toBe(1)
+    view.workspace.nodes = []
+    await vue.nextTick()
+    expect(view.timers.size).toBe(0)
+  })
+
+  test('reconnect retains stats', async () => {
+    const view = await mountPage()
+    await view.respond(0, resourceInfo([resourceContainer('before', '1%', '1GiB')]))
+    expect(renderedText(view.root)).toContain('before')
+
+    view.item.connection = 'reconnecting'
+    view.item.error = 'connection-sentinel'
+    await vue.nextTick()
+    expect(statuses(view.root)).toHaveLength(1)
+    expect(renderedText(view.root)).toContain('before')
+    expect(alerts(view.root)).toHaveLength(0)
+
+    view.item.connection = 'connected'
+    await vue.nextTick()
+    expect(view.calls).toHaveLength(2)
+    expect(renderedText(view.root)).toContain('before')
+    await view.respond(1, resourceInfo([resourceContainer('after', '2%', '1GiB')]))
+    expect(renderedText(view.root)).toContain('after')
+    expect(renderedText(view.root)).not.toContain('before')
+    expect(statuses(view.root)).toHaveLength(0)
+  })
 })
 
 describe('Node resources', () => {
@@ -2991,11 +3281,16 @@ describe('Node resources', () => {
     expect(values.some((value) => value.includes('private-'))).toBe(false)
   })
 
-  test('offline aborts and clears samples', async () => {
-    const view = await mountResources('paused')
-    expect(view.calls).toHaveLength(0)
-    view.item.connection = 'connected'
-    await vue.nextTick()
+  const inlineStatus = (root: TestNode) =>
+    flatten(root).filter((element) => 'status' === element.props.role)
+  const inlineStatusText = (root: TestNode) =>
+    inlineStatus(root)
+      .flatMap(flatten)
+      .map((element) => element.text)
+      .join(' ')
+
+  test('node change clears samples', async () => {
+    const view = await mountResources()
     expect(view.calls).toHaveLength(1)
     view.item.id = 'other'
     await vue.nextTick()
@@ -3005,13 +3300,42 @@ describe('Node resources', () => {
     expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(false)
     await view.respond(1, resourceInfo([]))
     expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(true)
-    view.tick()
+  })
+
+  test('offline keeps sample', async () => {
+    const view = await mountResources()
+    await view.respond(0, resourceInfo([resourceContainer('live', '1%', '1GiB')]))
     view.item.connection = 'unavailable'
+    view.item.error = 'connection-sentinel'
     await vue.nextTick()
-    expect(view.calls[2]?.signal?.aborted).toBe(true)
-    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(false)
     expect(view.intervals.size).toBe(0)
-    await view.respond(2, resourceInfo([]))
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(true)
+    expect(inlineStatus(view.root)).toHaveLength(1)
+    expect(inlineStatusText(view.root)).toContain('connection-sentinel')
+    expect(alerts(view.root)).toHaveLength(0)
+
+    view.item.connection = 'reconnecting'
+    view.item.error = ''
+    await vue.nextTick()
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(true)
+    expect(inlineStatus(view.root)).toHaveLength(1)
+
+    view.item.connection = 'connected'
+    await vue.nextTick()
+    expect(view.calls).toHaveLength(2)
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(true)
+    expect(view.intervals.size).toBe(1)
+    await view.respond(1, resourceInfo([resourceContainer('live', '2%', '1GiB')]))
+    expect(
+      flatten(view.root)
+        .map((element) => element.text)
+        .join(' '),
+    ).toContain('0.5%')
+    expect(inlineStatus(view.root)).toHaveLength(0)
+    view.item.connection = 'paused'
+    await vue.nextTick()
+    expect(flatten(view.root).some((element) => 'dd' === element.type)).toBe(false)
+    expect(inlineStatus(view.root)).toHaveLength(1)
     expect(view.notify).not.toHaveBeenCalled()
   })
 
@@ -3022,15 +3346,18 @@ describe('Node resources', () => {
     view.tick()
     await view.respond(1, { error: { code: 503, message: 'failure-sentinel' } }, 503)
     expect(sampled()).toContain('0.25%')
-    expect(view.notify).toHaveBeenCalledTimes(1)
-    const retry = flatten(view.root).find((element) => 'i-lucide-refresh-cw' === element.props.icon)
-    const pending = trigger(retry, 'onClick')
+    expect(view.notify).not.toHaveBeenCalled()
+    expect(alerts(view.root)).toHaveLength(0)
+    expect(inlineStatusText(view.root)).toContain('failure-sentinel')
+    expect(
+      flatten(view.root).some(
+        (element) => 'button' === element.type && 'i-lucide-refresh-cw' === element.props.icon,
+      ),
+    ).toBe(false)
+    view.tick()
     await view.respond(2, resourceInfo([resourceContainer('live', '2%', '1GiB')]))
-    await pending
     expect(sampled()).toContain('0.5%')
-    expect(flatten(view.root).some((element) => 'i-lucide-refresh-cw' === element.props.icon)).toBe(
-      false,
-    )
+    expect(inlineStatus(view.root)).toHaveLength(0)
   })
 
   test('visible refresh and cleanup', async () => {

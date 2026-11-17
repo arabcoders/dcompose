@@ -154,6 +154,7 @@ onMounted(load)
   <div class="app-shell-surface min-h-screen">
     <UDashboardGroup storage="local" storage-key="stack-workspace" class="min-h-screen">
       <UDashboardSidebar
+        id="stacks"
         v-model:open="sidebarOpen"
         collapsible
         resizable

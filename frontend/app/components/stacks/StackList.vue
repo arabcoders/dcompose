@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { createReusableTemplate } from '@vueuse/core'
 import { useRoute } from '#app'
 import { NuxtLink } from '#components'
@@ -52,16 +52,6 @@ const statusClass = (status: StackStatus) => {
 }
 const selected = (node: string, stack: string) =>
   route.params.node === node && route.params.stack === stack
-
-watch(
-  () => route.path,
-  () => {
-    if ('string' === typeof route.params.node) {
-      collapsed.value[route.params.node] = false
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>

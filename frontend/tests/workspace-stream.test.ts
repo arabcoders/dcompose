@@ -67,6 +67,11 @@ const callbacks = () => ({
   onDisconnect: mock(() => {}),
   onRejected: mock(() => {}),
 })
+const flush = async () => {
+  for (let index = 0; index < 10; index++) {
+    await Promise.resolve()
+  }
+}
 
 beforeEach(() => {
   jest.useFakeTimers()
@@ -323,6 +328,121 @@ describe('Shared connection', () => {
     expect(stats.onMessage).toHaveBeenCalledTimes(1)
   })
 
+  test('stats retry', () => {
+    const realtime = useRealtimeStore()
+    const stats = callbacks()
+    const logs = callbacks()
+    realtime.subscribe({ type: 'stats', node: 'n', resource: 'app' }, stats)
+    realtime.subscribe({ type: 'logs', node: 'n', resource: 'app' }, logs)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    const attach = { type: 'stats.attach', stream: 'reader-1', node: 'n', resource: 'app' }
+    const statsAttachments = () =>
+      socket.sent.filter((message) => 'stats.attach' === message.type).length
+    expect(socket.sent).toContainEqual(attach)
+
+    socket.message({ type: 'error', stream: 'reader-1', status: 503, error: 'unavailable' })
+    expect(stats.onDisconnect).toHaveBeenCalledTimes(1)
+    expect(stats.onRejected).not.toHaveBeenCalled()
+    expect(socket.closed).toBe(false)
+    jest.advanceTimersByTime(1000)
+    expect(statsAttachments()).toBe(2)
+
+    socket.message({ type: 'error', stream: 'reader-1', status: 429, error: 'busy' })
+    expect(stats.onDisconnect).toHaveBeenCalledTimes(2)
+    jest.advanceTimersByTime(1999)
+    expect(statsAttachments()).toBe(2)
+    jest.advanceTimersByTime(1)
+    expect(statsAttachments()).toBe(3)
+
+    socket.message({
+      type: 'event',
+      stream: 'reader-1',
+      event: 'stack.stats',
+      payload: { containers: [] },
+    })
+    expect(stats.onMessage).toHaveBeenCalledTimes(1)
+    expect(logs.onMessage).not.toHaveBeenCalled()
+    expect(statsAttachments()).toBe(3)
+  })
+
+  test('logs transient error', () => {
+    const realtime = useRealtimeStore()
+    const logs = callbacks()
+    realtime.subscribe({ type: 'logs', node: 'n', resource: 'app' }, logs)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    socket.message({ type: 'error', stream: 'reader-1', status: 503, error: 'unavailable' })
+    expect(logs.onDisconnect).toHaveBeenCalledTimes(1)
+    expect(logs.onRejected).not.toHaveBeenCalled()
+    expect(socket.closed).toBe(false)
+    jest.advanceTimersByTime(60000)
+    expect(socket.sent.filter((message) => 'logs.attach' === message.type)).toHaveLength(1)
+  })
+
+  test('global transient error', () => {
+    const realtime = useRealtimeStore()
+    const runtime = callbacks()
+    realtime.subscribe({ type: 'runtime' }, runtime)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    socket.message({ type: 'error', status: 503, error: 'unavailable' })
+    expect(runtime.onDisconnect).toHaveBeenCalledTimes(1)
+    expect(runtime.onRejected).not.toHaveBeenCalled()
+    expect(socket.closed).toBe(true)
+    expect(realtime.error).not.toBe('')
+    jest.advanceTimersByTime(1000)
+    const replacement = TestSocket.instances[1]!
+    replacement.open()
+    expect(realtime.error).toBe('')
+    replacement.message({ type: 'event', event: 'nodes.changed', payload: {} })
+    expect(runtime.onMessage).toHaveBeenCalledTimes(1)
+  })
+
+  test('healthy snapshot', async () => {
+    let healthy = true
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        if ('/api/nodes' !== path) {
+          throw new Error(`Unexpected request: ${path}`)
+        }
+        return healthy
+          ? Response.json({ nodes: [{ id: 'n', name: 'Office', public_host: '' }] })
+          : Response.json({ error: { code: 503, message: 'unavailable' } }, { status: 503 })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    const snapshot = {
+      type: 'event',
+      event: 'node.snapshot',
+      payload: {
+        node: 'n',
+        health: { status: 'ok', version: '1', api_version: 1 },
+        stacks: [],
+      },
+    }
+
+    healthy = false
+    await workspace.load()
+    expect(workspace.error).not.toBe('')
+    socket.message(snapshot)
+    expect(workspace.error).toBe('')
+
+    socket.onerror?.()
+    expect(workspace.streamError).not.toBe('')
+    jest.advanceTimersByTime(1000)
+    const replacement = TestSocket.instances[1]!
+    replacement.open()
+    replacement.message(snapshot)
+    expect(workspace.streamError).toBe('')
+  })
+
   test('navigation', async () => {
     const previousMessage = mock(() => {})
     const nextMessage = mock(() => {})
@@ -496,6 +616,172 @@ describe('Shared connection', () => {
     expect(next.closed).toBe(true)
     jest.advanceTimersByTime(60000)
     expect(TestSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('Workspace bootstrap', () => {
+  test('transient retry', async () => {
+    let attempts = 0
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        if ('/api/nodes' !== path) {
+          throw new Error(`Unexpected request: ${path}`)
+        }
+        attempts++
+        if (1 === attempts) {
+          throw new TypeError('fetch failed')
+        }
+        if (2 === attempts) {
+          return Response.json({ error: { code: 503, message: 'unavailable' } }, { status: 503 })
+        }
+        return Response.json({ nodes: [{ id: 'n', name: 'Office', public_host: '' }] })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    expect(workspace.error).not.toBe('')
+    expect(workspace.ready).toBe(true)
+    expect(workspace.nodes).toEqual([])
+    expect(addToast).not.toHaveBeenCalled()
+
+    jest.advanceTimersByTime(1000)
+    await flush()
+    expect(requests).toHaveLength(2)
+    expect(addToast).not.toHaveBeenCalled()
+    expect(workspace.error).not.toBe('')
+
+    jest.advanceTimersByTime(2000)
+    await flush()
+    expect(requests).toHaveLength(3)
+    expect(workspace.nodes.map((node) => node.id)).toEqual(['n'])
+    expect(workspace.error).toBe('')
+    expect(addToast).not.toHaveBeenCalled()
+    expect(TestSocket.instances).toHaveLength(1)
+
+    jest.advanceTimersByTime(60000)
+    await flush()
+    expect(requests).toHaveLength(3)
+  })
+
+  test('stale data', async () => {
+    let healthy = true
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        if ('/api/nodes' !== path) {
+          throw new Error(`Unexpected request: ${path}`)
+        }
+        return healthy
+          ? Response.json({ nodes: [{ id: 'n', name: 'Office', public_host: '' }] })
+          : Response.json({ error: { code: 502, message: 'unavailable' } }, { status: 502 })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    workspace.nodes[0]!.stacks = [{ name: 'app', status: 'running', services: [], loading: false }]
+    workspace.nodes[0]!.connection = 'connected'
+    healthy = false
+    await workspace.load()
+    expect(workspace.nodes[0]!.stacks).toHaveLength(1)
+    expect(workspace.nodes[0]!.connection).toBe('connected')
+    expect(workspace.error).not.toBe('')
+
+    healthy = true
+    jest.advanceTimersByTime(1000)
+    await flush()
+    expect(workspace.nodes[0]!.stacks).toHaveLength(1)
+    expect(workspace.error).toBe('')
+  })
+
+  test('permanent failure', async () => {
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        return '/api/nodes' === path
+          ? Response.json({ error: { code: 403, message: 'forbidden' } }, { status: 403 })
+          : Response.json({ nodes: [] })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    expect(workspace.error).not.toBe('')
+    expect(useAuthStore().authenticated).toBe(true)
+    jest.advanceTimersByTime(60000)
+    await flush()
+    expect(requests).toHaveLength(1)
+    expect(addToast).not.toHaveBeenCalled()
+  })
+
+  test('unauthorized failure', async () => {
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        return '/api/nodes' === path
+          ? Response.json({ error: { code: 401, message: 'unauthorized' } }, { status: 401 })
+          : Response.json({ nodes: [] })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    await nextTick()
+    expect(useAuthStore().authenticated).toBe(false)
+    jest.advanceTimersByTime(60000)
+    await flush()
+    expect(requests).toHaveLength(1)
+  })
+
+  test('logout cleanup', async () => {
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        return '/api/nodes' === path
+          ? Response.json({ error: { code: 503, message: 'unavailable' } }, { status: 503 })
+          : Response.json({ nodes: [] })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    expect(requests).toHaveLength(1)
+    expect(addToast).not.toHaveBeenCalled()
+
+    useAuthStore().invalidate()
+    await nextTick()
+    jest.advanceTimersByTime(60000)
+    await flush()
+    expect(requests).toHaveLength(1)
+    expect(workspace.nodes).toEqual([])
+  })
+
+  test('dispose cleanup', async () => {
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        requests.push(path)
+        return '/api/nodes' === path
+          ? Response.json({ error: { code: 503, message: 'unavailable' } }, { status: 503 })
+          : Response.json({ nodes: [] })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    expect(requests).toHaveLength(1)
+
+    workspace.$dispose()
+    jest.advanceTimersByTime(60000)
+    await flush()
+    expect(requests).toHaveLength(1)
   })
 })
 

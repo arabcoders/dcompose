@@ -270,6 +270,13 @@ export interface StackStats {
 
 export type StackStatsTotals = Omit<ContainerStats, 'id' | 'name' | 'memory_percent'>
 
+export interface NodeResourceStatus {
+  text: string
+  icon: string
+  tone: 'warning' | 'error' | 'muted'
+  spin?: boolean
+}
+
 export interface NodeInfo {
   runtime: RuntimeInfo
   containers: Array<ContainerStats>
