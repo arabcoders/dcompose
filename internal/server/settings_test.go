@@ -628,6 +628,7 @@ func TestConfigRace(t *testing.T) {
 	defer up.Close()
 	s := persistedServer(t, up)
 	var workers sync.WaitGroup
+	defer workers.Wait()
 	for i := 0; 4 > i; i++ {
 		workers.Go(func() {
 			for j := 0; 12 > j; j++ {
@@ -650,5 +651,4 @@ func TestConfigRace(t *testing.T) {
 			t.Fatal("concurrent write failed")
 		}
 	}
-	workers.Wait()
 }

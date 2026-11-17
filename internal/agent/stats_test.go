@@ -105,15 +105,16 @@ func statsCommands(t *testing.T, a *agent) (chan<- protocol.ChannelMessage, <-ch
 		defer close(done)
 		a.channelCommands(ctx, "stats-test", commands, outgoing, cancel)
 	}()
-	t.Cleanup(func() {
+	stop := func() {
 		cancel()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			t.Error("stats channel did not stop")
 		}
-	})
-	return commands, outgoing, cancel
+	}
+	t.Cleanup(stop)
+	return commands, outgoing, stop
 }
 
 func TestChannelStatsCancel(t *testing.T) {

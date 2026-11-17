@@ -244,25 +244,25 @@ func TestRegistrySharedMetadata(t *testing.T) {
 		return s.registryClient.InspectConfig(registryNodeContext(context.Background(), node), key.ImageKey, config, age)
 	}
 	amd := lookup("home", time.Hour)
-	if "sha256:"+strings.Repeat("a", 64) != amd.Digest || !now.Equal(amd.CheckedAt) || 3 != len(one.requests) {
-		t.Fatalf("first lookup: %+v requests=%v", amd, one.requests)
+	if "sha256:"+strings.Repeat("a", 64) != amd.Digest || !now.Equal(amd.CheckedAt) || 3 != imageRequests(one) {
+		t.Fatalf("first lookup: %+v requests=%d", amd, imageRequests(one))
 	}
-	if result := lookup("away", time.Hour); amd.Digest != result.Digest || 0 != len(two.requests) {
-		t.Fatalf("same image refetched: %+v requests=%v", result, two.requests)
+	if result := lookup("away", time.Hour); amd.Digest != result.Digest || 0 != imageRequests(two) {
+		t.Fatalf("same image refetched: %+v requests=%d", result, imageRequests(two))
 	}
 	key.Architecture = "arm64"
 	arm := lookup("away", time.Hour)
-	if "sha256:"+strings.Repeat("b", 64) != arm.Digest || !amd.CheckedAt.Equal(arm.CheckedAt) || 1 != len(two.requests) {
-		t.Fatalf("mixed platform root not shared: %+v requests=%v", arm, two.requests)
+	if "sha256:"+strings.Repeat("b", 64) != arm.Digest || !amd.CheckedAt.Equal(arm.CheckedAt) || 1 != imageRequests(two) {
+		t.Fatalf("mixed platform root not shared: %+v requests=%d", arm, imageRequests(two))
 	}
 	clock.Store(now.Add(30 * time.Minute).UnixNano())
 	custom := lookup("away", 30*time.Minute)
-	if !custom.CheckedAt.Equal(now.Add(30*time.Minute)) || 2 != len(two.requests) {
+	if !custom.CheckedAt.Equal(now.Add(30*time.Minute)) || 2 != imageRequests(two) {
 		t.Fatalf("custom interval did not refresh HEAD: %+v", custom)
 	}
 	clock.Store(now.Add(31 * time.Minute).UnixNano())
 	manual := lookup("home", 0)
-	if !manual.CheckedAt.Equal(now.Add(31*time.Minute)) || 4 != len(one.requests) {
+	if !manual.CheckedAt.Equal(now.Add(31*time.Minute)) || 4 != imageRequests(one) {
 		t.Fatalf("manual check did not refresh HEAD: %+v", manual)
 	}
 }

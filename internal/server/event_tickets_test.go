@@ -397,10 +397,10 @@ func TestTicketDeadline(t *testing.T) {
 	s.config.Global.WebsocketOrigins = []string{eventTicketOrigin}
 	app := httptest.NewServer(s)
 	t.Cleanup(app.Close)
+	started := time.Now()
 	conn := dialEventTicket(t, app, "/api/events", http.Header{"Origin": {eventTicketOrigin}})
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
-	started := time.Now()
 	if _, _, err := conn.Read(ctx); nil == err || nil != ctx.Err() {
 		t.Fatal("missing first-auth deadline close")
 	}

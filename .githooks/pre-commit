@@ -8,13 +8,16 @@ usage() {
   echo "  --all      check all tracked files" >&2
 }
 
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT" || exit 1
+
 case "${1:-}" in
   "")
-    selected_files=$(git diff --cached --name-only --diff-filter=ACMR)
+    selected_files=$(git diff --cached --name-only --diff-filter=ACDMR)
     mode_label="staged"
     ;;
   --unstaged)
-    selected_files=$(git diff --name-only --diff-filter=ACMR)
+    selected_files=$(git diff --name-only --diff-filter=ACDMR)
     selected_files="$selected_files
 $(git ls-files --others --exclude-standard)"
     mode_label="unstaged"
@@ -28,9 +31,6 @@ $(git ls-files --others --exclude-standard)"
     exit 1
     ;;
 esac
-
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd "$REPO_ROOT" || exit 1
 
 TMP_ROOT=${TMPDIR:-/tmp}/tests-dcompose
 mkdir -p "$TMP_ROOT"
@@ -96,14 +96,14 @@ fi
 
 if [ "$go_changed" -eq 1 ]; then
   run_step "Go: Formatter" mise exec -- golangci-lint fmt --diff ./cmd/... ./internal/...
-  run_step "Go: Tests" mise exec -- go test -race ./cmd/... ./internal/...
+  run_step "Go: Tests" mise exec -- go test -race -shuffle=on ./cmd/... ./internal/...
   run_step "Go: Linter" mise exec -- golangci-lint run ./cmd/... ./internal/...
 fi
 
 if [ "$frontend_changed" -eq 1 ]; then
   run_step "Frontend: Formatter" mise exec -- bun --cwd="$PWD/frontend/" run format:check
   run_step "Frontend: Linter" mise exec -- bun --cwd="$PWD/frontend/" run lint
-  run_step "Frontend: Tests" mise exec -- bun --cwd="$PWD/frontend/" test
+  run_step "Frontend: Tests" mise exec -- bun --cwd="$PWD/frontend/" test --randomize
   run_step "Frontend: TSC" mise exec -- bun --cwd="$PWD/frontend/" run lint:tsc
 fi
 

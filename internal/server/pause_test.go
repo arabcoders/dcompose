@@ -169,16 +169,22 @@ func TestPauseChannel(t *testing.T) {
 		t.Fatal("pause did not cancel active node work")
 	}
 	s.hubMu.Lock()
-	if nil != s.channels["home"] || nil != channel.conn || 0 != len(channel.streams) || 0 != len(channel.shells) ||
-		nil != s.runtime["home"].snapshot {
-		t.Fatal("pause retained channel or cached runtime")
-	}
+	retainedRuntime := nil != s.channels["home"] || nil != channel.conn || 0 != len(channel.streams) || 0 != len(channel.shells) ||
+		nil != s.runtime["home"].snapshot
+	retainedImages := false
 	for key := range s.images.stacks {
 		if "home" == key.node {
-			t.Fatal("pause retained node image work")
+			retainedImages = true
+			break
 		}
 	}
 	s.hubMu.Unlock()
+	if retainedRuntime {
+		t.Fatal("pause retained channel or cached runtime")
+	}
+	if retainedImages {
+		t.Fatal("pause retained node image work")
+	}
 	select {
 	case message := <-subscription.subscriber:
 		if "error" != message.Type || 409 != message.Status {

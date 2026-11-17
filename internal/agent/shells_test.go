@@ -57,11 +57,11 @@ func createdShell(t *testing.T, a *agent, body string) *shellSession {
 		t.Fatalf("creation response: %s", w.Body)
 	}
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	s := a.shells[result.ID]
 	if nil != a.ops[result.ID] || a.busy["demo"] {
 		t.Fatal("shell registered as stack operation")
 	}
-	a.mu.Unlock()
 	return s
 }
 

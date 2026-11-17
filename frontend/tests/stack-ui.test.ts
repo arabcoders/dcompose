@@ -59,6 +59,10 @@ const renderer = vue.createRenderer<TestNode, TestNode>({
     return siblings[siblings.indexOf(element) + 1] ?? null
   },
   insert: (element, parent, anchor) => {
+    if (element.parent) {
+      const previous = element.parent.children
+      previous.splice(previous.indexOf(element), 1)
+    }
     element.parent = parent
     const index = anchor ? parent.children.indexOf(anchor) : -1
     if (-1 === index) {
@@ -372,17 +376,22 @@ const loadComponent = async (file: string, dependencies: Record<string, unknown>
 }
 
 const apps: Array<ReturnType<typeof renderer.createApp>> = []
-const originalWindow = globalThis.window
-const originalInput = globalThis.HTMLInputElement
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+const originalInput = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')
 afterEach(() => {
   for (const app of apps.splice(0)) {
     app.unmount()
   }
-  Object.defineProperty(globalThis, 'window', { value: originalWindow, configurable: true })
-  Object.defineProperty(globalThis, 'HTMLInputElement', {
-    value: originalInput,
-    configurable: true,
-  })
+  for (const [key, descriptor] of [
+    ['window', originalWindow],
+    ['HTMLInputElement', originalInput],
+  ] as const) {
+    if (descriptor) {
+      Object.defineProperty(globalThis, key, descriptor)
+    } else {
+      Reflect.deleteProperty(globalThis, key)
+    }
+  }
 })
 
 test('overview attention', async () => {
@@ -3249,18 +3258,13 @@ describe('Node resources', () => {
     const links = () =>
       flatten(view.root)
         .filter((element) => 'a' === element.type)
-        // The test renderer inserts moved nodes without removing their old position.
-        .filter((element, index, elements) => index === elements.lastIndexOf(element))
         .slice(1)
         .map((element) => element.props.to)
     expect(links()).toEqual(['/stacks/node/small', '/stacks/node/large', '/stacks/node/decimal'])
-    const metrics = (icon: string) => [
-      ...new Set(
-        flatten(view.root).filter(
-          (element) => 'badge' === element.type && icon === element.props.icon,
-        ),
-      ),
-    ]
+    const metrics = (icon: string) =>
+      flatten(view.root).filter(
+        (element) => 'badge' === element.type && icon === element.props.icon,
+      )
     expect(metrics('i-lucide-cpu')).toHaveLength(3)
     expect(metrics('i-lucide-memory-stick')).toHaveLength(3)
     const toggles = flatten(view.root).filter(

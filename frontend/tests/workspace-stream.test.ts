@@ -4,14 +4,7 @@ import { effectScope, nextTick } from 'vue'
 import type { Pinia } from 'pinia'
 import type { EffectScope } from 'vue'
 import type { StackEvent } from '../app/types'
-
-const navigate = mock((_path: string, _options?: { replace?: boolean }) => {})
-mock.module('#app', () => ({
-  useRuntimeConfig: () => ({ public: { domain: '' } }),
-  navigateTo: navigate,
-}))
-const addToast = mock((_message: { title: string; description: string }) => {})
-mock.module('#imports', () => ({ useToast: () => ({ add: addToast }) }))
+import { addToast, navigate } from './mocks/nuxt'
 
 const { useWorkspaceStream } = await import('../app/composables/useWorkspaceStream')
 const { useRealtimeStore } = await import('../app/store/realtime')
@@ -53,9 +46,9 @@ class TestSocket {
   }
 }
 
-const originalSocket = globalThis.WebSocket
+const originalSocket = Object.getOwnPropertyDescriptor(globalThis, 'WebSocket')
 const originalFetch = globalThis.fetch
-const originalLocation = globalThis.location
+const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location')
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 const readStorage = mock((_key: string): string | null => null)
 const writeStorage = mock((_key: string, _value: string) => {})
@@ -110,13 +103,18 @@ beforeEach(() => {
 afterEach(() => {
   scope.stop()
   disposePinia(pinia)
-  Object.defineProperty(globalThis, 'WebSocket', { value: originalSocket, configurable: true })
-  Object.defineProperty(globalThis, 'location', { value: originalLocation, configurable: true })
+  setActivePinia(undefined)
   globalThis.fetch = originalFetch
-  if (originalStorage) {
-    Object.defineProperty(globalThis, 'localStorage', originalStorage)
-  } else {
-    Reflect.deleteProperty(globalThis, 'localStorage')
+  for (const [key, descriptor] of [
+    ['WebSocket', originalSocket],
+    ['location', originalLocation],
+    ['localStorage', originalStorage],
+  ] as const) {
+    if (descriptor) {
+      Object.defineProperty(globalThis, key, descriptor)
+    } else {
+      Reflect.deleteProperty(globalThis, key)
+    }
   }
   jest.useRealTimers()
 })

@@ -1,20 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import type { Pinia } from 'pinia'
 import type { RouteLocationNormalized } from 'vue-router'
+import { navigate } from './mocks/nuxt'
 
 const responses: Array<Response | Error | Promise<Response>> = []
 const calls: Array<{ path: string; options: RequestInit }> = []
 const originalFetch = globalThis.fetch
-const navigate = mock((path: string, _options?: { replace?: boolean }) => path)
-
-mock.module('#app', () => ({
-  useRuntimeConfig: () => ({ public: { domain: '' } }),
-  defineNuxtRouteMiddleware: (middleware: (to: { name: string }) => Promise<unknown>) => middleware,
-  navigateTo: navigate,
-}))
-mock.module('#imports', () => ({
-  useToast: () => ({ add: () => {} }),
-}))
+let pinia: Pinia
 
 const { useAuthStore } = await import('../app/store/auth')
 const { default: authGuard } = await import('../app/middleware/auth.global')
@@ -39,7 +32,8 @@ const route = (name: string): RouteLocationNormalized => ({
 })
 
 beforeEach(() => {
-  setActivePinia(createPinia())
+  pinia = createPinia()
+  setActivePinia(pinia)
   responses.length = 0
   calls.length = 0
   navigate.mockClear()
@@ -55,6 +49,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  disposePinia(pinia)
+  setActivePinia(undefined)
   globalThis.fetch = originalFetch
 })
 

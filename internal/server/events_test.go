@@ -339,28 +339,31 @@ func TestBrowserNodeFailure(t *testing.T) {
 		t.Fatal("node failure affected another subscription", got)
 	}
 	sendRuntime(t, healthy, "stack.runtime", readFixture(t, "stack-runtime.json"))
+	nextConnection(t, first)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	for {
+	healthyRuntime, reconnected := false, false
+	for !healthyRuntime || !reconnected {
 		var message protocol.ChannelMessage
 		if err := wsjson.Read(ctx, browser, &message); nil != err {
 			t.Fatal("node failure closed workspace", err)
 		}
-		if "stack.runtime" == message.Event {
-			if "" != message.Stream || !strings.Contains(string(message.Payload), `"node":"other"`) {
+		var payload struct {
+			Node string `json:"node"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(message.Payload, &payload); nil != err {
+			t.Fatal(err)
+		}
+		// Disconnects also publish the failed node's cached stack runtime.
+		if "stack.runtime" == message.Event && "other" == payload.Node && "demo" == payload.Name {
+			if "" != message.Stream {
 				t.Fatal(message)
 			}
-			break
+			healthyRuntime = true
 		}
-	}
-	nextConnection(t, first)
-	for {
-		var message protocol.ChannelMessage
-		if err := wsjson.Read(ctx, browser, &message); nil != err {
-			t.Fatal("reconnected node snapshot missing", err)
-		}
-		if "node.snapshot" == message.Event && strings.Contains(string(message.Payload), `"node":"home"`) {
-			break
+		if "node.snapshot" == message.Event && "home" == payload.Node {
+			reconnected = true
 		}
 	}
 }

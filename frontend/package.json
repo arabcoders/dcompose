@@ -12,7 +12,7 @@
     "lint:tsc": "vue-tsc --noEmit -p tsconfig.json",
     "format": "oxfmt --write app/",
     "format:check": "oxfmt --check app/",
-    "test": "bun test tests/"
+    "test": "bun test --randomize tests/"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.0",
@@ -40,5 +40,9 @@
     "vue-eslint-parser": "^10.4.1",
     "vue-tsc": "^3.3.13"
   },
-  "trustedDependencies": ["@parcel/watcher", "esbuild", "unrs-resolver"]
+  "trustedDependencies": [
+    "@parcel/watcher",
+    "esbuild",
+    "unrs-resolver"
+  ]
 }
