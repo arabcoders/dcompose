@@ -5,12 +5,11 @@ import { useHead, useRoute } from '#app'
 import { definePageMeta } from '#imports'
 import { onBeforeRouteLeave } from 'vue-router'
 import UAlert from '@nuxt/ui/components/Alert.vue'
-import UBadge from '@nuxt/ui/components/Badge.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import StatCard from '~/components/StatCard.vue'
 import { useWorkspaceStore } from '~/store/workspace'
-import type { NodeInfo } from '~/types'
+import type { NodeInfo, NodeResourceStatus } from '~/types'
 import { parse_api_response, request } from '~/utils'
 import { formatAgentUptime, formatMemoryBytes } from '~/utils/node'
 import { workspaceErrorMessage } from '~/utils/stacks'
@@ -27,6 +26,8 @@ const info = ref<NodeInfo | null>(null)
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retryDelay = 0
 
 useHead(() => ({ title: node.value?.name ?? nodeId.value }))
 
@@ -43,6 +44,43 @@ const connectionLabel = computed(() => {
     default:
       return 'Unavailable'
   }
+})
+
+const status = computed<NodeResourceStatus | null>(() => {
+  const current = node.value
+  if (!current) {
+    return null
+  }
+  if ('paused' === current.connection) {
+    return {
+      text: 'Node is paused. Resume it from Nodes to reconnect.',
+      icon: 'i-lucide-pause',
+      tone: 'muted',
+    }
+  }
+  if (!connected.value) {
+    return {
+      text: current.error || connectionLabel.value,
+      icon: 'i-lucide-network',
+      tone: 'warning',
+    }
+  }
+  if (error.value) {
+    return {
+      text: info.value ? `${error.value} Showing previous sample.` : error.value,
+      icon: 'i-lucide-circle-alert',
+      tone: 'error',
+    }
+  }
+  if (loading.value) {
+    return {
+      text: info.value ? 'Refreshing stats...' : 'Loading stats...',
+      icon: 'i-lucide-loader-circle',
+      tone: 'muted',
+      spin: true,
+    }
+  }
+  return null
 })
 const details = computed(() => [
   {
@@ -80,24 +118,52 @@ const details = computed(() => [
     : []),
 ])
 
+const clearRetry = () => {
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+}
+
+const stopStats = () => {
+  clearRetry()
+  controller?.abort()
+  controller = null
+  loading.value = false
+  retryDelay = 0
+}
+
+const scheduleRetry = () => {
+  if (retryTimer || !connected.value) {
+    return
+  }
+  retryDelay = retryDelay ? Math.min(retryDelay * 2, 15000) : 1000
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined
+    void refreshStats()
+  }, retryDelay)
+}
+
 const refreshStats = async () => {
   if (!connected.value || loading.value) {
     return
   }
+  clearRetry()
   const current = new AbortController()
   controller = current
   loading.value = true
-  error.value = ''
+  let retryable = false
   try {
     const response = await request(`/api/nodes/${encodeURIComponent(nodeId.value)}/info`, {
       signal: current.signal,
     })
+    retryable = 429 === response.status || 500 <= response.status
     const json = await parse_api_response<NodeInfo>(response)
     if (!response.ok || 'error' in json) {
       throw new Error(workspaceErrorMessage(response.status, 'Could not load stats.'))
     }
     if (!current.signal.aborted) {
       info.value = json
+      error.value = ''
+      retryDelay = 0
     }
   } catch (cause) {
     if (!current.signal.aborted) {
@@ -105,9 +171,16 @@ const refreshStats = async () => {
         cause instanceof Error && !(cause instanceof TypeError)
           ? cause.message
           : 'Could not load stats.'
+      if (!(cause instanceof Error) || cause instanceof TypeError) {
+        retryable = true
+      }
+      if (retryable) {
+        scheduleRetry()
+      }
     }
   } finally {
     if (controller === current) {
+      controller = null
       loading.value = false
     }
   }
@@ -116,22 +189,22 @@ const refreshStats = async () => {
 watch(
   [nodeId, connected],
   ([id, isConnected], previous) => {
-    if (id !== previous?.[0]) {
-      controller?.abort()
-      loading.value = false
+    const idChanged = id !== previous?.[0]
+    if (idChanged) {
+      stopStats()
       info.value = null
       error.value = ''
     }
     if (!isConnected) {
-      controller?.abort()
-      loading.value = false
+      stopStats()
       if ('paused' === node.value?.connection) {
         info.value = null
         error.value = ''
       }
       return
     }
-    if (!info.value) {
+    const reconnected = false === previous?.[1]
+    if (idChanged || reconnected || !info.value || error.value) {
       void refreshStats()
     }
   },
@@ -139,77 +212,57 @@ watch(
 )
 
 onBeforeRouteLeave(() => {
-  controller?.abort()
+  stopStats()
 })
 onBeforeUnmount(() => {
-  controller?.abort()
+  stopStats()
 })
 </script>
 
 <template>
   <div class="min-w-0 space-y-6">
-    <UAlert v-if="!node" color="neutral" variant="soft" title="Node not found" />
-    <template v-else>
-      <template v-if="!workspace.error && !workspace.streamError">
-        <UAlert
-          v-if="'paused' === node.connection"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-pause"
-          title="Node is paused"
-          description="Resume it from Nodes to reconnect."
-        />
-        <UAlert
-          v-else-if="!connected"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-network"
-          :title="node.error || 'Waiting for the node to connect.'"
-        />
-        <UAlert v-else-if="loading && !info" color="info" variant="soft" title="Loading stats...">
-          <template #leading>
-            <UIcon name="i-lucide-loader-circle" class="size-5 shrink-0 animate-spin" />
-          </template>
-        </UAlert>
-        <UAlert
-          v-else-if="error"
-          color="error"
-          variant="soft"
-          icon="i-lucide-circle-alert"
-          :title="error"
+    <UAlert
+      v-if="!node && !workspace.error && !workspace.streamError"
+      color="neutral"
+      variant="soft"
+      title="Node not found"
+    />
+    <template v-else-if="node">
+      <div
+        v-if="(status && !workspace.error && !workspace.streamError) || info"
+        class="flex flex-wrap items-center justify-end gap-2"
+      >
+        <p
+          v-if="status && !workspace.error && !workspace.streamError"
+          role="status"
+          class="mr-auto inline-flex min-w-0 items-center gap-1.5 text-xs"
+          :class="{
+            'text-warning': 'warning' === status.tone,
+            'text-error': 'error' === status.tone,
+            'text-muted': 'muted' === status.tone,
+          }"
         >
-          <template v-if="!info" #actions>
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-refresh-cw"
-              @click="refreshStats"
-              >Retry</UButton
-            >
-          </template>
-        </UAlert>
-      </template>
+          <UIcon
+            :name="status.icon"
+            class="size-3.5 shrink-0"
+            :class="{ 'animate-spin': status.spin }"
+          />
+          <span class="min-w-0">{{ status.text }}</span>
+        </p>
+        <UButton
+          v-if="info"
+          icon="i-lucide-refresh-cw"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :loading="loading"
+          :disabled="!connected || loading"
+          @click="refreshStats"
+          >Refresh stats</UButton
+        >
+      </div>
 
       <template v-if="info">
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <UBadge
-            :color="connected ? 'success' : 'unavailable' === node.connection ? 'error' : 'warning'"
-            variant="soft"
-            size="sm"
-            icon="i-lucide-network"
-            >{{ connectionLabel }}</UBadge
-          >
-          <UButton
-            icon="i-lucide-refresh-cw"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :loading="loading"
-            :disabled="!connected || loading"
-            @click="refreshStats"
-            >Refresh stats</UButton
-          >
-        </div>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="CPU cores" :value="info.runtime.cpus" icon="i-lucide-cpu" />
           <StatCard

@@ -16,17 +16,19 @@ import (
 
 type infoEngine struct {
 	engine.Driver
-	t     *testing.T
-	err   error
-	calls int
+	t        *testing.T
+	err      error
+	calls    int
+	deadline time.Time
 }
 
 func (e *infoEngine) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 	e.calls++
 	deadline, ok := ctx.Deadline()
-	if !ok || 30*time.Second < time.Until(deadline) || 29*time.Second > time.Until(deadline) {
+	if !ok {
 		e.t.Fatalf("node info deadline: %v, set: %t", deadline, ok)
 	}
+	e.deadline = deadline
 	return engine.NodeInfo{
 		Runtime:    engine.RuntimeInfo{Name: "home", Version: "27.5.1", CPUs: 8, MemoryBytes: 16777216000},
 		Containers: []engine.ContainerStats{{ID: "container", Name: "web", CPU: "2.50%", Memory: "12MiB / 1GiB"}},
@@ -45,6 +47,9 @@ func TestNodeInfo(t *testing.T) {
 	}
 	if 200 != w.Code || 1 != driver.calls || "home" != info.Runtime.Name || 1 != len(info.Containers) || "2.50%" != info.Containers[0].CPU {
 		t.Fatalf("info: %d %s", w.Code, w.Body)
+	}
+	if driver.deadline.Before(before.Add(30*time.Second)) || driver.deadline.After(time.Now().Add(30*time.Second)) {
+		t.Fatalf("node info deadline: %v", driver.deadline)
 	}
 	if info.CheckedAt.Before(before) || info.CheckedAt.After(time.Now()) || time.UTC != info.CheckedAt.Location() {
 		t.Fatalf("checked at: %v", info.CheckedAt)

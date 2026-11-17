@@ -14,10 +14,16 @@ export const useRealtimeStore = defineStore('realtime', () => {
   >()
   let socket: WebSocket | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
+  let streamTimer: ReturnType<typeof setTimeout> | undefined
   let active = false
   let paused = false
   let retry = 1000
+  let streamRetry = 1000
   let nextID = 0
+  const retryingStreams = new Set<string>()
+
+  const transient = (status?: number): boolean =>
+    undefined !== status && (429 === status || 500 <= status)
 
   const send = (message: object): boolean => {
     if (!socket || WebSocket.OPEN !== socket.readyState) {
@@ -47,9 +53,42 @@ export const useRealtimeStore = defineStore('realtime', () => {
     }
   }
 
+  const clearStreamRetries = () => {
+    if (streamTimer) {
+      clearTimeout(streamTimer)
+      streamTimer = undefined
+    }
+    retryingStreams.clear()
+    streamRetry = 1000
+  }
+
+  const scheduleStreamRetry = (id: string) => {
+    retryingStreams.add(id)
+    if (streamTimer) {
+      return
+    }
+    const delay = streamRetry
+    streamRetry = Math.min(streamRetry * 2, 15000)
+    streamTimer = setTimeout(() => {
+      streamTimer = undefined
+      const ids = [...retryingStreams]
+      retryingStreams.clear()
+      if (!socket || WebSocket.OPEN !== socket.readyState) {
+        return
+      }
+      for (const key of ids) {
+        const reader = readers.get(key)
+        if (reader) {
+          attach(key, reader.subscription)
+        }
+      }
+    }, delay)
+  }
+
   const close = () => {
     clearTimeout(timer)
     timer = undefined
+    clearStreamRetries()
     if (socket) {
       socket.onopen = null
       socket.onmessage = null
@@ -142,10 +181,13 @@ export const useRealtimeStore = defineStore('realtime', () => {
           failed()
           return
         }
-        retry = 1000
         if ('type' in parsed && 'error' === parsed.type) {
           const failure = workspaceErrorMessage(parsed.status ?? 0, parsed.error)
           if (!parsed.stream) {
+            if (transient(parsed.status)) {
+              failed()
+              return
+            }
             const previous = [...readers.values()]
             stop()
             error.value = failure
@@ -158,15 +200,22 @@ export const useRealtimeStore = defineStore('realtime', () => {
           } else {
             const reader = readers.get(parsed.stream)
             if (reader) {
-              const transient = 429 === parsed.status || 500 <= (parsed.status ?? 0)
-              readers.delete(parsed.stream)
               reader.callbacks.onDisconnect(failure)
-              if (!transient) {
-                reader.callbacks.onRejected(parsed.status ?? 0)
+              if (transient(parsed.status) && 'stats' === reader.subscription.type) {
+                scheduleStreamRetry(parsed.stream)
+              } else {
+                readers.delete(parsed.stream)
+                if (!transient(parsed.status)) {
+                  reader.callbacks.onRejected(parsed.status ?? 0)
+                }
               }
             }
           }
           return
+        }
+        retry = 1000
+        if ('event' in parsed && 'stack.stats' === parsed.event) {
+          streamRetry = 1000
         }
         const targets = parsed.stream
           ? [readers.get(parsed.stream)].filter((reader) => undefined !== reader)
@@ -208,6 +257,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     }
     return {
       stop: () => {
+        retryingStreams.delete(id)
         if (readers.delete(id) && 'runtime' !== subscription.type) {
           send({ type: 'stream.detach', stream: id })
         }

@@ -113,6 +113,9 @@ const runtimePending = computed(
     (selectedRuntime.value?.loading ?? (!runtime.value && selectedNode.value?.loading)),
 )
 const connectionError = computed(() => {
+  if (!selectedNode.value) {
+    return workspace.ready ? 'Node not found.' : ''
+  }
   if ('paused' === selectedNode.value?.connection) {
     return 'Node is paused. Resume it from Nodes to reconnect.'
   }
@@ -152,20 +155,14 @@ const active = computed(() =>
   runtime.value?.services.some((service) => 'running' === service.state),
 )
 const stats = ref<Array<ContainerStats> | null>(null)
-const statsStream = useWorkspaceStream(
-  (message) => {
-    if ('stack.stats' === message.event) {
-      stats.value = parseStackStats(message.data).containers
-    }
-  },
-  () => {
-    stats.value = null
-  },
-)
+const statsStream = useWorkspaceStream((message) => {
+  if ('stack.stats' === message.event) {
+    stats.value = parseStackStats(message.data).containers
+  }
+})
 const statsError = statsStream.error
 const startStats = () => {
   statsStream.stop()
-  stats.value = null
   if (connected.value && active.value && !isNew.value) {
     statsStream.start({ type: 'stats', node: node.value, resource: name.value })
   }
@@ -405,16 +402,13 @@ const load = () => {
   editing.value = isNew.value
 
   try {
-    if (!selectedNode.value) {
-      throw new Error('Node not found.')
-    }
     if ('op' in route.query) {
       const { op: _legacyOp, ...query } = route.query
       void router.replace({ query })
     }
 
     if (isNew.value) {
-      if (selectedNode.value.stacks.some((stack) => name.value === stack.name)) {
+      if (selectedNode.value?.stacks.some((stack) => name.value === stack.name)) {
         throw new Error('A stack with this name already exists. Choose another name.')
       }
       compose.value =
@@ -576,7 +570,16 @@ watch(
   },
 )
 watch(() => [node.value, name.value], load, { immediate: true })
-watch([node, name, connected, active, isNew], startStats, { immediate: true })
+watch(
+  [node, name, connected, active, isNew],
+  ([nodeId, stackName, , isActive, draft], previous) => {
+    if (nodeId !== previous?.[0] || stackName !== previous?.[1] || !isActive || draft) {
+      stats.value = null
+    }
+    startStats()
+  },
+  { immediate: true },
+)
 const actionCompleted = (action: StackAction | 'delete', exitCode?: number) => {
   if ('delete' === action && 0 === exitCode) {
     void navigateTo('/')
@@ -607,7 +610,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="min-w-0 space-y-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div v-if="runtime || isNew" class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-2.5">
         <UBadge
           size="sm"
@@ -697,41 +700,53 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="loading || runtimePending" class="flex items-center gap-2 py-8 text-sm text-muted">
+    <div
+      v-if="!workspace.error && !workspace.streamError && (loading || runtimePending)"
+      role="status"
+      class="flex items-center gap-2 py-8 text-sm text-muted"
+    >
       <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
       {{ runtime ? 'Refreshing stack...' : 'Loading stack...' }}
     </div>
     <template v-if="!workspace.error && !workspace.streamError">
       <UAlert v-if="error" color="error" :title="error" />
-      <UAlert
+      <p
         v-else-if="connectionError"
-        :color="'paused' === selectedNode?.connection ? 'neutral' : 'warning'"
-        :icon="'paused' === selectedNode?.connection ? 'i-lucide-pause' : undefined"
-        :title="connectionError"
-      />
+        role="status"
+        class="flex items-center gap-2 text-sm text-muted"
+      >
+        <UIcon
+          :name="'paused' === selectedNode?.connection ? 'i-lucide-pause' : 'i-lucide-unplug'"
+          class="size-4 shrink-0"
+        />
+        {{ connectionError }}
+      </p>
     </template>
     <template v-if="!loading">
       <div v-if="runtime && !isNew" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard v-for="stat in resourceCards(stackTotals)" :key="stat.icon" v-bind="stat" />
       </div>
-      <UAlert
-        v-if="statsError && connected && active"
-        color="warning"
-        icon="i-lucide-chart-no-axes-combined"
-        :title="statsError"
+      <p
+        v-if="
+          statsError &&
+          connected &&
+          active &&
+          !connectionError &&
+          !workspace.error &&
+          !workspace.streamError
+        "
+        role="status"
+        class="flex items-center gap-2 text-sm text-muted"
       >
-        <template #actions>
-          <UButton color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="startStats"
-            >Retry stats</UButton
-          >
-        </template>
-      </UAlert>
+        <UIcon name="i-lucide-chart-no-axes-combined" class="size-4 shrink-0" />
+        {{ statsError }}
+      </p>
       <StackLogs
         v-if="!isNew"
         :key="`${node}/${name}`"
         :node="node"
         :stack="name"
-        :connected="connected"
+        :connected="connected && !!runtime"
         :paused="'paused' === selectedNode?.connection"
         :draft="'draft' === runtime?.status"
         :busy="runtime?.busy"

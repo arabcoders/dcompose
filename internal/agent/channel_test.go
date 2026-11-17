@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -272,10 +273,12 @@ func TestChannelErrors(t *testing.T) {
 		canceled    bool
 	}{
 		{"eof", "INFO", fmt.Errorf("failed to read frame header: %w", io.EOF), false},
+		{"closed", "INFO", fmt.Errorf("failed to write frame: %w", net.ErrClosed), false},
 		{"normal", "DEBUG", websocket.CloseError{Code: websocket.StatusNormalClosure}, false},
 		{"going-away", "DEBUG", websocket.CloseError{Code: websocket.StatusGoingAway}, false},
 		{"partial", "WARN", fmt.Errorf("failed to read: %w", io.ErrUnexpectedEOF), false},
 		{"protocol", "WARN", websocket.CloseError{Code: websocket.StatusProtocolError}, false},
+		{"invalid-json", "WARN", websocket.CloseError{Code: websocket.StatusInvalidFramePayloadData}, false},
 		{"failure", "WARN", errors.New("connection reset by peer"), false},
 		{"canceled", "", io.EOF, true},
 	} {
@@ -323,7 +326,6 @@ func TestChannelErrors(t *testing.T) {
 func TestChannelDisconnect(t *testing.T) {
 	for _, mode := range []string{"abrupt", "normal", "going-away", "invalid-json"} {
 		t.Run(mode, func(t *testing.T) {
-			logs := captureAutomaticLogs(t)
 			a, _ := fixture(t)
 			if w := pairRequest(a, a.pairingToken); http.StatusOK != w.Code {
 				t.Fatal("could not pair node", w.Code)
@@ -358,10 +360,6 @@ func TestChannelDisconnect(t *testing.T) {
 				defer a.events.mu.Unlock()
 				return 0 == len(a.events.subscribers)
 			})
-			warned := strings.Contains(logs.text(), `"level":"WARN"`)
-			if ("invalid-json" == mode) != warned {
-				t.Fatal("incorrect disconnect severity", logs.text())
-			}
 			if !a.config.Global.Paired || "" != a.pairingToken {
 				t.Fatal("connection loss reset pairing")
 			}

@@ -37,6 +37,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const savingNodeOrder = ref(false)
   let controller: AbortController | null = null
   let jobsController = new AbortController()
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
+  let retryDelay = 1000
+
+  const clearRetry = () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+    retryDelay = 1000
+  }
+  const clearLoadError = () => {
+    error.value = ''
+    clearRetry()
+  }
+  const scheduleRetry = () => {
+    if (retryTimer || !auth.authenticated) {
+      return
+    }
+    const delay = retryDelay
+    retryDelay = Math.min(retryDelay * 2, 15000)
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      void fetchNodes(true)
+    }, delay)
+  }
 
   const workspaceStream = useWorkspaceStream(
     (message) => {
@@ -78,6 +103,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           node.loading = event.stacks.some((stack) => stack.loading)
           node.connection = 'connected'
           node.error = ''
+          clearLoadError()
           break
         case 'stack.runtime': {
           const runtime = { ...event.runtime, loading: false }
@@ -99,7 +125,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           node.paused = 'paused' === event.state
           node.error =
             'unavailable' === event.state ? event.message || "Couldn't connect to this node." : ''
-          if ('connected' !== event.state) {
+          if ('connected' === event.state) {
+            clearLoadError()
+          } else {
             node.loading = false
           }
           if (node.paused) {
@@ -165,6 +193,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     )
   function reset() {
     controller?.abort()
+    clearRetry()
     workspaceStream.stop()
     jobsController.abort()
     jobsController = new AbortController()
@@ -172,6 +201,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     realtime.stop()
     imageCheckRequests.value = {}
     nodes.value = []
+    error.value = ''
     ready.value = false
     settingsOpen.value = false
     sidebarOpen.value = false
@@ -182,24 +212,49 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     settingsOpen.value = true
   }
 
-  const load = async () => {
+  const failLoad = (message: string, transient: boolean) => {
+    error.value = transient ? `${message} Retrying automatically...` : message
+    ready.value = true
+    for (const node of nodes.value) {
+      if (node.paused) {
+        continue
+      }
+      if (!transient) {
+        node.connection = 'unavailable'
+      }
+      node.loading = false
+    }
+    if (transient) {
+      scheduleRetry()
+    } else {
+      clearRetry()
+    }
+  }
+
+  const fetchNodes = async (automatic: boolean) => {
+    if (!automatic) {
+      clearRetry()
+      error.value = ''
+    }
     controller?.abort()
     const current = new AbortController()
     controller = current
-    error.value = ''
     try {
       const response = await request('/api/nodes', { signal: current.signal })
       const json = await parse_api_response<NodesResponse>(response)
+      if (current.signal.aborted) {
+        return
+      }
       if (401 === response.status) {
+        auth.invalidate()
         reset()
         error.value = workspaceErrorMessage(response.status, "Couldn't load nodes.")
         ready.value = true
         return
       }
       if (!response.ok || 'error' in json) {
-        throw new Error(workspaceErrorMessage(response.status, "Couldn't load nodes."))
-      }
-      if (current.signal.aborted) {
+        const transient = 429 === response.status || 500 <= response.status
+        failLoad(workspaceErrorMessage(response.status, "Couldn't load nodes."), transient)
         return
       }
       nodes.value = json.nodes.map((node): WorkspaceNode => {
@@ -224,27 +279,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             'paused' === previous?.connection ? 'loading' : (previous?.connection ?? 'loading'),
         }
       })
+      clearLoadError()
       ready.value = true
       workspaceStream.start({ type: 'runtime' })
       realtime.syncRuntime()
     } catch (cause) {
-      if (!current.signal.aborted) {
-        error.value =
-          cause instanceof Error && !(cause instanceof TypeError)
-            ? cause.message
-            : "Couldn't load nodes."
-        ready.value = true
-        for (const node of nodes.value) {
-          if (node.paused) {
-            continue
-          }
-          node.connection = 'unavailable'
-          node.loading = false
-        }
-        notification('error', 'Stacks', error.value)
+      if (current.signal.aborted) {
+        return
       }
+      const transient = cause instanceof TypeError
+      failLoad(
+        cause instanceof Error && !(cause instanceof TypeError)
+          ? cause.message
+          : "Couldn't load nodes.",
+        transient,
+      )
     }
   }
+
+  const load = () => fetchNodes(false)
 
   const moveNode = async (id: string, target: string) => {
     const from = nodes.value.findIndex((node) => id === node.id)

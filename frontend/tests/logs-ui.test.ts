@@ -239,7 +239,9 @@ const trigger = (element: TestNode, event: string, value?: unknown) => {
 }
 const control = (root: TestNode, icon: string) =>
   find(root, (element) => 'control' === element.type && icon === element.props.icon)
-const menuItems = (menu: TestNode): Array<{ icon: string; onSelect: () => void; disabled?: boolean }> => {
+const menuItems = (
+  menu: TestNode,
+): Array<{ icon: string; onSelect: () => void; disabled?: boolean }> => {
   const items: unknown = menu.props.items
   if (!Array.isArray(items)) {
     throw new Error('Missing menu items')
@@ -639,13 +641,16 @@ test('empty and loading', async () => {
   state.loading.value = false
   await vue.nextTick()
   expect(flatten(root).filter((element) => 'article' === element.type)).toHaveLength(0)
-  expect(menuItems(find(root, (element) => 'menu' === element.type))
-    .find((item) => 'i-lucide-download' === item.icon)?.disabled).toBe(true)
+  expect(
+    menuItems(find(root, (element) => 'menu' === element.type)).find(
+      (item) => 'i-lucide-download' === item.icon,
+    )?.disabled,
+  ).toBe(true)
 })
 
 test('download visible', async () => {
   const { root } = await mountLogs()
-  const originalDocument = globalThis.document
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
   const createObjectURL = URL.createObjectURL
   const revokeObjectURL = URL.revokeObjectURL
   const blobs: Array<Blob> = []
@@ -664,8 +669,9 @@ test('download visible', async () => {
   })
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoked })
   try {
-    const download = menuItems(find(root, (element) => 'menu' === element.type))
-      .find((item) => 'i-lucide-download' === item.icon)
+    const download = menuItems(find(root, (element) => 'menu' === element.type)).find(
+      (item) => 'i-lucide-download' === item.icon,
+    )
     expect(download?.disabled).toBe(false)
     download?.onSelect()
     expect(link.click).toHaveBeenCalledTimes(1)
@@ -674,7 +680,11 @@ test('download visible', async () => {
     expect(await blobs[0]?.text()).toBe(`${JSON.stringify(entry)}\n`)
     expect(revoked).toHaveBeenCalledWith('blob:logs')
   } finally {
-    Object.defineProperty(globalThis, 'document', { configurable: true, value: originalDocument })
+    if (originalDocument) {
+      Object.defineProperty(globalThis, 'document', originalDocument)
+    } else {
+      Reflect.deleteProperty(globalThis, 'document')
+    }
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
   }

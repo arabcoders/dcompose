@@ -109,9 +109,13 @@ func TestRuntimeProgressive(t *testing.T) {
 	if nil != json.Unmarshal(data, &snapshot) || !snapshot.Stacks[0].Loading || "running" != snapshot.Stacks[0].Status {
 		t.Fatalf("cached reconnect: %s", data)
 	}
-	pids, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
-	if 1 != len(strings.Fields(string(pids))) {
-		t.Fatalf("duplicate monitors: %s", pids)
+	eventually(t, func() bool {
+		pids, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
+		return 0 < len(strings.Fields(string(pids)))
+	})
+	pids, err := os.ReadFile(filepath.Join(fake, "event-pids"))
+	if nil != err || 1 != len(strings.Fields(string(pids))) {
+		t.Fatalf("duplicate monitors: %s (%v)", pids, err)
 	}
 }
 
@@ -286,6 +290,10 @@ func TestMonitorRecovery(t *testing.T) {
 	seed(t, a, "demo", "compose.yaml")
 	reader := openEvents(t, streamServer(t, a), "/events")
 	reader.until(t, "stack.runtime")
+	eventually(t, func() bool {
+		pids, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
+		return 1 == len(strings.Fields(string(pids)))
+	})
 	argv, _ := os.ReadFile(filepath.Join(fake, "argv"))
 	args := strings.SplitN(string(argv), "<--since><", 2)
 	if 2 != len(args) {
@@ -309,10 +317,10 @@ func TestMonitorRecovery(t *testing.T) {
 		}
 	}
 	reader.until(t, "stack.runtime")
-	pids, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
-	if 2 > len(strings.Fields(string(pids))) {
-		t.Fatal("monitor did not restart")
-	}
+	eventually(t, func() bool {
+		pids, _ := os.ReadFile(filepath.Join(fake, "event-pids"))
+		return 2 <= len(strings.Fields(string(pids)))
+	})
 	write(t, filepath.Join(fake, "ps"), `[{"State":"running"}]`)
 	write(
 		t,

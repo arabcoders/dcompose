@@ -30,16 +30,28 @@ const {
   search: searchLogs,
   refresh: refreshLogs,
 } = useLogs()
-const recentErrors = computed(() => logEntries.value.slice(-5).reverse())
+const recentLogs = computed(() =>
+  logEntries.value
+    .filter((entry) => {
+      const level = getLogLevel(entry.level)
+      return (
+        'warning' === level ||
+        'error' === level ||
+        ('info' === level && true === entry.fields.automatic && 'succeeded' === entry.fields.status)
+      )
+    })
+    .slice(-5)
+    .reverse(),
+)
 const logsLink = (entry?: LogEntry) => ({
   path: '/logs',
   query: {
-    levels: 'warning,error',
+    levels: 'info,warning,error',
     ...('string' === typeof entry?.fields.node_id ? { node: entry.fields.node_id } : {}),
   },
 })
 onMounted(() => {
-  void searchLogs({ levels: ['warning', 'error'], node: '', search: '' })
+  void searchLogs({ levels: ['info', 'warning', 'error'], node: '', search: '' })
 })
 
 const enabledNodes = computed(() => nodes.value.filter((node) => !node.paused))
@@ -478,7 +490,7 @@ useHead({ title: 'Overview' })
     </div>
 
     <section
-      v-if="recentErrors.length || logsError"
+      v-if="recentLogs.length || logsError"
       class="app-card overflow-hidden"
       aria-labelledby="recent-errors-heading"
     >
@@ -500,20 +512,28 @@ useHead({ title: 'Overview' })
           ></template
         >
       </UAlert>
-      <ul v-if="recentErrors.length" class="divide-y divide-default">
-        <li v-for="entry in recentErrors" :key="entry.id" :data-log-id="entry.id">
+      <ul v-if="recentLogs.length" class="divide-y divide-default">
+        <li v-for="entry in recentLogs" :key="entry.id" :data-log-id="entry.id">
           <NuxtLink :to="logsLink(entry)" class="block space-y-2 px-4 py-3 hover:bg-elevated">
             <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
               <UBadge
                 :icon="
-                  'error' === getLogLevel(entry.level)
-                    ? 'i-lucide-circle-alert'
-                    : 'i-lucide-triangle-alert'
+                  'info' === getLogLevel(entry.level)
+                    ? 'i-lucide-circle-check'
+                    : 'error' === getLogLevel(entry.level)
+                      ? 'i-lucide-circle-alert'
+                      : 'i-lucide-triangle-alert'
                 "
                 size="sm"
                 variant="subtle"
-                :color="'error' === getLogLevel(entry.level) ? 'error' : 'warning'"
-                >{{ entry.level }}</UBadge
+                :color="
+                  'info' === getLogLevel(entry.level)
+                    ? 'success'
+                    : 'error' === getLogLevel(entry.level)
+                      ? 'error'
+                      : 'warning'
+                "
+                >{{ 'info' === getLogLevel(entry.level) ? 'Updated' : entry.level }}</UBadge
               >
               <UBadge icon="i-lucide-server" color="neutral" variant="subtle" size="sm">{{
                 logNodeLabel(entry)

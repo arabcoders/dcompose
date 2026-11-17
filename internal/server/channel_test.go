@@ -366,15 +366,10 @@ func TestChannelPin(t *testing.T) {
 	node.Fingerprint = strings.Repeat("A", 43) + "="
 	s.config.Nodes["home"] = node
 	s.nodes["home"] = nodeClient(node)
-	startChannels(t, s)
-	frames, _ := s.subscribeWorkspace()
-	select {
-	case frame := <-frames:
-		if !strings.Contains(string(frame), `"state":"unavailable"`) {
-			t.Fatal(string(frame))
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("missing pin failure")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := dialChannel(&nodeChannel{node: node, client: s.nodes["home"], ctx: ctx}); !errors.Is(err, errFingerprint) {
+		t.Fatal("missing pin failure", err)
 	}
 	if 0 != f.count.Load() || 0 != f.health.Load() {
 		t.Fatal("unpinned node reached HTTP endpoint")

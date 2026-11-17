@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -182,13 +183,17 @@ func (a *agent) channelError(ctx context.Context, peer, operation string, err er
 		)
 		return
 	}
-	if errors.Is(err, io.EOF) {
+	// The WebSocket reader can close the socket before it cancels ctx,
+	// so a concurrent writer may see net.ErrClosed during a normal disconnect.
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		slog.Info(
-			fmt.Sprintf("DCompose peer %s disconnected from node %q without a WebSocket close handshake.", peer, a.config.Global.NodeID),
+			fmt.Sprintf("DCompose peer %s disconnected from node %q: %v", peer, a.config.Global.NodeID, err),
 			"peer",
 			peer,
 			"node",
 			a.config.Global.NodeID,
+			"error",
+			err,
 		)
 		return
 	}

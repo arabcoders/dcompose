@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UCard from '@nuxt/ui/components/Card.vue'
+import UIcon from '@nuxt/ui/components/Icon.vue'
 import OutputTerminal from '~/components/stacks/OutputTerminal.vue'
 import { useWorkspaceStream } from '~/composables/useWorkspaceStream'
 import { useWorkspaceStore } from '~/store/workspace'
@@ -174,19 +174,15 @@ onBeforeUnmount(() => {
 
 <template>
   <UCard as="section" class="min-w-0" aria-label="Stack logs" :ui="{ body: 'p-0 sm:p-0' }">
-    <UAlert
+    <div
       v-if="outputError"
-      color="error"
-      icon="i-lucide-triangle-alert"
-      :title="outputError"
-      class="m-3"
+      role="status"
+      class="flex flex-wrap items-center gap-2 border-b border-default px-3 py-2 text-sm text-muted"
     >
-      <template #actions>
-        <UButton size="sm" color="neutral" variant="outline" @click="startLogs()">
-          Reconnect
-        </UButton>
-      </template>
-    </UAlert>
+      <UIcon name="i-lucide-unplug" class="size-4 shrink-0" />
+      <span class="flex-1">{{ outputError }}</span>
+      <UButton size="xs" color="neutral" variant="ghost" @click="startLogs()">Reconnect</UButton>
+    </div>
     <OutputTerminal ref="output" :placeholder="placeholder" class="h-96" />
   </UCard>
 </template>

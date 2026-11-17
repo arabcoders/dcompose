@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,10 +16,10 @@ func TestRuntimeBusy(t *testing.T) {
 	seed(t, a, "slow", "compose.yaml")
 	write(t, filepath.Join(fake, "block-slow"), "")
 	states := make(chan stackRuntime, 1)
-	go func() {
-		state, _ := a.runtimeStatus(context.Background(), "slow")
+	a.work.Go(func() {
+		state, _ := a.runtimeStatus(a.ctx, "slow")
 		states <- state
-	}()
+	})
 	eventually(t, func() bool { _, err := os.Stat(filepath.Join(fake, "ps-slow")); return nil == err })
 	a.setStackBusy("slow", true)
 	if err := os.Remove(filepath.Join(fake, "block-slow")); nil != err {
