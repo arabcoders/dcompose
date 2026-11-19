@@ -47,7 +47,7 @@ func (d *Docker) Stats(ctx context.Context, stack engine.Stack) ([]engine.Contai
 
 func missingStatsContainers(stderr string) bool {
 	// Docker can report several errors at once when sampling multiple containers.
-	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if !strings.HasPrefix(line, "Error response from daemon: No such container: ") {
 			return false
 		}
