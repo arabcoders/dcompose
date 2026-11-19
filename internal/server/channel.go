@@ -49,6 +49,7 @@ func (s *Server) Start(ctx context.Context) {
 	}
 	s.hubContext, s.hubCancel = context.WithCancel(ctx)
 	s.loadImageCooldowns()
+	s.loadImageObservations()
 	s.reconcileChannelsLocked(s.config, s.nodes)
 	s.hubWorkers.Go(s.watchImages)
 }

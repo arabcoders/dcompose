@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -387,6 +388,74 @@ func TestImageCooldownRestart(t *testing.T) {
 	if 1 != imageRequests(f) || 1 != len(restarted.registryClient.Cooldowns()) {
 		t.Fatal("server restart discarded account cooldown")
 	}
+}
+
+func TestImageCacheRestart(t *testing.T) {
+	service := imageService("web")
+	service.CheckInterval = "30m"
+	f := imageNode(t, service)
+	f.local["web"] = "sha256:" + strings.Repeat("a", 64)
+	path := filepath.Join(t.TempDir(), "dcompose.toml")
+	checkedAt := time.Date(2026, 11, 19, 6, 0, 0, 0, time.UTC)
+	now := checkedAt
+	key := imageStackKey{"home", "demo"}
+	restart := func(password string) *Server {
+		s := imageServer(t, f, false)
+		s.config.path = path
+		s.config.Registries[0].auth["password"] = password
+		s.registrySync = registrySnapshot(s.config.Registries)
+		s.images.now = func() time.Time { return now }
+		s.registryClient.Now = s.images.now
+		s.loadImageObservations()
+		assumeRegistriesApplied(s)
+		s.images.stacks[key] = newImageStack()
+		s.images.stacks[key].services = []engine.Service{service}
+		s.scheduleImagesLocked()
+		s.refreshImages(key)
+		return s
+	}
+	check := func(s *Server, requests int, observed time.Time) {
+		t.Helper()
+		update := s.images.stacks[key].checked["web"].update
+		if "current" != update.Status || nil == update.CheckedAt || !observed.Equal(*update.CheckedAt) || requests != imageRequests(f) {
+			t.Fatalf(
+				"check = %+v, registry requests = %d; want observation at %v and %d requests",
+				update,
+				imageRequests(f),
+				observed,
+				requests,
+			)
+		}
+	}
+
+	s := restart("test-secret")
+	check(s, 3, checkedAt)
+	data, err := os.ReadFile(s.images.observationsFile)
+	if nil != err || strings.Contains(string(data), "test-secret") {
+		t.Fatal("image cache was not saved without credentials", err)
+	}
+
+	now = checkedAt.Add(20 * time.Minute)
+	s = restart("test-secret")
+	check(s, 3, checkedAt)
+	due := checkedAt.Add(30 * time.Minute)
+	if next := s.images.stacks[key].next["web"]; !due.Equal(next) {
+		t.Fatalf("restart shifted the scheduled check to %v", next)
+	}
+
+	now = due
+	s.scheduleImagesLocked()
+	s.refreshImages(key)
+	check(s, 4, now)
+
+	now = now.Add(time.Minute)
+	if w := perform(t, s, "POST", "/api/nodes/home/stacks/demo/images/check", ""); http.StatusAccepted != w.Code {
+		t.Fatal("manual check rejected", w.Code)
+	}
+	s.refreshImages(key)
+	check(s, 5, now)
+
+	check(restart("changed-secret"), 8, now)
 }
 
 func TestImageScheduleIntervals(t *testing.T) {

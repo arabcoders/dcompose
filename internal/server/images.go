@@ -62,14 +62,16 @@ type imageStack struct {
 }
 
 type imageChecks struct {
-	stacks       map[imageStackKey]*imageStack
-	intervals    map[string]time.Duration
-	cache        map[imageKey]*imageCacheEntry
-	forceRefs    map[string]bool
-	now          func() time.Time
-	cooldownFile string
-	persistMu    sync.Mutex
-	persisted    []byte
+	stacks           map[imageStackKey]*imageStack
+	intervals        map[string]time.Duration
+	cache            map[imageKey]*imageCacheEntry
+	forceRefs        map[string]bool
+	now              func() time.Time
+	cooldownFile     string
+	persistMu        sync.Mutex
+	persisted        []byte
+	observationsFile string
+	observations     []byte
 }
 
 func newImageChecks() *imageChecks {
@@ -584,10 +586,14 @@ func (s *Server) refreshImages(key imageStackKey) {
 		if "available" != status && state.autoPending[service.Service] == service.ID {
 			delete(state.autoPending, service.Service)
 		}
-		if custom[service.Name] && "error" == status {
-			state.next[service.Name] = s.images.now().Add(imageErrorRetry)
-			if nil != result.Cooldown {
+		if custom[service.Name] {
+			switch {
+			case nil != result.Cooldown:
 				state.next[service.Name] = result.Cooldown.Until
+			case "error" == status:
+				state.next[service.Name] = s.images.now().Add(imageErrorRetry)
+			case 0 < maxAge:
+				state.next[service.Name] = result.CheckedAt.Add(maxAge)
 			}
 		}
 		s.publishImagesLocked(key)
@@ -645,6 +651,9 @@ func (s *Server) registryImage(ctx context.Context, key imageKey, config []byte,
 		s.hubMu.Unlock()
 		result := s.registryClient.InspectConfig(ctx, key.ImageKey, config, maxAge)
 		s.saveImageCooldowns()
+		if "error" != result.Status {
+			s.saveImageObservations()
+		}
 		s.hubMu.Lock()
 		current := s.images.cache[key] == entry
 		close(entry.done)
