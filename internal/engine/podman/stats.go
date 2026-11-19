@@ -9,7 +9,7 @@ import (
 )
 
 func (p *Podman) Stats(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
-	containers, err := p.Containers(ctx, stack)
+	containers, err := p.CLI.Containers(ctx, stack)
 	if nil != err {
 		return nil, err
 	}

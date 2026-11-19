@@ -9,7 +9,8 @@ import (
 )
 
 func (d *Docker) Stats(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
-	containers, err := d.Containers(ctx, stack)
+	// Stats only needs the IDs and states from Compose, not per-container metadata.
+	containers, err := d.CLI.Containers(ctx, stack)
 	if nil != err {
 		return nil, err
 	}

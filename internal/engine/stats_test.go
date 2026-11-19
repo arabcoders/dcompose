@@ -53,8 +53,6 @@ func TestStackStats(t *testing.T) {
 						), nil, nil
 					}
 					return []byte(`[{"ID":"new-id","Name":"demo-web-1","State":"running"}]`), nil, nil
-				case "container":
-					return []byte(`{}`), nil, nil
 				case "stats":
 					calls++
 					format := "{{json .}}"
@@ -114,9 +112,6 @@ func TestStackStatsEmpty(t *testing.T) {
 					if "compose" == cmd.Args[0] {
 						return []byte(containers), nil, nil
 					}
-					if "container" == cmd.Args[0] {
-						return []byte(`{}`), nil, nil
-					}
 					t.Fatalf("empty stack ran stats: %+v", cmd)
 					return nil, nil, nil
 				})
@@ -140,9 +135,6 @@ func TestStackStatsErrors(t *testing.T) {
 					}
 					if "compose" == cmd.Args[0] {
 						return []byte(`[{"ID":"id","Name":"demo-web-1","State":"running"}]`), nil, nil
-					}
-					if "container" == cmd.Args[0] {
-						return []byte(`{}`), nil, nil
 					}
 					return []byte("stdout-secret"), nil, nil
 				})
@@ -172,8 +164,6 @@ func TestStackStatsContainerGone(t *testing.T) {
 					return []byte(
 						`[{"ID":"old-id","Name":"demo-web-1","State":"running"},{"ID":"worker-id","Name":"demo-worker-1","State":"running"}]`,
 					), nil, nil
-				case "container":
-					return []byte(`{}`), nil, nil
 				case "stats":
 					return nil, []byte(test.stderr), errors.New("stats command failed")
 				default:
@@ -205,7 +195,8 @@ func TestStackStatsCancel(t *testing.T) {
 					if "compose" == cmd.Args[0] {
 						return []byte(`[{"ID":"id","Name":"demo-web-1","State":"running"}]`), nil, nil
 					}
-					return []byte(`{}`), nil, nil
+					t.Fatalf("unexpected command: %+v", cmd)
+					return nil, nil, nil
 				})
 				_, err := driver.Stats(ctx, engine.Stack{Name: "demo"})
 				if !errors.Is(err, context.Canceled) {

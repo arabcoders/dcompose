@@ -186,7 +186,7 @@ func (a *agent) channelError(ctx context.Context, peer, operation string, err er
 	// The WebSocket reader can close the socket before it cancels ctx,
 	// so a concurrent writer may see net.ErrClosed during a normal disconnect.
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-		slog.Info(
+		slog.Debug(
 			fmt.Sprintf("DCompose peer %s disconnected from node %q: %v", peer, a.config.Global.NodeID, err),
 			"peer",
 			peer,

@@ -272,8 +272,8 @@ func TestChannelErrors(t *testing.T) {
 		err         error
 		canceled    bool
 	}{
-		{"eof", "INFO", fmt.Errorf("failed to read frame header: %w", io.EOF), false},
-		{"closed", "INFO", fmt.Errorf("failed to write frame: %w", net.ErrClosed), false},
+		{"eof", "DEBUG", fmt.Errorf("failed to read frame header: %w", io.EOF), false},
+		{"closed", "DEBUG", fmt.Errorf("failed to write frame: %w", net.ErrClosed), false},
 		{"normal", "DEBUG", websocket.CloseError{Code: websocket.StatusNormalClosure}, false},
 		{"going-away", "DEBUG", websocket.CloseError{Code: websocket.StatusGoingAway}, false},
 		{"partial", "WARN", fmt.Errorf("failed to read: %w", io.ErrUnexpectedEOF), false},
@@ -315,7 +315,7 @@ func TestChannelErrors(t *testing.T) {
 			}
 			if status := websocket.CloseStatus(
 				test.err,
-			); "DEBUG" == test.level &&
+			); -1 != status && "DEBUG" == test.level &&
 				!strings.Contains(record.Message, strconv.Itoa(int(status))) {
 				t.Fatal("connection close code was lost", logs.text())
 			}
