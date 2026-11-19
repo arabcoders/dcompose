@@ -263,7 +263,7 @@ func (s *Server) runChannel(channel *nodeChannel) {
 		if nil != channel.ctx.Err() {
 			return
 		}
-		if warnings.allow(time.Now()) {
+		if !(nil != conn && s.selfUpdateDisconnect(channel.id, err)) && warnings.allow(time.Now()) {
 			node, detail := nodeLogLabel(channel.node), safeTransportError(err)
 			slog.Warn(
 				fmt.Sprintf(

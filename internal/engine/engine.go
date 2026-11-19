@@ -4,8 +4,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrStatsContainerGone means a container disappeared between discovery and sampling.
+var ErrStatsContainerGone = errors.New("container disappeared while sampling statistics")
 
 type Command struct {
 	Program string

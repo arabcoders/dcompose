@@ -43,6 +43,7 @@ func TestStreamStats(t *testing.T) {
 		{ID: "new-id", Name: "demo-web-1", CPU: "2%"},
 	}
 	calls := 0
+	logs := captureAutomaticLogs(t)
 	a.engine = &statsEngine{stats: func(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
 		deadline, bounded := ctx.Deadline()
 		if !bounded || 0 >= time.Until(deadline) || 10*time.Second < time.Until(deadline) {
@@ -51,11 +52,17 @@ func TestStreamStats(t *testing.T) {
 		if "demo" != stack.Name || dir != stack.Dir || filepath.Join(dir, "compose.yaml") != stack.ComposeFile {
 			t.Fatalf("sample stack: %+v", stack)
 		}
-		result := samples[calls]
 		calls++
-		return []engine.ContainerStats{result}, nil
+		switch calls {
+		case 1:
+			return []engine.ContainerStats{samples[0]}, nil
+		case 2:
+			return nil, engine.ErrStatsContainerGone
+		default:
+			return []engine.ContainerStats{samples[1]}, nil
+		}
 	}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
 	received := []engine.ContainerStats{}
 	err := a.streamStats(ctx, "demo", func(e streamEvent) bool {
@@ -68,8 +75,11 @@ func TestStreamStats(t *testing.T) {
 		received = append(received, payload.Containers[0])
 		return 2 > len(received)
 	})
-	if nil != err || !reflect.DeepEqual(samples, received) {
+	if nil != err || 3 != calls || !reflect.DeepEqual(samples, received) {
 		t.Fatalf("fresh stats samples: %+v, %v", received, err)
+	}
+	if records := operationLogs(t, logs); 0 != len(records) {
+		t.Fatalf("skipped stats sample logged: %+v", records)
 	}
 }
 

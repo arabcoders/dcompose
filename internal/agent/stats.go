@@ -34,7 +34,10 @@ func (a *agent) streamStats(ctx context.Context, name string, send func(streamEv
 		if nil != ctx.Err() {
 			return nil
 		}
-		if nil != err {
+		switch {
+		case errors.Is(err, engine.ErrStatsContainerGone):
+			// The next sample will discover any replacement containers.
+		case nil != err:
 			code := 502
 			if apiErr, ok := errors.AsType[*apiError](err); ok {
 				code = apiErr.code
@@ -49,14 +52,15 @@ func (a *agent) streamStats(ctx context.Context, name string, send func(streamEv
 				),
 			)
 			return fault(code, "stack statistics unavailable")
-		}
-		if nil == containers {
-			containers = []engine.ContainerStats{}
-		}
-		if !send(event("stack.stats", struct {
-			Containers []engine.ContainerStats `json:"containers"`
-		}{containers})) {
-			return nil
+		default:
+			if nil == containers {
+				containers = []engine.ContainerStats{}
+			}
+			if !send(event("stack.stats", struct {
+				Containers []engine.ContainerStats `json:"containers"`
+			}{containers})) {
+				return nil
+			}
 		}
 		select {
 		case <-ctx.Done():

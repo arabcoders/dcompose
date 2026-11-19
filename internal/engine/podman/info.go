@@ -106,6 +106,9 @@ func (p *Podman) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 	result := engine.NodeInfo{Containers: []engine.ContainerStats{}}
 	info, err := p.info(ctx)
 	if nil != err {
+		if context.Canceled == ctx.Err() {
+			return result, context.Canceled
+		}
 		return result, nodeInfoError("podman info", err, nil)
 	}
 	osName := strings.TrimSpace(info.Host.Distribution.Distribution + " " + info.Host.Distribution.Version)
@@ -125,6 +128,9 @@ func (p *Podman) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 
 	stdout, stderr, err := p.run(ctx, p.command("", "stats", "--no-stream", "--no-trunc", "--format", "json"))
 	if nil != err {
+		if context.Canceled == ctx.Err() {
+			return result, context.Canceled
+		}
 		return result, nodeInfoError("podman stats", err, stderr)
 	}
 	result.Containers, err = parseStats(stdout)

@@ -102,7 +102,13 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 			view = fmt.Sprintf("shell %q", subscription.shell)
 		}
 		detail := safeTransportError(err)
-		slog.Error(
+		level := slog.LevelError
+		if context.Canceled == ctx.Err() || ("shell.attach" != subscription.kind && s.selfUpdateDisconnect(message.Node, err)) {
+			level = slog.LevelDebug
+		}
+		slog.Log(
+			ctx,
+			level,
 			fmt.Sprintf("Could not open %s on %s: %s", view, nodeLogLabel(channel.node), detail),
 			"node",
 			nodeLogLabel(channel.node),

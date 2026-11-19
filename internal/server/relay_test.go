@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,6 +72,7 @@ func relayOutput(t *testing.T, browser *websocket.Conn, want string) {
 }
 
 func TestRelayResume(t *testing.T) {
+	logs := captureNodeLogs(t, slog.LevelWarn)
 	f := fakeChannel(t)
 	var pending atomic.Bool
 	var discoveries atomic.Int32
@@ -134,6 +136,11 @@ func TestRelayResume(t *testing.T) {
 	_ = node.CloseNow()
 	node = nextConnection(t, f)
 	resumed := channelCommand(t, f, "relay.attach")
+	select {
+	case line := <-logs.lines:
+		t.Fatal("expected self-update disconnect logged:", string(line))
+	default:
+	}
 	if "self-helper" != resumed.Resource || "" == resumed.Stream || attach.Stream == resumed.Stream {
 		t.Fatal("helper did not resume on a fresh stream", resumed)
 	}

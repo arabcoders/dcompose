@@ -218,6 +218,9 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 	}
 	response, err := s.connect(ctx, nodeID, r.Method, path, body)
 	if nil != err {
+		if context.Canceled == r.Context().Err() {
+			return
+		}
 		if errors.Is(err, errNodePaused) {
 			proxyError(w, err)
 			return
@@ -231,6 +234,9 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 	var payload map[string]json.RawMessage
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
 	if err := decoder.Decode(&payload); nil != err || nil == payload {
+		if context.Canceled == r.Context().Err() {
+			return
+		}
 		detail := "expected a JSON object"
 		if nil != err {
 			detail = safeTransportError(err)
@@ -250,6 +256,9 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, route string) {
 		return
 	}
 	if err := decoder.Decode(new(any)); io.EOF != err {
+		if context.Canceled == r.Context().Err() {
+			return
+		}
 		detail := "expected only one JSON object"
 		if nil != err {
 			detail = safeTransportError(err)
