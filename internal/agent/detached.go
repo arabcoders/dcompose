@@ -19,14 +19,15 @@ import (
 )
 
 type detachedRequest struct {
-	ID        string       `json:"id"`
-	Engine    string       `json:"engine,omitempty"`
-	Stack     engine.Stack `json:"stack"`
-	Action    string       `json:"action"`
-	Service   string       `json:"service"`
-	Automatic bool         `json:"automatic,omitempty"`
-	ConfigDir string       `json:"config_dir"`
-	CreatedAt time.Time    `json:"created_at"`
+	ID         string       `json:"id"`
+	Engine     string       `json:"engine,omitempty"`
+	HelperName string       `json:"helper_name,omitempty"`
+	Stack      engine.Stack `json:"stack"`
+	Action     string       `json:"action"`
+	Service    string       `json:"service"`
+	Automatic  bool         `json:"automatic,omitempty"`
+	ConfigDir  string       `json:"config_dir"`
+	CreatedAt  time.Time    `json:"created_at"`
 }
 
 func (a *agent) detachedOperation(name, action string) (bool, error) {
@@ -107,12 +108,13 @@ func (a *agent) initDetached(cacheDir string) {
 	sort.Slice(requests, func(i, j int) bool { return requests[i].CreatedAt.Before(requests[j].CreatedAt) })
 	for _, request := range requests {
 		op := &operation{
-			ID:        request.ID,
-			Stack:     request.Stack.Name,
-			Action:    request.Action,
-			Status:    "running",
-			automatic: request.Automatic,
-			service:   request.Service,
+			ID:         request.ID,
+			Stack:      request.Stack.Name,
+			Action:     request.Action,
+			Status:     "running",
+			automatic:  request.Automatic,
+			service:    request.Service,
+			helperName: request.HelperName,
 		}
 		result, err := readDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op)
 		if nil == err {
@@ -170,6 +172,12 @@ func readDetachedRequest(path string) (detachedRequest, error) {
 		!stackName.MatchString(request.Stack.Name) {
 		return request, fmt.Errorf("invalid detached operation ID or stack name")
 	}
+	if "" == request.HelperName {
+		// The first upgrade to this version is started by an agent using the old name.
+		request.HelperName = "dagent-operation-" + request.ID
+	} else if engine.DetachedHelperPrefix+request.ID != request.HelperName {
+		return request, fmt.Errorf("invalid detached operation helper name")
+	}
 	if "" != request.Engine && "docker" != request.Engine && "podman" != request.Engine {
 		return request, fmt.Errorf("invalid detached operation engine")
 	}
@@ -197,16 +205,18 @@ func (a *agent) prepareDetached(op *operation, base engine.Stack, service string
 		return &engine.Error{Code: 503, Message: "Could not prepare the action on this node's own stack.", Cause: err}
 	}
 	configDir := filepath.Dir(a.registries.root)
+	op.helperName = engine.DetachedHelperPrefix + op.ID
 	data, err := json.Marshal(
 		detachedRequest{
-			ID:        op.ID,
-			Engine:    a.config.Global.Engine,
-			Stack:     base,
-			Action:    op.Action,
-			Service:   service,
-			Automatic: op.automatic,
-			ConfigDir: configDir,
-			CreatedAt: time.Now().UTC(),
+			ID:         op.ID,
+			Engine:     a.config.Global.Engine,
+			HelperName: op.helperName,
+			Stack:      base,
+			Action:     op.Action,
+			Service:    service,
+			Automatic:  op.automatic,
+			ConfigDir:  configDir,
+			CreatedAt:  time.Now().UTC(),
 		},
 	)
 	if nil == err {
@@ -220,7 +230,7 @@ func (a *agent) prepareDetached(op *operation, base engine.Stack, service string
 
 func (a *agent) runDetached(op *operation, base engine.Stack) {
 	requestFile := filepath.Join(a.operationsDir, op.ID, "request.json")
-	err := a.detachedExecutor.StartDetached(a.ctx, *a.selfContainer, "dagent-operation-"+op.ID, requestFile, base)
+	err := a.detachedExecutor.StartDetached(a.ctx, *a.selfContainer, op.helperName, requestFile, base)
 	if nil != a.ctx.Err() {
 		// The runtime may have started the helper before replacing this node.
 		return
@@ -252,7 +262,7 @@ func readDetachedResult(path string, op *operation) (operationSnapshot, error) {
 
 func (a *agent) observeDetached(op *operation) {
 	directory := filepath.Join(a.operationsDir, op.ID)
-	helperName := "dagent-operation-" + op.ID
+	helperName := op.helperName
 	var offset int64
 	lastError := ""
 	inspectError := ""

@@ -41,6 +41,8 @@ type DetachedState struct {
 	Output   string
 }
 
+const DetachedHelperPrefix = "svc_dagent-operation-"
+
 // DetachedOperations optionally runs own-stack actions outside the node container.
 type DetachedOperations interface {
 	SelfContainer(context.Context) (*SelfContainer, error)

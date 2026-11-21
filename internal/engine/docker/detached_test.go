@@ -155,7 +155,7 @@ func TestStartDetached(t *testing.T) {
 	t.Setenv("DCOMPOSE_TEST_SECRET", "not-in-command-arguments")
 	t.Setenv("DOCKER_CONFIG", "/cache/docker")
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
-	self, name, requestFile := detachedSelf(), "dagent-operation-test", "/cache/operations/request.json"
+	self, name, requestFile := detachedSelf(), "svc_dagent-operation-test", "/cache/operations/request.json"
 	d := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 		prefix := []string{
 			"run",

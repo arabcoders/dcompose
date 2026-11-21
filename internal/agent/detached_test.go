@@ -24,6 +24,7 @@ type detachedDriver struct {
 	selfErr error
 	start   func(context.Context, engine.SelfContainer, string, string, engine.Stack) error
 	state   func(context.Context, string) (engine.DetachedState, error)
+	remove  func(string)
 	removed atomic.Int32
 }
 
@@ -39,7 +40,10 @@ func (d *detachedDriver) DetachedState(ctx context.Context, name string) (engine
 	return d.state(ctx, name)
 }
 
-func (d *detachedDriver) RemoveDetached(context.Context, string) error {
+func (d *detachedDriver) RemoveDetached(_ context.Context, name string) error {
+	if nil != d.remove {
+		d.remove(name)
+	}
 	d.removed.Add(1)
 	return nil
 }
@@ -125,7 +129,7 @@ func TestSelfOperation(t *testing.T) {
 		if nil != err {
 			return err
 		}
-		if "dagent-operation-"+input.ID != name || "self" != base.Name || "update" != input.Action {
+		if "svc_dagent-operation-"+input.ID != name || name != input.HelperName || "self" != base.Name || "update" != input.Action {
 			return errors.New("incorrect helper request")
 		}
 		op := &operation{ID: input.ID, Stack: "self", Action: "update", Output: "helper completed\n"}
@@ -269,7 +273,7 @@ func TestDetachedLaunchFailure(t *testing.T) {
 	a, driver, _ := detachedFixture(t)
 	op := detachedOp(t, a, "0000000000000002")
 	driver.start = func(_ context.Context, self engine.SelfContainer, name, path string, base engine.Stack) error {
-		if "node" != self.ID || "dagent-operation-"+op.ID != name || filepath.Join(a.operationsDir, op.ID, "request.json") != path ||
+		if "node" != self.ID || "svc_dagent-operation-"+op.ID != name || filepath.Join(a.operationsDir, op.ID, "request.json") != path ||
 			"self" != base.Name {
 			t.Fatal("incorrect launch metadata")
 		}
@@ -348,7 +352,7 @@ func TestDetachedInspectOutage(t *testing.T) {
 			continue
 		}
 		matches++
-		for _, detail := range []string{op.ID, op.Stack, op.Action, "dagent-operation-" + op.ID, record.Error} {
+		for _, detail := range []string{op.ID, op.Stack, op.Action, "svc_dagent-operation-" + op.ID, record.Error} {
 			if !strings.Contains(record.Message, detail) {
 				t.Fatalf("inspection message hides %q: %s", detail, record.Message)
 			}
@@ -487,6 +491,51 @@ func TestDetachedRestore(t *testing.T) {
 	}
 	cancel()
 	a.work.Wait()
+}
+
+func TestDetachedRestoreHelper(t *testing.T) {
+	for _, prefix := range []string{"dagent-operation-", "svc_dagent-operation-"} {
+		t.Run(prefix, func(t *testing.T) {
+			a, driver, _ := detachedFixture(t)
+			op := detachedOp(t, a, "0000000000000008")
+			if "dagent-operation-" == prefix {
+				path := filepath.Join(a.operationsDir, op.ID, "request.json")
+				request, err := readDetachedRequest(path)
+				if nil != err {
+					t.Fatal(err)
+				}
+				request.HelperName = ""
+				data, err := json.Marshal(request)
+				if nil != err {
+					t.Fatal(err)
+				}
+				if err := configutil.Write(path, data); nil != err {
+					t.Fatal(err)
+				}
+			}
+			if err := writeDetachedResult(filepath.Join(a.operationsDir, op.ID, "result.json"), op, 0); nil != err {
+				t.Fatal(err)
+			}
+			want := prefix + op.ID
+			driver.state = func(_ context.Context, name string) (engine.DetachedState, error) {
+				if want != name {
+					t.Errorf("inspected helper %q, want %q", name, want)
+				}
+				return engine.DetachedState{}, nil
+			}
+			driver.remove = func(name string) {
+				if want != name {
+					t.Errorf("removed helper %q, want %q", name, want)
+				}
+			}
+			a.ops, a.busy, a.order = map[string]*operation{}, map[string]bool{}, nil
+			a.initDetached(filepath.Dir(filepath.Dir(a.operationsDir)))
+			a.work.Wait()
+			if 1 != driver.removed.Load() {
+				t.Fatal("restored helper was not removed")
+			}
+		})
+	}
 }
 
 func TestDetachedRestoreCorrupt(t *testing.T) {
