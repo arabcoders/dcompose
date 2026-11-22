@@ -167,6 +167,45 @@ func TestBrowserTabs(t *testing.T) {
 	}
 }
 
+func TestBrowserContainerLogs(t *testing.T) {
+	fixture := newWorkspace(t)
+	f, node := fixture.channel, fixture.node
+	browser := workspaceSnapshot(t, fixture.app.URL, fixture.server)
+	attach := func(stream, container string) protocol.ChannelMessage {
+		t.Helper()
+		browserSend(t, browser, protocol.ChannelMessage{
+			Type: "logs.attach", Stream: stream, Node: "home", Resource: "demo", Container: container,
+		})
+		command := channelCommand(t, f, "logs.attach")
+		if "demo" != command.Resource || container != command.Container {
+			t.Fatal("log selection was not forwarded", command)
+		}
+		return command
+	}
+	first := attach("first", "demo.web-1")
+	line := protocol.ChannelMessage{
+		Type: "stream.event", Stream: first.Stream, Container: first.Container,
+		Event: "message", Payload: json.RawMessage(`{"message":"replica-one"}`),
+	}
+	browserSend(t, node, line)
+	if got := resourceMessage(t, browser); "first" != got.Stream || "message" != got.Event || string(line.Payload) != string(got.Payload) {
+		t.Fatal("container log was not forwarded", got)
+	}
+	browserSend(t, browser, protocol.ChannelMessage{Type: "stream.detach", Stream: "first"})
+	if detached := channelCommand(t, f, "stream.detach"); first.Stream != detached.Stream {
+		t.Fatal("previous container stream not detached", detached)
+	}
+	second := attach("second", "demo.web-2")
+	browserSend(t, node, line)
+	line.Stream = second.Stream
+	line.Container = ""
+	browserSend(t, node, line)
+	if got := resourceMessage(t, browser); "second" != got.Stream || "error" != got.Type ||
+		http.StatusUpgradeRequired != got.Status || nil != got.Payload {
+		t.Fatal("unfiltered logs reached a filtered stream", got)
+	}
+}
+
 func TestShellObservers(t *testing.T) {
 	fixture := newWorkspace(t)
 	f, s, node, app := fixture.channel, fixture.server, fixture.node, fixture.app

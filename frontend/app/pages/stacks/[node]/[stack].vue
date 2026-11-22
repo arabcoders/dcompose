@@ -150,6 +150,9 @@ const busy = computed(
 const active = computed(() =>
   runtime.value?.services.some((service) => 'running' === service.state),
 )
+const containerNames = computed(() =>
+  (runtime.value?.services ?? []).map((service) => service.name),
+)
 const statsStopped = computed(() => {
   const state = selectedRuntime.value
   return !!state && ('stopped' === state.status || 'draft' === state.status)
@@ -764,6 +767,7 @@ onBeforeUnmount(() => {
         :key="`${node}/${name}`"
         :node="node"
         :stack="name"
+        :containers="containerNames"
         :connected="connected && !!runtime"
         :paused="'paused' === selectedNode?.connection"
         :draft="'draft' === runtime?.status"

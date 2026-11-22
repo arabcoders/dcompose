@@ -239,6 +239,30 @@ func TestSocketFallback(t *testing.T) {
 	}
 }
 
+func TestContainerLogs(t *testing.T) {
+	host := "unix:///container/path/podman.sock"
+	t.Setenv("CONTAINER_HOST", host)
+	id := strings.Repeat("b", 64)
+	// Resolution only runs the Compose inventory; the native command is
+	// returned unexecuted and must keep the remote transport.
+	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+		if "podman" == cmd.Program {
+			t.Fatalf("native logs executed during resolution: %+v", cmd)
+		}
+		return []byte(`[{"ID":"` + id + `","Name":"demo-web-2","State":"exited"}]`), nil, nil
+	})
+	want := []string{"--remote", "--url", host, "logs", "--follow", "--tail", "100", id}
+	cmd, err := p.ContainerLogs(context.Background(), testStack(), "demo-web-2")
+	if nil != err || "podman" != cmd.Program || !reflect.DeepEqual(want, cmd.Args) {
+		t.Fatalf("native logs: %+v %v", cmd, err)
+	}
+	_, err = p.ContainerLogs(context.Background(), testStack(), "missing")
+	var apiErr *engine.Error
+	if !errors.As(err, &apiErr) || 404 != apiErr.Code {
+		t.Fatalf("missing container: %v", err)
+	}
+}
+
 func TestProbe(t *testing.T) {
 	failure := errors.New("engine unavailable")
 	p := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {

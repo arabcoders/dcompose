@@ -287,6 +287,37 @@ describe('Shared connection', () => {
     expect(requests).toEqual([])
   })
 
+  test('container logs', () => {
+    const realtime = useRealtimeStore()
+    const all = callbacks()
+    const filtered = callbacks()
+    const stats = callbacks()
+    realtime.subscribe({ type: 'logs', node: 'n', resource: 'app' }, all)
+    realtime.subscribe(
+      { type: 'logs', node: 'n', resource: 'app', container: 'app-web-1' },
+      filtered,
+    )
+    realtime.subscribe({ type: 'stats', node: 'n', resource: 'app' }, stats)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    expect(socket.sent).toEqual([
+      { type: 'logs.attach', stream: 'reader-1', node: 'n', resource: 'app' },
+      {
+        type: 'logs.attach',
+        stream: 'reader-2',
+        node: 'n',
+        resource: 'app',
+        container: 'app-web-1',
+      },
+      { type: 'stats.attach', stream: 'reader-3', node: 'n', resource: 'app' },
+    ])
+    const message = 'agent-version-refusal-sentinel'
+    socket.message({ type: 'error', stream: 'reader-2', status: 426, error: message })
+    expect(filtered.onDisconnect).toHaveBeenCalledWith(message)
+    expect(filtered.onRejected).toHaveBeenCalledWith(426)
+    expect(all.onDisconnect).not.toHaveBeenCalled()
+  })
+
   test('stats reader', () => {
     const realtime = useRealtimeStore()
     const runtime = callbacks()

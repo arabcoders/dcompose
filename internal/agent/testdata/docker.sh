@@ -32,6 +32,10 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
  if [ -f "$FAKE_DIR/local-image-$5" ]; then cat "$FAKE_DIR/local-image-$5"; else echo 'sha256:new'; fi
  exit
 fi
+if [ "$1" = logs ]; then
+ echo 'container hello'
+ exit 3
+fi
 shift
 while [ "$#" -gt 0 ]; do
  case "$1" in

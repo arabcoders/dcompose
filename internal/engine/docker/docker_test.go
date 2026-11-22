@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -75,5 +76,32 @@ func TestShell(t *testing.T) {
 		cmd.Args,
 	) {
 		t.Fatalf("shell: %+v", cmd)
+	}
+}
+
+func TestContainerLogs(t *testing.T) {
+	first, second := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	s := testStack()
+	inventory := []string{
+		"compose", "--project-name", s.Name, "--project-directory", s.Dir, "--env-file", s.EnvFile, "--file", s.ComposeFile,
+		"ps", "--all", "--format", "json",
+	}
+	d := New(func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+		if "docker" != cmd.Program || !reflect.DeepEqual(inventory, cmd.Args) {
+			t.Fatalf("inventory: %+v", cmd)
+		}
+		return []byte(
+			`[{"ID":"` + first + `","Name":"demo-web-1","State":"running"},{"ID":"` + second + `","Name":"demo-web-2","State":"exited"}]`,
+		), nil, nil
+	})
+	cmd, err := d.ContainerLogs(context.Background(), s, "demo-web-2")
+	if nil != err || "docker" != cmd.Program || "" != cmd.Dir ||
+		!reflect.DeepEqual([]string{"logs", "--follow", "--tail", "100", second}, cmd.Args) {
+		t.Fatalf("native logs: %+v %v", cmd, err)
+	}
+	_, err = d.ContainerLogs(context.Background(), s, "demo-web")
+	var apiErr *engine.Error
+	if !errors.As(err, &apiErr) || 404 != apiErr.Code {
+		t.Fatalf("partial name: %v", err)
 	}
 }

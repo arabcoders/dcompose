@@ -13,6 +13,7 @@ import type {
   NodeInfo,
   NodeInfoLoadResult,
   NodeInfoSample,
+  RealtimeSubscription,
   StackEvent,
   RegistriesResponse,
   RegistryCredential,
@@ -870,12 +871,16 @@ describe('Editor', () => {
   })
 })
 
+type StreamSubscription = Exclude<RealtimeSubscription, { type: 'shell' }>
+
 const mountLogs = async (busy = false, draft = false) => {
   const chunks: Array<string> = []
   const buffers: Array<Array<string>> = []
   const startedOutput: Array<string> = []
+  const started: Array<StreamSubscription> = []
   const reset = mock(() => {})
-  const start = mock(() => {
+  const start = mock((subscription: StreamSubscription) => {
+    started.push(subscription)
     startedOutput.push(chunks.join(''))
   })
   const stop = mock(() => {})
@@ -895,14 +900,23 @@ const mountLogs = async (busy = false, draft = false) => {
   const props = vue.reactive<StackLogsProps>({
     node: 'node',
     stack: 'app',
+    containers: ['app-web-1', 'app-web-2', 'app-worker-1'],
     connected: true,
     busy,
     draft,
   })
   const component = await loadComponent('StackLogs', {
     '@nuxt/ui/components/Button.vue': { default: stub('button') },
-    '@nuxt/ui/components/Card.vue': { default: stub('section') },
+    '@nuxt/ui/components/Card.vue': {
+      default: vue.defineComponent({
+        setup:
+          (_, { slots }) =>
+          () =>
+            vue.h('section', [slots.header?.(), slots.default?.()]),
+      }),
+    },
     '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+    '@nuxt/ui/components/Select.vue': { default: stub('select') },
     '~/components/stacks/OutputTerminal.vue': {
       default: vue.defineComponent({
         setup: (_, { expose }) => {
@@ -938,6 +952,7 @@ const mountLogs = async (busy = false, draft = false) => {
     chunks,
     buffers,
     startedOutput,
+    started,
     start,
     stop,
     reset,
@@ -945,6 +960,13 @@ const mountLogs = async (busy = false, draft = false) => {
     workspace,
     listeners,
     completed,
+    select: () => {
+      const element = flatten(root).find((candidate) => 'select' === candidate.type)
+      if (!element) {
+        throw new Error('missing container selector')
+      }
+      return element
+    },
     event: (event: StackEvent) => {
       for (const listener of listeners) {
         listener(event)
@@ -1058,6 +1080,110 @@ describe('Stack logs', () => {
     expect(buffer.join('')).toContain('rejection-sentinel')
     expect(buffer.join('')).toEndWith('after\r\n')
     expect(view.reset).not.toHaveBeenCalled()
+  })
+
+  test('container selection', async () => {
+    const view = await mountLogs()
+    const select = view.select()
+    const items = select.props.items as Array<{ label: string; value: string }>
+    const all = items[0]!
+    expect(select.props.modelValue).toBe(all.value)
+    expect(items.map((item) => item.value)).toEqual([
+      all.value,
+      'app-web-1',
+      'app-web-2',
+      'app-worker-1',
+    ])
+    expect(items.every((item) => item.label)).toBe(true)
+    expect(view.started).toEqual([{ type: 'logs', node: 'node', resource: 'app' }])
+
+    await trigger(select, 'onUpdate:modelValue', 'app-web-1')
+    await vue.nextTick()
+    expect(view.started.at(-1)).toEqual({
+      type: 'logs',
+      node: 'node',
+      resource: 'app',
+      container: 'app-web-1',
+    })
+    expect(view.stop).toHaveBeenCalledTimes(1)
+    expect(view.reset).toHaveBeenCalledTimes(1)
+
+    await trigger(select, 'onUpdate:modelValue', 'app-web-2')
+    await vue.nextTick()
+    expect(view.started.at(-1)).toEqual({
+      type: 'logs',
+      node: 'node',
+      resource: 'app',
+      container: 'app-web-2',
+    })
+    expect(view.stop).toHaveBeenCalledTimes(2)
+    expect(view.reset).toHaveBeenCalledTimes(2)
+    expect(view.buffers).toHaveLength(1)
+
+    await trigger(select, 'onUpdate:modelValue', all.value)
+    await vue.nextTick()
+    expect(view.started.at(-1)).toEqual({ type: 'logs', node: 'node', resource: 'app' })
+    expect('container' in view.started.at(-1)!).toBe(false)
+    expect(view.stop).toHaveBeenCalledTimes(3)
+    expect(view.reset).toHaveBeenCalledTimes(3)
+  })
+
+  test('action container', async () => {
+    const view = await mountLogs()
+    const select = view.select()
+    await trigger(select, 'onUpdate:modelValue', 'app-web-2')
+    await vue.nextTick()
+    const resets = view.reset.mock.calls.length
+
+    view.props.busy = true
+    await vue.nextTick()
+    expect(select.props.disabled).toBe(true)
+    expect(view.stop).toHaveBeenCalledTimes(2)
+    view.props.busy = false
+    await vue.nextTick()
+    expect(select.props.disabled).toBe(false)
+    expect(view.started.at(-1)).toEqual({
+      type: 'logs',
+      node: 'node',
+      resource: 'app',
+      container: 'app-web-2',
+    })
+
+    view.event({
+      event: 'stack.action',
+      node: 'node',
+      name: 'app',
+      action: 'update',
+      phase: 'start',
+    })
+    await vue.nextTick()
+    expect(select.props.disabled).toBe(true)
+    view.props.containers = []
+    await vue.nextTick()
+    expect(select.props.modelValue).toBe('app-web-2')
+    const output = '\x1b[33mpulling\x1b[0m\r\n'
+    view.event({ event: 'stack.output', node: 'node', name: 'app', output })
+    expect(view.reset.mock.calls.length).toBe(resets)
+    expect(view.chunks.join('')).toContain(output)
+    view.event({
+      event: 'stack.action',
+      node: 'node',
+      name: 'app',
+      action: 'update',
+      phase: 'exit',
+      exit_code: 0,
+    })
+    await vue.nextTick()
+    expect(select.props.disabled).toBe(false)
+    expect(view.started.at(-1)).toEqual({
+      type: 'logs',
+      node: 'node',
+      resource: 'app',
+      container: 'app-web-2',
+    })
+    expect(view.reset.mock.calls.length).toBe(resets)
+    view.log('after')
+    expect(view.chunks.join('')).toContain('after\r\n')
   })
 
   test('split ANSI', async () => {
@@ -2532,9 +2658,14 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
           props: {
             showErrors: { type: Boolean, default: true },
             actionError: { type: String, default: '' },
+            containers: { type: Array, default: () => [] },
           },
           setup: (props) => () =>
-            vue.h('logs', { showErrors: props.showErrors, actionError: props.actionError }),
+            vue.h('logs', {
+              showErrors: props.showErrors,
+              actionError: props.actionError,
+              containers: props.containers,
+            }),
         }),
       },
       '~/composables/useDialog': {
@@ -2833,6 +2964,7 @@ test.each(['stack', 'node'] as const)('%s page alerts', async (page) => {
     expect(flatten(root).find((element) => 'logs' === element.type)?.props.showErrors).toBe(true)
 
     const logs = flatten(root).find((element) => 'logs' === element.type)
+    expect(logs?.props.containers).toEqual(['app-1'])
     const menu = flatten(root).find(
       (element) =>
         'menu' === element.type &&

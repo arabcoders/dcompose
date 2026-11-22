@@ -114,11 +114,13 @@ export const useRealtimeStore = defineStore('realtime', () => {
     if ('shell' === subscription.type) {
       send({ type: 'shell.attach', stream: id, node: subscription.node, shell: subscription.shell })
     } else {
+      const container = 'logs' === subscription.type ? subscription.container : undefined
       send({
         type: `${subscription.type}.attach`,
         stream: id,
         node: subscription.node,
         resource: subscription.resource,
+        ...(container ? { container } : {}),
       })
     }
   }

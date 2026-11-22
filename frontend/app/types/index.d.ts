@@ -354,7 +354,8 @@ export interface WorkspaceStreamError {
 
 export type RealtimeSubscription =
   | { type: 'runtime' }
-  | { type: 'logs' | 'stats'; node: string; resource: string }
+  | { type: 'logs'; node: string; resource: string; container?: string }
+  | { type: 'stats'; node: string; resource: string }
   | { type: 'shell'; node: string; shell: string }
 
 export interface RealtimeCallbacks {
@@ -474,6 +475,7 @@ export interface OutputTerminalProps {
 export interface StackLogsProps {
   node: string
   stack: string
+  containers: Array<string>
   connected: boolean
   paused?: boolean
   draft?: boolean

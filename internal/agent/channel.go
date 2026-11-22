@@ -402,6 +402,13 @@ func (a *agent) channelCommands(
 					if "stats.attach" == message.Type {
 						sampler, subscriber = a.subscribeStats(message.Resource)
 					}
+					// Filtered logs echo the requested container on every
+					// event, done included, so the server can detect older
+					// agents that silently ignore the filter.
+					container := ""
+					if "logs.attach" == message.Type {
+						container = message.Container
+					}
 					streamCtx, cancel := context.WithCancel(ctx)
 					if nil != sampler {
 						attached[key] = func() {
@@ -414,7 +421,13 @@ func (a *agent) channelCommands(
 					streams.Go(func() {
 						deliver := func(e streamEvent) bool {
 							select {
-							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
+							case outgoing <- protocol.ChannelMessage{
+								Type:      "stream.event",
+								Stream:    message.Stream,
+								Container: container,
+								Event:     e.name,
+								Payload:   e.data,
+							}:
 								return true
 							case <-streamCtx.Done():
 								return false
@@ -424,7 +437,7 @@ func (a *agent) channelCommands(
 						if nil != sampler {
 							err = a.watchStats(streamCtx, message.Resource, sampler, subscriber, deliver)
 						} else {
-							err = a.streamLogs(streamCtx, message.Resource, deliver)
+							err = a.streamLogs(streamCtx, message.Resource, container, deliver)
 						}
 						if nil != err && nil == streamCtx.Err() {
 							code := 502

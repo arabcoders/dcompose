@@ -183,6 +183,9 @@ type Driver interface {
 	ImageChanged(context.Context, Service) (bool, error)
 	Action(Stack, string, string) Command
 	Logs(Stack) Command
+	// ContainerLogs resolves an exact container name inside the stack and
+	// returns the native engine logs command for it.
+	ContainerLogs(context.Context, Stack, string) (Command, error)
 	Probe(context.Context) error
 	Events(time.Time) Command
 	EventStack([]byte) string
