@@ -147,6 +147,52 @@ func openLogStream(t *testing.T, app *httptest.Server, s *Server, query, lastID 
 	return response, cancel
 }
 
+func TestLogSummary(t *testing.T) {
+	s := testServer(t, nil)
+	startLogHistory(t, s)
+	for index := range 6 {
+		slog.Warn("warning fixture", "sequence", index)
+	}
+	slog.Info("update fixture", "sequence", 6, "automatic", true, "status", "succeeded")
+	for range 10 {
+		slog.Info("noise fixture", "automatic", true, "status", "running")
+	}
+	const query = "?summary=true&limit=5"
+	response := perform(t, s, "GET", "/api/logs"+query, "")
+	var page logPage
+	if http.StatusOK != response.Code || nil != json.Unmarshal(response.Body.Bytes(), &page) || 5 != len(page.Entries) {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	for i, entry := range page.Entries {
+		if strconv.Itoa(i+2) != string(entry.Fields["sequence"]) {
+			t.Fatal("summary did not return the latest matches", page.Entries)
+		}
+	}
+	for _, query := range []string{"?limit=1", "?limit=1&summary=false", "?limit=1&summary=", "?limit=1&summary=other"} {
+		response := perform(t, s, "GET", "/api/logs"+query, "")
+		var ordinary logPage
+		if http.StatusOK != response.Code || nil != json.Unmarshal(response.Body.Bytes(), &ordinary) ||
+			1 != len(ordinary.Entries) || page.LatestID != ordinary.Entries[0].ID {
+			t.Fatal("expected unfiltered logs", query, response.Code, response.Body.String())
+		}
+	}
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	stream, cancel := openLogStream(t, app, s, query, "")
+	defer cancel()
+	reader := bufio.NewReader(stream.Body)
+	for _, entry := range page.Entries {
+		if got := nextLogEvent(t, reader); entry.ID != got.ID {
+			t.Fatal("stream and page returned different summaries", got, entry)
+		}
+	}
+	slog.Info("noise fixture", "automatic", false, "status", "succeeded")
+	slog.Error("error fixture", "sequence", 7)
+	if got := nextLogEvent(t, reader); "7" != string(got.Fields["sequence"]) {
+		t.Fatal("summary did not filter live events", got)
+	}
+}
+
 func TestLogStream(t *testing.T) {
 	s := testServer(t, nil)
 	startLogHistory(t, s)

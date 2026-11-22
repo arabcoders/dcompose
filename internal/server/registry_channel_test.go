@@ -177,6 +177,34 @@ func TestRegistryBarrier(t *testing.T) {
 	}
 }
 
+func TestRegistryRuntimeState(t *testing.T) {
+	f := newRegistryChannel(t)
+	s := persistedServer(t, f.server)
+	startChannels(t, s)
+	first := nextRegistry(t, f)
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	browser := browserStream(t, app.URL+"/api/events", s)
+	_ = stackMessage(t, browser, "node.state")
+
+	sendRuntime(t, first.conn, "node.state", `{"state":"unavailable","message":"peer-only details"}`)
+	applyRegistry(t, first, first.snapshot.Revision)
+	_ = stackMessage(t, browser, "node.snapshot")
+	checkState := func(want string) {
+		t.Helper()
+		message := stackMessage(t, browser, "node.state")
+		var payload struct{ Node, State string }
+		if err := json.Unmarshal(message.Payload, &payload); nil != err || "home" != payload.Node || want != payload.State ||
+			strings.Contains(string(message.Payload), "peer-only details") {
+			t.Fatal("unexpected runtime state", message, err)
+		}
+	}
+	checkState("unavailable")
+
+	sendRuntime(t, first.conn, "node.state", `{"state":"connected"}`)
+	checkState("connected")
+}
+
 func TestRegistryResync(t *testing.T) {
 	f := newRegistryChannel(t)
 	s := persistedServer(t, f.server)

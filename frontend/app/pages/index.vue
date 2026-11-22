@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '~/store/workspace'
 import type { LogEntry, StatCardProps } from '~/types'
 import { containerProblem, imageUpdateTooltip } from '~/utils/stacks'
 import { formatLogDate, getLogLevel, logNodeLabel } from '~/utils/logs'
+import { notification } from '~/utils'
 
 definePageMeta({ layout: 'workspace' })
 
@@ -27,22 +28,10 @@ const {
   entries: logEntries,
   error: logsError,
   truncated: logsTruncated,
-  search: searchLogs,
+  start: startLogs,
   refresh: refreshLogs,
-} = useLogs()
-const recentLogs = computed(() =>
-  logEntries.value
-    .filter((entry) => {
-      const level = getLogLevel(entry.level)
-      return (
-        'warning' === level ||
-        'error' === level ||
-        ('info' === level && true === entry.fields.automatic && 'succeeded' === entry.fields.status)
-      )
-    })
-    .slice(-5)
-    .reverse(),
-)
+} = useLogs({ summary: true })
+const recentLogs = computed(() => logEntries.value.toReversed())
 const logsLink = (entry?: LogEntry) => ({
   path: '/logs',
   query: {
@@ -51,7 +40,7 @@ const logsLink = (entry?: LogEntry) => ({
   },
 })
 onMounted(() => {
-  void searchLogs({ levels: ['info', 'warning', 'error'], node: '', search: '' })
+  void startLogs()
 })
 
 const enabledNodes = computed(() => nodes.value.filter((node) => !node.paused))
@@ -64,13 +53,22 @@ const unavailableNodes = computed(() =>
   ),
 )
 const currentStacks = computed(() =>
-  reportingNodes.value.flatMap((node) =>
-    node.stacks.filter((stack) => !stack.loading).map((stack) => ({ node, stack })),
+  enabledNodes.value.flatMap((node) =>
+    node.stacks
+      .filter(
+        (stack) =>
+          !stack.loading || 'unknown' !== stack.status || !!stack.services.length || !!stack.error,
+      )
+      .map((stack) => ({
+        node,
+        stack,
+        verified: 'connected' === node.connection && !stack.loading,
+      })),
   ),
 )
 const issues = computed(() =>
   currentStacks.value
-    .flatMap(({ node, stack }) => {
+    .flatMap(({ node, stack, verified }) => {
       const messages = stack.error
         ? [stack.error]
         : stack.services.flatMap((service) => {
@@ -86,7 +84,7 @@ const issues = computed(() =>
         : stack.services.some((service) => containerProblem(service))
           ? 1
           : 2
-      return messages.length ? [{ node, stack, messages, priority }] : []
+      return messages.length ? [{ node, stack, messages, priority, verified }] : []
     })
     .sort(
       (a, b) =>
@@ -95,22 +93,26 @@ const issues = computed(() =>
         a.stack.name.localeCompare(b.stack.name),
     ),
 )
-const busyStacks = computed(() => currentStacks.value.filter(({ stack }) => stack.busy))
+const busyStacks = computed(() =>
+  currentStacks.value.filter(({ stack, verified }) => verified && stack.busy),
+)
 const updates = computed(() =>
-  currentStacks.value.flatMap(({ node, stack }) => {
+  currentStacks.value.flatMap(({ node, stack, verified }) => {
     if (stack.error) {
       return []
     }
     const services = stack.services.filter((service) =>
       ['available', 'checking', 'error'].includes(service.image_update?.status ?? ''),
     )
-    return services.length ? [{ node, stack, services }] : []
+    return services.length ? [{ node, stack, services, verified }] : []
   }),
 )
 const availableUpdates = computed(
   () =>
-    updates.value.filter((item) =>
-      item.services.some((service) => 'available' === service.image_update?.status),
+    updates.value.filter(
+      (item) =>
+        item.verified &&
+        item.services.some((service) => 'available' === service.image_update?.status),
     ).length,
 )
 const counts = computed<Array<StatCardProps & { href: string }>>(() => [
@@ -123,7 +125,7 @@ const counts = computed<Array<StatCardProps & { href: string }>>(() => [
   },
   {
     label: 'Attention',
-    value: issues.value.length,
+    value: issues.value.filter((item) => item.verified).length,
     icon: 'i-lucide-triangle-alert',
     href:
       unavailableNodes.value.length || issues.value.length
@@ -152,6 +154,27 @@ const checkUpdates = async () => {
   })
   if (status) {
     await workspace.checkImages()
+  }
+}
+
+const refreshing = ref(false)
+const refreshOverview = async () => {
+  if (refreshing.value) {
+    return
+  }
+  refreshing.value = true
+  try {
+    await workspace.load()
+    const failures = await workspace.refreshNodeInfo()
+    if (0 < failures.length) {
+      notification(
+        'error',
+        'Refresh',
+        `Could not refresh node resource usage. ${failures.join(' ')}`,
+      )
+    }
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -220,8 +243,8 @@ useHead({ title: 'Overview' })
         color="neutral"
         variant="outline"
         icon="i-lucide-refresh-cw"
-        :loading="workspaceLoading"
-        @click="workspace.load"
+        :loading="workspaceLoading || refreshing"
+        @click="refreshOverview"
         >Refresh</UButton
       >
     </div>
@@ -309,6 +332,9 @@ useHead({ title: 'Overview' })
                 {{ message }}
               </p>
             </div>
+            <UBadge v-if="!item.verified" color="warning" variant="subtle" size="sm">
+              Unverified
+            </UBadge>
             <UBadge
               :color="0 === item.priority ? 'error' : 'warning'"
               :icon="0 === item.priority ? 'i-lucide-circle-alert' : 'i-lucide-triangle-alert'"
@@ -426,15 +452,20 @@ useHead({ title: 'Overview' })
                 color="neutral"
                 variant="outline"
                 icon="i-lucide-refresh-cw"
-                :loading="workspace.isCheckingImages(item.node.id, item.stack.name)"
+                :loading="
+                  item.verified && workspace.isCheckingImages(item.node.id, item.stack.name)
+                "
                 :disabled="
-                  item.stack.busy || workspace.isCheckingImages(item.node.id, item.stack.name)
+                  item.stack.busy ||
+                  !item.verified ||
+                  workspace.isCheckingImages(item.node.id, item.stack.name)
                 "
                 :aria-label="`Check updates for ${item.stack.name} on ${item.node.name}`"
                 @click="workspace.checkImages(item.node.id, item.stack.name)"
                 >Check</UButton
               >
             </div>
+            <UBadge v-if="!item.verified" color="warning" variant="subtle">Unverified</UBadge>
             <div v-for="service in item.services" :key="service.name" class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="break-all text-xs font-medium">{{ service.service }}</span>

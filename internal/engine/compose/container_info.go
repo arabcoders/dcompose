@@ -7,7 +7,6 @@ import (
 	"github.com/arabcoders/dcompose/internal/engine"
 )
 
-// ContainerInfoFormat selects only scheduling labels and absolute container times.
 const ContainerInfoFormat = `{"labels":{{json .Config.Labels}},"created_at":{{json .Created}},"started_at":{{json .State.StartedAt}}}`
 
 // ApplyContainerInfo normalizes Docker and Podman inspection times for the API.

@@ -60,11 +60,10 @@ func (s *Server) registryReply(channel *nodeChannel, message protocol.ChannelMes
 	channel.registryApplied = applied.Revision
 	channel.registryFailed = false
 	wakeRegistryLocked(channel)
-	s.queueNodeImagesLocked(channel.id)
 	if runtime := s.runtime[channel.id]; nil != runtime && nil != runtime.snapshot {
 		s.broadcastLocked(runtimeFrame("node.snapshot", runtime.snapshot))
-		s.stateLocked(channel.id, "connected", "")
 	}
+	s.publishAgentStateLocked(channel)
 	return nil
 }
 

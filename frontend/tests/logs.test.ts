@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test'
+import { createPinia, disposePinia, setActivePinia, storeToRefs } from 'pinia'
 import * as ts from 'typescript'
 import * as vue from 'vue'
 import type { EffectScope } from 'vue'
 import type { GenericError, LogEntry, LogFilters, LogsResponse } from '../app/types'
 import * as logUtils from '../app/utils/logs'
 import { LogStreamParser } from '../app/utils/logStream'
+import './mocks/nuxt'
+
+const { useAuthStore } = await import('../app/store/auth')
+const { useLogSummaryStore } = await import('../app/store/logSummary')
 
 const entry = (id: number, values: Partial<LogEntry> = {}): LogEntry => ({
   id,
@@ -202,6 +207,8 @@ const { outputText } = ts.transpileModule(await Bun.file(filename).text(), {
 })
 const imports: Record<string, unknown> = {
   vue,
+  pinia: { storeToRefs },
+  '~/store/logSummary': { useLogSummaryStore },
   '~/utils': {
     request,
     notification: notifications,
@@ -254,6 +261,50 @@ afterEach(async () => {
 })
 
 describe('log history', () => {
+  test('summary remount', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.authenticated = true
+    const mount = () => {
+      const scope = vue.effectScope()
+      scopes.push(scope)
+      return { scope, logs: scope.run(() => exports.useLogs({ summary: true }))! }
+    }
+    try {
+      history = async () => page([entry(10)], { latest_id: 20 })
+      const first = mount()
+      await first.logs.start()
+      await flush()
+      expect(requests[0]?.url.searchParams.get('summary')).toBe('true')
+      expect(requests[0]?.url.searchParams.get('limit')).toBe('5')
+      expect(requests[1]?.url.searchParams.get('after')).toBe('20')
+      emit(0, ...Array.from({ length: 6 }, (_, index) => entry(21 + index)))
+      await flush()
+      expect(first.logs.entries.value.map(({ id }) => id)).toEqual([22, 23, 24, 25, 26])
+      first.scope.stop()
+
+      const next = mount()
+      expect(next.logs.entries.value.map(({ id }) => id)).toEqual([22, 23, 24, 25, 26])
+      await next.logs.start()
+      await flush()
+      expect(requests).toHaveLength(3)
+      expect(requests[2]?.url.pathname).toBe('/api/logs/stream')
+      expect(requests[2]?.url.searchParams.get('after')).toBe('26')
+      emit(1, entry(27))
+      await flush()
+      expect(next.logs.entries.value.map(({ id }) => id)).toEqual([23, 24, 25, 26, 27])
+      next.scope.stop()
+
+      auth.authenticated = false
+      auth.authenticated = true
+      expect(mount().logs.entries.value).toEqual([])
+    } finally {
+      disposePinia(pinia)
+      setActivePinia(undefined)
+    }
+  })
+
   test('live cursor', async () => {
     const logs = createLogs()
     await logs.search(filters())

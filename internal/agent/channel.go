@@ -219,7 +219,7 @@ func (a *agent) channelCommands(
 	outgoing chan<- protocol.ChannelMessage,
 	cancel context.CancelFunc,
 ) {
-	attached := make(map[string]context.CancelFunc)
+	attached := make(map[string]func())
 	type relayDelivery struct {
 		op   *operation
 		done atomic.Bool
@@ -393,21 +393,39 @@ func (a *agent) channelCommands(
 					if detach, ok := attached[key]; ok {
 						detach()
 					}
-					streamCtx, detach := context.WithCancel(ctx)
-					attached[key] = detach
-					streams.Go(func() {
-						stream := a.streamLogs
-						if "stats.attach" == message.Type {
-							stream = a.streamStats
+					// Stats attach to the node's shared per-stack sampler;
+					// logs stream independently. Detaching synchronously
+					// ensures a replaced stream stops sampling before its
+					// successor joins.
+					var sampler *statsSampler
+					var subscriber *eventSubscriber
+					if "stats.attach" == message.Type {
+						sampler, subscriber = a.subscribeStats(message.Resource)
+					}
+					streamCtx, cancel := context.WithCancel(ctx)
+					if nil != sampler {
+						attached[key] = func() {
+							cancel()
+							a.unsubscribeStats(message.Resource, sampler, subscriber)
 						}
-						err := stream(streamCtx, message.Resource, func(e streamEvent) bool {
+					} else {
+						attached[key] = cancel
+					}
+					streams.Go(func() {
+						deliver := func(e streamEvent) bool {
 							select {
 							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
 								return true
 							case <-streamCtx.Done():
 								return false
 							}
-						})
+						}
+						var err error
+						if nil != sampler {
+							err = a.watchStats(streamCtx, message.Resource, sampler, subscriber, deliver)
+						} else {
+							err = a.streamLogs(streamCtx, message.Resource, deliver)
+						}
 						if nil != err && nil == streamCtx.Err() {
 							code := 502
 							if apiErr, ok := errors.AsType[*apiError](err); ok {

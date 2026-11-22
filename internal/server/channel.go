@@ -30,6 +30,7 @@ type nodeChannel struct {
 	conn             *websocket.Conn // guarded by hubMu, as are shells
 	shells           map[string]map[chan protocol.ChannelMessage]struct{}
 	streams          map[string]*browserSubscription
+	agentState       map[string]json.RawMessage
 	registryRevision string
 	registryApplied  string
 	registryFailed   bool
@@ -250,6 +251,7 @@ func (s *Server) runChannel(channel *nodeChannel) {
 			channel.imageCancel()
 		}
 		channel.registryApplied = ""
+		channel.agentState = nil
 		wakeRegistryLocked(channel)
 		s.failShellsLocked(channel, false)
 		if s.channels[channel.id] == channel && nil == channel.ctx.Err() {

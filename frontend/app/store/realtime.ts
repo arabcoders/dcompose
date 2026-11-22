@@ -1,13 +1,20 @@
 import { defineStore } from 'pinia'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useAuthStore } from '~/store/auth'
-import type { RealtimeCallbacks, RealtimeReader, RealtimeSubscription } from '~/types'
+import type {
+  ContainerStats,
+  RealtimeCallbacks,
+  RealtimeReader,
+  RealtimeSubscription,
+  StackStatsSample,
+} from '~/types'
 import { resolveWebSocketUrl } from '~/utils'
 import { parseRealtimeMessage, workspaceErrorMessage } from '~/utils/stacks'
 
 export const useRealtimeStore = defineStore('realtime', () => {
   const auth = useAuthStore()
   const error = ref('')
+  const stackStats = ref(new Map<string, Map<string, StackStatsSample>>())
   const readers = new Map<
     string,
     { subscription: RealtimeSubscription; callbacks: RealtimeCallbacks }
@@ -24,6 +31,69 @@ export const useRealtimeStore = defineStore('realtime', () => {
 
   const transient = (status?: number): boolean =>
     undefined !== status && (429 === status || 500 <= status)
+
+  const stackStatsSample = (node: string, stack: string): StackStatsSample | null =>
+    stackStats.value.get(node)?.get(stack) ?? null
+
+  const rememberStackStats = (
+    node: string,
+    stack: string,
+    containers: Array<ContainerStats>,
+    receivedAt = Date.now(),
+  ): StackStatsSample => {
+    const sample = { containers, receivedAt }
+    let samples = stackStats.value.get(node)
+    if (!samples) {
+      samples = new Map()
+      stackStats.value.set(node, samples)
+    }
+    samples.set(stack, sample)
+    return sample
+  }
+
+  const forgetStackStats = (node: string, stack: string) => {
+    const samples = stackStats.value.get(node)
+    if (!samples) {
+      return
+    }
+    samples.delete(stack)
+    if (0 === samples.size) {
+      stackStats.value.delete(node)
+    }
+  }
+
+  const forgetNodeStackStats = (node: string) => {
+    stackStats.value.delete(node)
+  }
+
+  const retainStackStats = (nodes: Array<string>) => {
+    const keep = new Set(nodes)
+    for (const node of [...stackStats.value.keys()]) {
+      if (!keep.has(node)) {
+        stackStats.value.delete(node)
+      }
+    }
+  }
+
+  const retainNodeStackStats = (node: string, stacks: Array<string>) => {
+    const samples = stackStats.value.get(node)
+    if (!samples) {
+      return
+    }
+    const keep = new Set(stacks)
+    for (const stack of [...samples.keys()]) {
+      if (!keep.has(stack)) {
+        samples.delete(stack)
+      }
+    }
+    if (0 === samples.size) {
+      stackStats.value.delete(node)
+    }
+  }
+
+  const clearStackStats = () => {
+    stackStats.value = new Map()
+  }
 
   const send = (message: object): boolean => {
     if (!socket || WebSocket.OPEN !== socket.readyState) {
@@ -108,6 +178,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     for (const reader of previous) {
       reader.callbacks.onDisconnect('Connection closed.')
     }
+    clearStackStats()
     error.value = ''
     retry = 1000
   }
@@ -278,5 +349,19 @@ export const useRealtimeStore = defineStore('realtime', () => {
   )
   onScopeDispose(stop)
   const syncRuntime = () => send({ type: 'workspace.sync' })
-  return { error, subscribe, stop, pause, resume, syncRuntime }
+  return {
+    error,
+    subscribe,
+    stop,
+    pause,
+    resume,
+    syncRuntime,
+    stackStatsSample,
+    rememberStackStats,
+    forgetStackStats,
+    forgetNodeStackStats,
+    retainStackStats,
+    retainNodeStackStats,
+    clearStackStats,
+  }
 })

@@ -1,4 +1,3 @@
-// Package testutil contains shared test setup.
 package testutil
 
 import (

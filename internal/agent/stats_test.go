@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -27,9 +28,18 @@ func (e *statsEngine) Stats(ctx context.Context, stack engine.Stack) ([]engine.C
 	return e.stats(ctx, stack)
 }
 
-func TestStreamStats(t *testing.T) {
-	a, _ := fixture(t)
-	dir := seed(t, a, "demo", "compose.yaml")
+func statsPayload(t *testing.T, e streamEvent) []engine.ContainerStats {
+	t.Helper()
+	var payload struct {
+		Containers []engine.ContainerStats `json:"containers"`
+	}
+	if "stack.stats" != e.name || nil != json.Unmarshal(e.data, &payload) {
+		t.Fatalf("stats event: %+v", e)
+	}
+	return payload.Containers
+}
+
+func TestStatsSamples(t *testing.T) {
 	samples := []engine.ContainerStats{
 		{
 			ID:            "old-id",
@@ -45,7 +55,9 @@ func TestStreamStats(t *testing.T) {
 	}
 	logs := captureAutomaticLogs(t)
 	synctest.Test(t, func(t *testing.T) {
-		calls := 0
+		a, _ := fixture(t)
+		dir := seed(t, a, "demo", "compose.yaml")
+		var calls atomic.Int32
 		a.engine = &statsEngine{stats: func(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
 			deadline, bounded := ctx.Deadline()
 			if !bounded || 0 >= time.Until(deadline) || 10*time.Second < time.Until(deadline) {
@@ -54,8 +66,7 @@ func TestStreamStats(t *testing.T) {
 			if "demo" != stack.Name || dir != stack.Dir || filepath.Join(dir, "compose.yaml") != stack.ComposeFile {
 				t.Fatalf("sample stack: %+v", stack)
 			}
-			calls++
-			switch calls {
+			switch calls.Add(1) {
 			case 1:
 				return []engine.ContainerStats{samples[0]}, nil
 			case 2:
@@ -64,21 +75,14 @@ func TestStreamStats(t *testing.T) {
 				return []engine.ContainerStats{samples[1]}, nil
 			}
 		}}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
+		sampler, sub := a.subscribeStats("demo")
+		defer a.unsubscribeStats("demo", sampler, sub)
 		received := []engine.ContainerStats{}
-		err := a.streamStats(ctx, "demo", func(e streamEvent) bool {
-			var payload struct {
-				Containers []engine.ContainerStats `json:"containers"`
-			}
-			if "stack.stats" != e.name || nil != json.Unmarshal(e.data, &payload) || 1 != len(payload.Containers) {
-				t.Fatalf("stats event: %+v", e)
-			}
-			received = append(received, payload.Containers[0])
-			return 2 > len(received)
-		})
-		if nil != err || 3 != calls || !reflect.DeepEqual(samples, received) {
-			t.Fatalf("fresh stats samples: %+v, %v", received, err)
+		for 2 > len(received) {
+			received = append(received, statsPayload(t, <-sub.events)...)
+		}
+		if 3 != calls.Load() || !reflect.DeepEqual(samples, received) {
+			t.Fatalf("fresh stats samples: %+v, %d calls", received, calls.Load())
 		}
 		if records := operationLogs(t, logs); 0 != len(records) {
 			t.Fatalf("skipped stats sample logged: %+v", records)
@@ -86,25 +90,96 @@ func TestStreamStats(t *testing.T) {
 	})
 }
 
-func TestStreamStatsEmpty(t *testing.T) {
+func TestStatsEmpty(t *testing.T) {
 	a, _ := fixture(t)
 	seed(t, a, "demo", "compose.yaml")
 	a.engine = &statsEngine{stats: func(context.Context, engine.Stack) ([]engine.ContainerStats, error) {
 		return nil, nil
 	}}
-	received := false
-	err := a.streamStats(context.Background(), "demo", func(e streamEvent) bool {
-		var payload struct {
-			Containers []engine.ContainerStats `json:"containers"`
+	sampler, sub := a.subscribeStats("demo")
+	defer a.unsubscribeStats("demo", sampler, sub)
+	containers := statsPayload(t, <-sub.events)
+	if nil == containers || 0 != len(containers) {
+		t.Fatalf("empty stats payload: %+v", containers)
+	}
+}
+
+func TestStatsShared(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, _ := fixture(t)
+		seed(t, a, "demo", "compose.yaml")
+		var calls atomic.Int32
+		a.engine = &statsEngine{stats: func(context.Context, engine.Stack) ([]engine.ContainerStats, error) {
+			calls.Add(1)
+			return []engine.ContainerStats{{ID: "one", Name: "demo-web-1", CPU: "1%"}}, nil
+		}}
+		sampler, first := a.subscribeStats("demo")
+		shared, second := a.subscribeStats("demo")
+		if sampler != shared {
+			t.Fatal("stats attach did not share the sampler")
 		}
-		if nil != json.Unmarshal(e.data, &payload) || nil == payload.Containers || 0 != len(payload.Containers) {
-			t.Fatalf("empty stats payload: %s", e.data)
+		statsPayload(t, <-first.events)
+		statsPayload(t, <-second.events)
+		// One shared sample per interval feeds both subscribers.
+		before := calls.Load()
+		statsPayload(t, <-first.events)
+		statsPayload(t, <-second.events)
+		if before+1 != calls.Load() {
+			t.Fatalf("shared samples: %d grew to %d", before, calls.Load())
 		}
-		received = true
-		return false
+		a.unsubscribeStats("demo", sampler, first)
+		before = calls.Load()
+		statsPayload(t, <-second.events)
+		if before+1 != calls.Load() {
+			t.Fatalf("remaining samples: %d grew to %d", before, calls.Load())
+		}
+		a.mu.Lock()
+		_, running := a.samplers["demo"]
+		a.mu.Unlock()
+		if !running {
+			t.Fatal("sampler stopped while a subscriber remained")
+		}
+		a.unsubscribeStats("demo", sampler, second)
+		a.mu.Lock()
+		_, stopped := a.samplers["demo"]
+		a.mu.Unlock()
+		if stopped {
+			t.Fatal("sampler outlived its last subscriber")
+		}
+		before = calls.Load()
+		fresh, third := a.subscribeStats("demo")
+		if fresh == sampler {
+			t.Fatal("terminated sampler was reused")
+		}
+		defer a.unsubscribeStats("demo", fresh, third)
+		statsPayload(t, <-third.events)
+		if before+1 != calls.Load() {
+			t.Fatalf("resumed samples: %d grew to %d", before, calls.Load())
+		}
 	})
-	if nil != err || !received {
-		t.Fatalf("empty stats event missing: %v", err)
+}
+
+func TestStatsDetachCancels(t *testing.T) {
+	a, _ := fixture(t)
+	seed(t, a, "demo", "compose.yaml")
+	started := make(chan struct{})
+	stopped := make(chan error, 1)
+	a.engine = &statsEngine{stats: func(ctx context.Context, _ engine.Stack) ([]engine.ContainerStats, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		stopped <- ctx.Err()
+		return nil, ctx.Err()
+	}}
+	sampler, sub := a.subscribeStats("demo")
+	<-started
+	a.unsubscribeStats("demo", sampler, sub)
+	select {
+	case err := <-stopped:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("sample stop: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight sample was not canceled")
 	}
 }
 
@@ -227,21 +302,55 @@ func TestChannelStatsErrors(t *testing.T) {
 	}
 }
 
-func TestChannelStats(t *testing.T) {
+func TestChannelStatsShared(t *testing.T) {
 	a, _ := fixture(t)
 	seed(t, a, "demo", "compose.yaml")
 	a.engine = &statsEngine{Driver: a.engine, stats: func(context.Context, engine.Stack) ([]engine.ContainerStats, error) {
 		return []engine.ContainerStats{{ID: "demo-id", Name: "demo-web-1", CPU: "1%"}}, nil
 	}}
-	conn := openChannel(t, channelServer(t, a))
+	server := channelServer(t, a)
+	conn := openChannel(t, server)
 	channelSend(t, conn, protocol.ChannelMessage{Type: "stats.attach", Resource: "demo", Stream: "stats"})
-	message := channelUntil(t, conn, "stream.event", "stack.stats")
+	peer := openChannel(t, server)
+	channelSend(t, peer, protocol.ChannelMessage{Type: "stats.attach", Resource: "demo", Stream: "stats"})
 	var payload struct {
 		Containers []engine.ContainerStats `json:"containers"`
 	}
+	message := channelUntil(t, conn, "stream.event", "stack.stats")
 	if "stats" != message.Stream || nil != json.Unmarshal(message.Payload, &payload) || 1 != len(payload.Containers) ||
 		"demo-id" != payload.Containers[0].ID {
 		t.Fatalf("channel stats payload: %+v", message)
 	}
+	shared := channelUntil(t, peer, "stream.event", "stack.stats")
+	if "stats" != shared.Stream || nil != json.Unmarshal(shared.Payload, &payload) || 1 != len(payload.Containers) ||
+		"demo-id" != payload.Containers[0].ID {
+		t.Fatalf("shared channel stats payload: %+v", shared)
+	}
 	channelSend(t, conn, protocol.ChannelMessage{Type: "stream.detach", Stream: "stats"})
+	channelSend(t, peer, protocol.ChannelMessage{Type: "stream.detach", Stream: "stats"})
+}
+
+func TestStatsStall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, _ := fixture(t)
+		seed(t, a, "demo", "compose.yaml")
+		a.engine = &statsEngine{stats: func(context.Context, engine.Stack) ([]engine.ContainerStats, error) {
+			return []engine.ContainerStats{{ID: "one", Name: "demo-web-1", CPU: "1%"}}, nil
+		}}
+		sampler, sub := a.subscribeStats("demo")
+		// Virtual time: the subscriber never reads, so the shared queue fills
+		// and the stream stalls instead of drifting silently.
+		time.Sleep(150 * time.Second)
+		err := a.watchStats(context.Background(), "demo", sampler, sub, func(streamEvent) bool { return true })
+		apiErr, ok := errors.AsType[*apiError](err)
+		if !ok || 502 != apiErr.code {
+			t.Fatalf("stalled stats stream: %v", err)
+		}
+		a.mu.Lock()
+		_, running := a.samplers["demo"]
+		a.mu.Unlock()
+		if running {
+			t.Fatal("stalled subscriber left the sampler running")
+		}
+	})
 }

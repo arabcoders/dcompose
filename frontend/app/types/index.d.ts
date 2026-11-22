@@ -268,6 +268,11 @@ export interface StackStats {
   containers: Array<ContainerStats>
 }
 
+export interface StackStatsSample {
+  containers: Array<ContainerStats>
+  receivedAt: number
+}
+
 export type StackStatsTotals = Omit<ContainerStats, 'id' | 'name' | 'memory_percent'>
 
 export interface NodeResourceStatus {
@@ -281,6 +286,18 @@ export interface NodeInfo {
   runtime: RuntimeInfo
   containers: Array<ContainerStats>
   checked_at: string
+}
+
+export interface NodeInfoSample {
+  info: NodeInfo
+  fetchedAt: number
+}
+
+export interface NodeInfoLoadResult {
+  info: NodeInfo | null
+  error: string
+  retryable: boolean
+  aborted: boolean
 }
 
 export type StackStatus = 'running' | 'stopped' | 'partial' | 'draft' | 'unknown'

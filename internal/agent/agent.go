@@ -40,6 +40,7 @@ type agent struct {
 	active     int
 	ops        map[string]*operation
 	shells     map[string]*shellSession
+	samplers   map[string]*statsSampler
 	order      []string
 	work       sync.WaitGroup
 	events     *runtimeEvents
@@ -47,6 +48,9 @@ type agent struct {
 	logs       *nodeLogBuffer
 	engine     engine.Driver
 	dns        hostCache
+
+	infoMu     sync.Mutex
+	infoFlight *nodeInfoFlight
 
 	detachedExecutor engine.DetachedOperations
 	selfContainer    *engine.SelfContainer
@@ -60,7 +64,7 @@ type agent struct {
 func newAgent(ctx context.Context, c config) *agent {
 	a := &agent{
 		ctx: ctx, config: c, busy: make(map[string]bool), ops: make(map[string]*operation), shells: make(map[string]*shellSession),
-		startedAt: time.Now().UTC(), events: newRuntimeEvents(), logs: &nodeLogBuffer{},
+		samplers: make(map[string]*statsSampler), startedAt: time.Now().UTC(), events: newRuntimeEvents(), logs: &nodeLogBuffer{},
 		dns: hostCache{entries: make(map[string]hostAddresses), lookup: net.DefaultResolver.LookupNetIP},
 	}
 	switch c.Global.Engine {

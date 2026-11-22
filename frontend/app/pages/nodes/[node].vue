@@ -9,10 +9,8 @@ import UButton from '@nuxt/ui/components/Button.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import StatCard from '~/components/StatCard.vue'
 import { useWorkspaceStore } from '~/store/workspace'
-import type { NodeInfo, NodeResourceStatus } from '~/types'
-import { parse_api_response, request } from '~/utils'
+import type { NodeResourceStatus } from '~/types'
 import { formatAgentUptime, formatMemoryBytes } from '~/utils/node'
-import { workspaceErrorMessage } from '~/utils/stacks'
 
 definePageMeta({ layout: 'workspace' })
 
@@ -22,12 +20,15 @@ const route = useRoute()
 const nodeId = computed(() => String(route.params.node))
 const node = computed(() => nodes.value.find((item) => nodeId.value === item.id))
 const connected = computed(() => 'connected' === node.value?.connection)
-const info = ref<NodeInfo | null>(null)
+const cached = computed(() => workspace.nodeInfoCache[nodeId.value])
+const info = computed(() =>
+  node.value?.paused || 'paused' === node.value?.connection ? null : (cached.value?.info ?? null),
+)
 const loading = ref(false)
 const error = ref('')
-let controller: AbortController | null = null
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let retryDelay = 0
+let requestToken = 0
 
 useHead(() => ({ title: node.value?.name ?? nodeId.value }))
 
@@ -60,7 +61,7 @@ const status = computed<NodeResourceStatus | null>(() => {
   }
   if (!connected.value) {
     return {
-      text: current.error || connectionLabel.value,
+      text: `${current.error || connectionLabel.value}${info.value ? ' Showing previous sample.' : ''}`,
       icon: 'i-lucide-network',
       tone: 'warning',
     }
@@ -125,8 +126,7 @@ const clearRetry = () => {
 
 const stopStats = () => {
   clearRetry()
-  controller?.abort()
-  controller = null
+  requestToken++
   loading.value = false
   retryDelay = 0
 }
@@ -138,49 +138,33 @@ const scheduleRetry = () => {
   retryDelay = retryDelay ? Math.min(retryDelay * 2, 15000) : 1000
   retryTimer = setTimeout(() => {
     retryTimer = undefined
-    void refreshStats()
+    void refreshStats(true)
   }, retryDelay)
 }
 
-const refreshStats = async () => {
-  if (!connected.value || loading.value) {
+const refreshStats = async (force = false) => {
+  if (!connected.value) {
     return
   }
   clearRetry()
-  const current = new AbortController()
-  controller = current
+  const id = nodeId.value
+  const token = ++requestToken
   loading.value = true
-  let retryable = false
   try {
-    const response = await request(`/api/nodes/${encodeURIComponent(nodeId.value)}/info`, {
-      signal: current.signal,
-    })
-    retryable = 429 === response.status || 500 <= response.status
-    const json = await parse_api_response<NodeInfo>(response)
-    if (!response.ok || 'error' in json) {
-      throw new Error(workspaceErrorMessage(response.status, 'Could not load stats.'))
+    const result = await workspace.loadNodeInfo(id, force)
+    if (token !== requestToken || id !== nodeId.value || result.aborted) {
+      return
     }
-    if (!current.signal.aborted) {
-      info.value = json
-      error.value = ''
-      retryDelay = 0
-    }
-  } catch (cause) {
-    if (!current.signal.aborted) {
-      error.value =
-        cause instanceof Error && !(cause instanceof TypeError)
-          ? cause.message
-          : 'Could not load stats.'
-      if (!(cause instanceof Error) || cause instanceof TypeError) {
-        retryable = true
-      }
-      if (retryable) {
+    error.value = result.error
+    if (result.error) {
+      if (result.retryable) {
         scheduleRetry()
       }
+    } else {
+      retryDelay = 0
     }
   } finally {
-    if (controller === current) {
-      controller = null
+    if (token === requestToken) {
       loading.value = false
     }
   }
@@ -192,20 +176,17 @@ watch(
     const idChanged = id !== previous?.[0]
     if (idChanged) {
       stopStats()
-      info.value = null
+    }
+    if (idChanged || 'paused' === node.value?.connection) {
       error.value = ''
     }
     if (!isConnected) {
       stopStats()
-      if ('paused' === node.value?.connection) {
-        info.value = null
-        error.value = ''
-      }
       return
     }
     const reconnected = false === previous?.[1]
     if (idChanged || reconnected || !info.value || error.value) {
-      void refreshStats()
+      void refreshStats(reconnected)
     }
   },
   { immediate: true },
@@ -250,14 +231,14 @@ onBeforeUnmount(() => {
           <span class="min-w-0">{{ status.text }}</span>
         </p>
         <UButton
-          v-if="info"
+          v-if="info || error"
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="outline"
           size="sm"
           :loading="loading"
           :disabled="!connected || loading"
-          @click="refreshStats"
+          @click="refreshStats(true)"
           >Refresh stats</UButton
         >
       </div>
@@ -324,7 +305,10 @@ onBeforeUnmount(() => {
             </table>
           </div>
         </section>
-        <p class="text-xs text-muted">Updated {{ new Date(info.checked_at).toLocaleString() }}</p>
+        <p class="text-xs text-muted">
+          Updated
+          <time :datetime="info.checked_at">{{ new Date(info.checked_at).toLocaleString() }}</time>
+        </p>
       </template>
     </template>
   </div>

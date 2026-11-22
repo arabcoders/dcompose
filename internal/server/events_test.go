@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -435,14 +436,18 @@ func TestWorkspaceSync(t *testing.T) {
 	browserSend(t, browser, protocol.ChannelMessage{Type: "workspace.sync"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	sawRuntime := false
 	for {
 		var message protocol.ChannelMessage
 		if err := wsjson.Read(ctx, browser, &message); nil != err {
 			t.Fatal(err)
 		}
+		if "stack.runtime" == message.Event {
+			sawRuntime = sawRuntime || strings.Contains(string(message.Payload), `"name":"demo"`)
+		}
 		if "node.snapshot" == message.Event {
-			if "" != message.Stream || !strings.Contains(string(message.Payload), `"name":"demo"`) {
-				t.Fatal("stale workspace sync", message)
+			if !sawRuntime || "" != message.Stream || !strings.Contains(string(message.Payload), `"name":"demo"`) {
+				t.Fatal("stale or out-of-order workspace sync", message)
 			}
 			break
 		}
@@ -463,4 +468,53 @@ func TestWorkspaceSync(t *testing.T) {
 	if got := resourceMessage(t, browser); "logs" != got.Stream {
 		t.Fatal("workspace sync detached logs", got)
 	}
+}
+
+func TestWorkspaceSyncLarge(t *testing.T) {
+	s := testServer(t, nil)
+	for i := range 33 {
+		id := "node-" + strconv.Itoa(i)
+		node, _ := json.Marshal(id)
+		s.runtime[id] = &nodeRuntime{snapshot: map[string]json.RawMessage{
+			"node": node, "health": json.RawMessage(`{"status":"ok"}`), "stacks": json.RawMessage(`[]`),
+		}}
+		s.stateLocked(id, "connected", "")
+	}
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	browser := browserStream(t, app.URL+"/api/events", s)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	readWorkspace := func() {
+		t.Helper()
+		states := make(map[string]bool)
+		for range len(s.runtime) * 2 {
+			var message protocol.ChannelMessage
+			if err := wsjson.Read(ctx, browser, &message); nil != err {
+				t.Fatal(err)
+			}
+			var payload struct{ Node string }
+			if err := json.Unmarshal(message.Payload, &payload); nil != err || nil == s.runtime[payload.Node] {
+				t.Fatal("unexpected node", message, err)
+			}
+			snapshot, seen := states[payload.Node]
+			switch message.Event {
+			case "node.snapshot":
+				if seen {
+					t.Fatal("duplicate snapshot", payload.Node)
+				}
+				states[payload.Node] = true
+			case "node.state":
+				if !snapshot {
+					t.Fatal("state without snapshot", payload.Node)
+				}
+				states[payload.Node] = false
+			default:
+				t.Fatal("unexpected event", message.Event)
+			}
+		}
+	}
+	readWorkspace()
+	browserSend(t, browser, protocol.ChannelMessage{Type: "workspace.sync"})
+	readWorkspace()
 }

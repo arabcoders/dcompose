@@ -1,4 +1,6 @@
 import { computed, onScopeDispose, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useLogSummaryStore } from '~/store/logSummary'
 import type { GenericError, LogEntry, LogFilters, LogsResponse } from '~/types'
 import { notification, parse_api_response, request } from '~/utils'
 import { LogStreamParser } from '~/utils/logStream'
@@ -11,8 +13,9 @@ import {
   parseLogStatus,
 } from '~/utils/logs'
 
-export const useLogs = () => {
-  const entries = ref<Array<LogEntry>>([])
+export const useLogs = (options: { summary?: boolean } = {}) => {
+  const summary = options.summary ? useLogSummaryStore() : null
+  const entries = summary ? storeToRefs(summary).entries : ref<Array<LogEntry>>([])
   const filters = ref<LogFilters>({ levels: [...logLevels], node: '', search: '' })
   const observedNodes = ref(new Map<string, string>())
   const loading = ref(false)
@@ -28,7 +31,7 @@ export const useLogs = () => {
   let reconnectAttempt = 0
   let disposed = false
   let version = 0
-  let cursor = 0
+  let cursor = summary?.cursor ?? 0
 
   const reportError = (cause: unknown): void => {
     const message = cause instanceof Error ? cause.message : "Couldn't load logs."
@@ -74,7 +77,10 @@ export const useLogs = () => {
       return true
     }
     const params = logQuery(filters.value)
-    params.set('limit', '100')
+    params.set('limit', options.summary ? '5' : '100')
+    if (options.summary) {
+      params.set('summary', 'true')
+    }
     if (older && null !== olderCursor.value) {
       params.set('before', String(olderCursor.value))
     }
@@ -91,7 +97,11 @@ export const useLogs = () => {
         throw new Error(`Couldn't load logs (${response.status}).`)
       }
       observe(body.entries)
-      entries.value = mergeLogs(older ? entries.value : [], body.entries, older)
+      if (summary) {
+        summary.set(body.entries, body.latest_id)
+      } else {
+        entries.value = mergeLogs(older ? entries.value : [], body.entries, older)
+      }
       truncated.value = older ? truncated.value || body.truncated : body.truncated
       olderCursor.value = body.next_before
       if (!older) {
@@ -123,6 +133,10 @@ export const useLogs = () => {
     status.value = reconnectAttempt ? 'reconnecting' : 'connecting'
     const params = logQuery(filters.value)
     params.set('after', String(cursor))
+    if (options.summary) {
+      params.set('limit', '5')
+      params.set('summary', 'true')
+    }
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     let retry = true
     try {
@@ -171,10 +185,14 @@ export const useLogs = () => {
           }
           cursor = entry.id
           observe([entry])
-          const overflow = LOG_WINDOW <= entries.value.length
-          entries.value = mergeLogs(entries.value, [entry])
-          if (overflow) {
-            olderCursor.value = entries.value[0]?.id ?? null
+          if (summary) {
+            summary.append(entry)
+          } else {
+            const overflow = LOG_WINDOW <= entries.value.length
+            entries.value = mergeLogs(entries.value, [entry])
+            if (overflow) {
+              olderCursor.value = entries.value[0]?.id ?? null
+            }
           }
         }
       }
@@ -187,9 +205,7 @@ export const useLogs = () => {
       if (reader) {
         try {
           await reader.cancel()
-        } catch {
-          // The connection may already have closed.
-        }
+        } catch {}
         reader.releaseLock()
       }
       if (streamController === controller) {
@@ -216,6 +232,15 @@ export const useLogs = () => {
         void connectStream()
       }
     }
+  }
+
+  const start = async (): Promise<void> => {
+    if (summary && 0 < summary.cursor) {
+      cursor = summary.cursor
+      void connectStream()
+      return
+    }
+    await refresh()
   }
 
   const search = async (value: LogFilters): Promise<void> => {
@@ -252,6 +277,7 @@ export const useLogs = () => {
     status,
     truncated,
     hasOlder,
+    start,
     refresh,
     search,
     loadOlder,
