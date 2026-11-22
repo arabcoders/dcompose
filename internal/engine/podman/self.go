@@ -87,7 +87,7 @@ func (p *Podman) StartDetached(ctx context.Context, self engine.SelfContainer, n
 		"--name",
 		name,
 		"--label",
-		"io.dcompose.operation=" + strings.TrimPrefix(name, "dagent-operation-"),
+		"io.dcompose.operation=" + strings.TrimPrefix(name, engine.DetachedHelperPrefix),
 		"--restart=no",
 		"--pull",
 		"never",

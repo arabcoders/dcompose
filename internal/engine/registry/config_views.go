@@ -15,7 +15,6 @@ type DockerConfig struct {
 	Auths map[string]map[string]string `json:"auths"`
 }
 
-// BuildConfigs selects background and pull/explicit credentials consistently.
 func BuildConfigs(credentials []protocol.RegistryCredential) (DockerConfig, DockerConfig, error) {
 	background := DockerConfig{Auths: make(map[string]map[string]string)}
 	pull := DockerConfig{Auths: make(map[string]map[string]string)}
@@ -52,7 +51,6 @@ func BuildConfigs(credentials []protocol.RegistryCredential) (DockerConfig, Dock
 	return background, pull, nil
 }
 
-// RegistryHost matches managed registry views to canonical image references.
 func RegistryHost(ref string) string {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "https://"), "http://")
 	return canonicalHost(strings.SplitN(ref, "/", 2)[0])

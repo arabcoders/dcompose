@@ -12,15 +12,16 @@ import (
 func parseLogFilter(r *http.Request, stream bool) (logFilter, error) {
 	query := r.URL.Query()
 	filter := logFilter{
-		limit:  100,
-		node:   query.Get("node"),
-		logger: query.Get("logger"),
-		search: strings.ToLower(query.Get("search")),
-		levels: make(map[string]bool),
+		limit:   100,
+		node:    query.Get("node"),
+		logger:  query.Get("logger"),
+		search:  strings.ToLower(query.Get("search")),
+		levels:  make(map[string]bool),
+		summary: "true" == query.Get("summary"),
 	}
 	for key, values := range query {
 		switch key {
-		case "limit", "before", "after", "levels", "node", "logger", "search":
+		case "limit", "before", "after", "levels", "node", "logger", "search", "summary":
 		default:
 			return filter, fmt.Errorf("unknown log query parameter: %s", key)
 		}

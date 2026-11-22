@@ -186,7 +186,7 @@ func (a *agent) channelError(ctx context.Context, peer, operation string, err er
 	// The WebSocket reader can close the socket before it cancels ctx,
 	// so a concurrent writer may see net.ErrClosed during a normal disconnect.
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-		slog.Info(
+		slog.Debug(
 			fmt.Sprintf("DCompose peer %s disconnected from node %q: %v", peer, a.config.Global.NodeID, err),
 			"peer",
 			peer,
@@ -219,7 +219,7 @@ func (a *agent) channelCommands(
 	outgoing chan<- protocol.ChannelMessage,
 	cancel context.CancelFunc,
 ) {
-	attached := make(map[string]context.CancelFunc)
+	attached := make(map[string]func())
 	type relayDelivery struct {
 		op   *operation
 		done atomic.Bool
@@ -393,21 +393,52 @@ func (a *agent) channelCommands(
 					if detach, ok := attached[key]; ok {
 						detach()
 					}
-					streamCtx, detach := context.WithCancel(ctx)
-					attached[key] = detach
-					streams.Go(func() {
-						stream := a.streamLogs
-						if "stats.attach" == message.Type {
-							stream = a.streamStats
+					// Stats attach to the node's shared per-stack sampler;
+					// logs stream independently. Detaching synchronously
+					// ensures a replaced stream stops sampling before its
+					// successor joins.
+					var sampler *statsSampler
+					var subscriber *eventSubscriber
+					if "stats.attach" == message.Type {
+						sampler, subscriber = a.subscribeStats(message.Resource)
+					}
+					// Filtered logs echo the requested container on every
+					// event, done included, so the server can detect older
+					// agents that silently ignore the filter.
+					container := ""
+					if "logs.attach" == message.Type {
+						container = message.Container
+					}
+					streamCtx, cancel := context.WithCancel(ctx)
+					if nil != sampler {
+						attached[key] = func() {
+							cancel()
+							a.unsubscribeStats(message.Resource, sampler, subscriber)
 						}
-						err := stream(streamCtx, message.Resource, func(e streamEvent) bool {
+					} else {
+						attached[key] = cancel
+					}
+					streams.Go(func() {
+						deliver := func(e streamEvent) bool {
 							select {
-							case outgoing <- protocol.ChannelMessage{Type: "stream.event", Stream: message.Stream, Event: e.name, Payload: e.data}:
+							case outgoing <- protocol.ChannelMessage{
+								Type:      "stream.event",
+								Stream:    message.Stream,
+								Container: container,
+								Event:     e.name,
+								Payload:   e.data,
+							}:
 								return true
 							case <-streamCtx.Done():
 								return false
 							}
-						})
+						}
+						var err error
+						if nil != sampler {
+							err = a.watchStats(streamCtx, message.Resource, sampler, subscriber, deliver)
+						} else {
+							err = a.streamLogs(streamCtx, message.Resource, container, deliver)
+						}
 						if nil != err && nil == streamCtx.Err() {
 							code := 502
 							if apiErr, ok := errors.AsType[*apiError](err); ok {

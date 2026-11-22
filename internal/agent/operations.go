@@ -57,6 +57,7 @@ type operation struct {
 	output      io.Writer
 	automatic   bool
 	service     string
+	helperName  string
 }
 
 func (o *operation) snapshot() operationSnapshot {

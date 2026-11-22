@@ -383,16 +383,28 @@ func renderStoredLog(entry logEntry) string {
 }
 
 type logFilter struct {
-	limit  int
-	before int64
-	after  int64
-	levels map[string]bool
-	node   string
-	logger string
-	search string
+	limit   int
+	before  int64
+	after   int64
+	levels  map[string]bool
+	node    string
+	logger  string
+	search  string
+	summary bool
 }
 
 func (f logFilter) matches(entry logEntry) bool {
+	if f.summary && "warning" != entry.Level && "error" != entry.Level {
+		if "info" != entry.Level {
+			return false
+		}
+		automatic, status := false, ""
+		_ = json.Unmarshal(entry.Fields["automatic"], &automatic)
+		_ = json.Unmarshal(entry.Fields["status"], &status)
+		if !automatic || "succeeded" != status {
+			return false
+		}
+	}
 	if 0 < len(f.levels) && !f.levels[entry.Level] {
 		return false
 	}
@@ -481,6 +493,10 @@ func (h *logHistory) subscribe(filter logFilter) (chan logEntry, []logEntry, log
 			status.Truncated = 0 < filter.after && filter.after < id
 		}
 		if filter.after < entry.ID && filter.matches(entry) {
+			if filter.summary && 0 < filter.limit && filter.limit == len(backlog) {
+				copy(backlog, backlog[1:])
+				backlog = backlog[:len(backlog)-1]
+			}
 			backlog = append(backlog, entry)
 		}
 	}); nil != err {

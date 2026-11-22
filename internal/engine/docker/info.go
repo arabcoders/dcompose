@@ -43,6 +43,9 @@ func (d *Docker) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 	result := engine.NodeInfo{Containers: []engine.ContainerStats{}}
 	stdout, stderr, err := d.run(ctx, command("", "info", "--format", "{{json .}}"))
 	if nil != err {
+		if context.Canceled == ctx.Err() {
+			return result, context.Canceled
+		}
 		return result, nodeInfoError("docker info", err, stderr)
 	}
 	var info *struct {
@@ -78,6 +81,9 @@ func (d *Docker) NodeInfo(ctx context.Context) (engine.NodeInfo, error) {
 
 	stdout, stderr, err = d.run(ctx, command("", "stats", "--no-stream", "--no-trunc", "--format", "{{json .}}"))
 	if nil != err {
+		if context.Canceled == ctx.Err() {
+			return result, context.Canceled
+		}
 		return result, nodeInfoError("docker stats", err, stderr)
 	}
 	result.Containers, err = parseStats(stdout)

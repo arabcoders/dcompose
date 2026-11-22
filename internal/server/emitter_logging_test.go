@@ -29,15 +29,22 @@ func TestViewWriteLogs(t *testing.T) {
 	_ = conn.CloseNow()
 	for _, test := range []struct {
 		kind, resource, shell string
+		updating              bool
 	}{
 		{kind: "logs.attach", resource: "demo"},
 		{kind: "stats.attach", resource: "demo"},
+		{kind: "logs.attach", resource: "demo", updating: true},
+		{kind: "stats.attach", resource: "demo", updating: true},
 		{kind: "relay.attach", resource: "self-helper"},
 		{kind: "shell.attach", shell: "terminal"},
 		{kind: "shell.input", shell: "terminal"},
 		{kind: "shell.resize", shell: "terminal"},
 	} {
-		t.Run(test.kind, func(t *testing.T) {
+		name := test.kind
+		if test.updating {
+			name += "/self-update"
+		}
+		t.Run(name, func(t *testing.T) {
 			var output bytes.Buffer
 			original := slog.Default()
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
@@ -53,6 +60,9 @@ func TestViewWriteLogs(t *testing.T) {
 				shells:  make(map[string]map[chan protocol.ChannelMessage]struct{}),
 			}
 			s.channels["home"] = channel
+			if test.updating {
+				s.relays[relayKey{"home", "self-helper"}] = true
+			}
 			message := protocol.ChannelMessage{
 				Type:     test.kind,
 				Stream:   "browser",
@@ -77,6 +87,12 @@ func TestViewWriteLogs(t *testing.T) {
 			}
 			if nil == response || http.StatusBadGateway != response.Status {
 				t.Fatal("write failure changed browser error", response)
+			}
+			if test.updating {
+				if 0 != output.Len() {
+					t.Fatal("expected self-update write failure logged:", output.String())
+				}
+				return
 			}
 			var record struct {
 				Message   string `json:"msg"`

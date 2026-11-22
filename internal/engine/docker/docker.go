@@ -62,6 +62,15 @@ func (d *Docker) Probe(ctx context.Context) error {
 	return err
 }
 
+// ContainerLogs streams one stack container through the native Docker CLI.
+func (d *Docker) ContainerLogs(ctx context.Context, s engine.Stack, name string) (engine.Command, error) {
+	id, err := d.CLI.ContainerID(ctx, s, name)
+	if nil != err {
+		return engine.Command{}, err
+	}
+	return command("", "logs", "--follow", "--tail", "100", id), nil
+}
+
 func (d *Docker) Events(since time.Time) engine.Command {
 	return command(
 		"",

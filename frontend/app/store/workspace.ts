@@ -4,6 +4,9 @@ import { useWorkspaceStream } from '~/composables/useWorkspaceStream'
 import { useAuthStore } from '~/store/auth'
 import { useRealtimeStore } from '~/store/realtime'
 import type {
+  NodeInfo,
+  NodeInfoLoadResult,
+  NodeInfoSample,
   NodesResponse,
   StackEvent,
   SettingsSection,
@@ -16,11 +19,19 @@ import { notification, parse_api_response, request } from '~/utils'
 import { workspaceErrorMessage, parseWorkspaceEvent } from '~/utils/stacks'
 
 const stackKey = (node: string, stack: string) => JSON.stringify([node, stack])
+const NODE_INFO_FRESH_MS = 30_000
+const newNodeInfoCache = (): Record<string, NodeInfoSample> =>
+  Object.create(null) as Record<string, NodeInfoSample>
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const auth = useAuthStore()
   const realtime = useRealtimeStore()
   const nodes = ref<Array<WorkspaceNode>>([])
+  const nodeInfoCache = ref<Record<string, NodeInfoSample>>(newNodeInfoCache())
+  const nodeInfoRequests = new Map<
+    string,
+    { controller: AbortController; promise: Promise<NodeInfoLoadResult> }
+  >()
   const stackSearch = ref('')
   const stackFilter = ref<StackFilter>('all')
   const sidebarOpen = ref(false)
@@ -101,8 +112,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           node.health = event.health
           node.stacks = event.stacks
           node.loading = event.stacks.some((stack) => stack.loading)
-          node.connection = 'connected'
-          node.error = ''
+          realtime.retainNodeStackStats(
+            event.node,
+            event.stacks
+              .filter((stack) => 'stopped' !== stack.status && 'draft' !== stack.status)
+              .map((stack) => stack.name),
+          )
           clearLoadError()
           break
         case 'stack.runtime': {
@@ -114,11 +129,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             node.stacks[index] = runtime
           }
           node.loading = node.stacks.some((stack) => stack.loading)
+          if ('stopped' === runtime.status || 'draft' === runtime.status) {
+            realtime.forgetStackStats(event.node, runtime.name)
+          }
           break
         }
         case 'stack.removed':
           node.stacks = node.stacks.filter((stack) => event.name !== stack.name)
           node.loading = node.stacks.some((stack) => stack.loading)
+          realtime.forgetStackStats(event.node, event.name)
           break
         case 'node.state':
           node.connection = event.state
@@ -131,6 +150,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             node.loading = false
           }
           if (node.paused) {
+            realtime.forgetNodeStackStats(event.node)
             node.stacks = []
             node.health = null
           }
@@ -191,6 +211,90 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 ),
             ))),
     )
+  const clearNodeInfo = (id: string) => {
+    nodeInfoRequests.get(id)?.controller.abort()
+    nodeInfoRequests.delete(id)
+    Reflect.deleteProperty(nodeInfoCache.value, id)
+  }
+  const clearAllNodeInfo = () => {
+    for (const pending of nodeInfoRequests.values()) {
+      pending.controller.abort()
+    }
+    nodeInfoRequests.clear()
+    nodeInfoCache.value = newNodeInfoCache()
+  }
+  const loadNodeInfo = (id: string, force = false): Promise<NodeInfoLoadResult> => {
+    const pending = nodeInfoRequests.get(id)
+    if (pending) {
+      return pending.promise
+    }
+    const cached = nodeInfoCache.value[id]
+    if (!force && cached && NODE_INFO_FRESH_MS > Date.now() - cached.fetchedAt) {
+      return Promise.resolve({ info: cached.info, error: '', retryable: false, aborted: false })
+    }
+    const controller = new AbortController()
+    const task = (async (): Promise<NodeInfoLoadResult> => {
+      try {
+        const response = await request(`/api/nodes/${encodeURIComponent(id)}/info`, {
+          signal: controller.signal,
+        })
+        const json = await parse_api_response<NodeInfo>(response)
+        if (controller.signal.aborted) {
+          return { info: null, error: '', retryable: false, aborted: true }
+        }
+        if (!response.ok || 'error' in json) {
+          const message = 'error' in json ? json.error.message : 'Could not load resource usage.'
+          return {
+            info: cached?.info ?? null,
+            error: workspaceErrorMessage(response.status, message),
+            retryable: 429 === response.status || 500 <= response.status,
+            aborted: false,
+          }
+        }
+        nodeInfoCache.value[id] = { info: json, fetchedAt: Date.now() }
+        return { info: json, error: '', retryable: false, aborted: false }
+      } catch (cause) {
+        if (controller.signal.aborted) {
+          return { info: null, error: '', retryable: false, aborted: true }
+        }
+        const retryable = !(cause instanceof Error) || cause instanceof TypeError
+        return {
+          info: cached?.info ?? null,
+          error: retryable ? 'Could not load resource usage.' : cause.message,
+          retryable,
+          aborted: false,
+        }
+      } finally {
+        if (nodeInfoRequests.get(id)?.controller === controller) {
+          nodeInfoRequests.delete(id)
+        }
+      }
+    })()
+    nodeInfoRequests.set(id, { controller, promise: task })
+    return task
+  }
+  const refreshNodeInfo = async (): Promise<Array<string>> => {
+    const targets = nodes.value.filter((node) => !node.paused && 'connected' === node.connection)
+    const results = await Promise.all(
+      targets.map(async (node) => ({ node, result: await loadNodeInfo(node.id, true) })),
+    )
+    return results.flatMap(({ node, result }) =>
+      result.error ? [`${node.name}: ${result.error}`] : [],
+    )
+  }
+  watch(
+    () => nodes.value.map((node) => [node.id, node.paused, node.connection] as const),
+    () => {
+      const ids = new Set([...Object.keys(nodeInfoCache.value), ...nodeInfoRequests.keys()])
+      for (const id of ids) {
+        const node = nodes.value.find((item) => id === item.id)
+        if (!node || node.paused || 'paused' === node.connection) {
+          clearNodeInfo(id)
+        }
+      }
+    },
+  )
+
   function reset() {
     controller?.abort()
     clearRetry()
@@ -200,6 +304,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     submitting.value = {}
     realtime.stop()
     imageCheckRequests.value = {}
+    clearAllNodeInfo()
     nodes.value = []
     error.value = ''
     ready.value = false
@@ -279,6 +384,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             'paused' === previous?.connection ? 'loading' : (previous?.connection ?? 'loading'),
         }
       })
+      realtime.retainStackStats(nodes.value.filter((node) => !node.paused).map((node) => node.id))
       clearLoadError()
       ready.value = true
       workspaceStream.start({ type: 'runtime' })
@@ -413,7 +519,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (isCheckingImages(node, stack, container)) {
       return
     }
-    // Capture every enabled node, including unavailable agents.
     const targets = nodes.value.filter((item) => !item.paused && (!node || node === item.id))
     if (0 === targets.length) {
       return
@@ -466,6 +571,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   return {
     nodes,
+    nodeInfoCache,
     stackSearch,
     stackFilter,
     sidebarOpen,
@@ -481,6 +587,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     savingNodeOrder,
     moveNode,
     load,
+    loadNodeInfo,
+    refreshNodeInfo,
     onStackEvent,
     isSubmitting,
     runAction,

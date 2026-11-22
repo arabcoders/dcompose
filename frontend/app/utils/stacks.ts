@@ -158,6 +158,13 @@ export const parseStackStats = (data: string): StackStats => {
   throw new Error("Couldn't read stack resource stats.")
 }
 
+export const stackStatsAge = (receivedAt: number, now: Date): string => {
+  const elapsed = now.getTime() - receivedAt
+  return 1000 > elapsed
+    ? 'just now'
+    : formatTimeAgo(new Date(receivedAt), { showSecond: true, rounding: 'floor' }, now)
+}
+
 export const parseStatBytes = (value: string): number => {
   const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*([kmgtp]?i?b)$/i)
   if (!match) {

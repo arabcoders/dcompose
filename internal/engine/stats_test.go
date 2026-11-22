@@ -12,7 +12,7 @@ import (
 	"github.com/arabcoders/dcompose/internal/engine/podman"
 )
 
-func statsDriver(name string, run engine.Run) engine.Driver {
+func testDriver(name string, run engine.Run) engine.Driver {
 	if "podman" == name {
 		return podman.New(run)
 	}
@@ -25,7 +25,7 @@ func TestStackStats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sample := 0
 			calls := 0
-			driver := statsDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+			driver := testDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 				switch cmd.Args[0] {
 				case "compose":
 					want := []string{
@@ -53,8 +53,6 @@ func TestStackStats(t *testing.T) {
 						), nil, nil
 					}
 					return []byte(`[{"ID":"new-id","Name":"demo-web-1","State":"running"}]`), nil, nil
-				case "container":
-					return []byte(`{}`), nil, nil
 				case "stats":
 					calls++
 					format := "{{json .}}"
@@ -110,12 +108,9 @@ func TestStackStatsEmpty(t *testing.T) {
 	for _, name := range []string{"docker", "podman"} {
 		for _, containers := range []string{`[]`, `[{"ID":"stopped","Name":"demo-web-1","State":"exited"}]`} {
 			t.Run(name+containers, func(t *testing.T) {
-				driver := statsDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+				driver := testDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 					if "compose" == cmd.Args[0] {
 						return []byte(containers), nil, nil
-					}
-					if "container" == cmd.Args[0] {
-						return []byte(`{}`), nil, nil
 					}
 					t.Fatalf("empty stack ran stats: %+v", cmd)
 					return nil, nil, nil
@@ -134,15 +129,12 @@ func TestStackStatsErrors(t *testing.T) {
 	for _, name := range []string{"docker", "podman"} {
 		for _, failure := range []string{"compose", "stats", "decode"} {
 			t.Run(name+failure, func(t *testing.T) {
-				driver := statsDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+				driver := testDriver(name, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
 					if failure == cmd.Args[0] {
 						return []byte("stdout-secret"), []byte("stderr-secret"), context.DeadlineExceeded
 					}
 					if "compose" == cmd.Args[0] {
 						return []byte(`[{"ID":"id","Name":"demo-web-1","State":"running"}]`), nil, nil
-					}
-					if "container" == cmd.Args[0] {
-						return []byte(`{}`), nil, nil
 					}
 					return []byte("stdout-secret"), nil, nil
 				})
@@ -159,6 +151,34 @@ func TestStackStatsErrors(t *testing.T) {
 	}
 }
 
+func TestStackStatsContainerGone(t *testing.T) {
+	t.Setenv("CONTAINER_HOST", "")
+	for _, test := range []struct{ runtime, stderr string }{
+		{"docker", "Error response from daemon: No such container: old-id\nError response from daemon: No such container: worker-id\n"},
+		{"podman", "Error: unable to get list of containers: unable to look up container old-id: no container with name or ID \"old-id\" found: no such container\n"},
+	} {
+		t.Run(test.runtime, func(t *testing.T) {
+			driver := testDriver(test.runtime, func(_ context.Context, cmd engine.Command) ([]byte, []byte, error) {
+				switch cmd.Args[0] {
+				case "compose":
+					return []byte(
+						`[{"ID":"old-id","Name":"demo-web-1","State":"running"},{"ID":"worker-id","Name":"demo-worker-1","State":"running"}]`,
+					), nil, nil
+				case "stats":
+					return nil, []byte(test.stderr), errors.New("stats command failed")
+				default:
+					t.Fatalf("unexpected command: %+v", cmd)
+					return nil, nil, nil
+				}
+			})
+			_, err := driver.Stats(context.Background(), engine.Stack{Name: "demo"})
+			if !errors.Is(err, engine.ErrStatsContainerGone) {
+				t.Fatalf("container removal was not recognized: %v", err)
+			}
+		})
+	}
+}
+
 func TestStackStatsCancel(t *testing.T) {
 	t.Setenv("CONTAINER_HOST", "")
 	for _, name := range []string{"docker", "podman"} {
@@ -166,7 +186,7 @@ func TestStackStatsCancel(t *testing.T) {
 			t.Run(name+stage, func(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
-				driver := statsDriver(name, func(ctx context.Context, cmd engine.Command) ([]byte, []byte, error) {
+				driver := testDriver(name, func(ctx context.Context, cmd engine.Command) ([]byte, []byte, error) {
 					if stage == cmd.Args[0] {
 						cancel()
 						<-ctx.Done()
@@ -175,7 +195,8 @@ func TestStackStatsCancel(t *testing.T) {
 					if "compose" == cmd.Args[0] {
 						return []byte(`[{"ID":"id","Name":"demo-web-1","State":"running"}]`), nil, nil
 					}
-					return []byte(`{}`), nil, nil
+					t.Fatalf("unexpected command: %+v", cmd)
+					return nil, nil, nil
 				})
 				_, err := driver.Stats(ctx, engine.Stack{Name: "demo"})
 				if !errors.Is(err, context.Canceled) {

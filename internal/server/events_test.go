@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -163,6 +164,45 @@ func TestBrowserTabs(t *testing.T) {
 	_ = two.CloseNow()
 	if detach := channelCommand(t, f, "stream.detach"); second.Stream != detach.Stream {
 		t.Fatal(detach)
+	}
+}
+
+func TestBrowserContainerLogs(t *testing.T) {
+	fixture := newWorkspace(t)
+	f, node := fixture.channel, fixture.node
+	browser := workspaceSnapshot(t, fixture.app.URL, fixture.server)
+	attach := func(stream, container string) protocol.ChannelMessage {
+		t.Helper()
+		browserSend(t, browser, protocol.ChannelMessage{
+			Type: "logs.attach", Stream: stream, Node: "home", Resource: "demo", Container: container,
+		})
+		command := channelCommand(t, f, "logs.attach")
+		if "demo" != command.Resource || container != command.Container {
+			t.Fatal("log selection was not forwarded", command)
+		}
+		return command
+	}
+	first := attach("first", "demo.web-1")
+	line := protocol.ChannelMessage{
+		Type: "stream.event", Stream: first.Stream, Container: first.Container,
+		Event: "message", Payload: json.RawMessage(`{"message":"replica-one"}`),
+	}
+	browserSend(t, node, line)
+	if got := resourceMessage(t, browser); "first" != got.Stream || "message" != got.Event || string(line.Payload) != string(got.Payload) {
+		t.Fatal("container log was not forwarded", got)
+	}
+	browserSend(t, browser, protocol.ChannelMessage{Type: "stream.detach", Stream: "first"})
+	if detached := channelCommand(t, f, "stream.detach"); first.Stream != detached.Stream {
+		t.Fatal("previous container stream not detached", detached)
+	}
+	second := attach("second", "demo.web-2")
+	browserSend(t, node, line)
+	line.Stream = second.Stream
+	line.Container = ""
+	browserSend(t, node, line)
+	if got := resourceMessage(t, browser); "second" != got.Stream || "error" != got.Type ||
+		http.StatusUpgradeRequired != got.Status || nil != got.Payload {
+		t.Fatal("unfiltered logs reached a filtered stream", got)
 	}
 }
 
@@ -435,14 +475,18 @@ func TestWorkspaceSync(t *testing.T) {
 	browserSend(t, browser, protocol.ChannelMessage{Type: "workspace.sync"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	sawRuntime := false
 	for {
 		var message protocol.ChannelMessage
 		if err := wsjson.Read(ctx, browser, &message); nil != err {
 			t.Fatal(err)
 		}
+		if "stack.runtime" == message.Event {
+			sawRuntime = sawRuntime || strings.Contains(string(message.Payload), `"name":"demo"`)
+		}
 		if "node.snapshot" == message.Event {
-			if "" != message.Stream || !strings.Contains(string(message.Payload), `"name":"demo"`) {
-				t.Fatal("stale workspace sync", message)
+			if !sawRuntime || "" != message.Stream || !strings.Contains(string(message.Payload), `"name":"demo"`) {
+				t.Fatal("stale or out-of-order workspace sync", message)
 			}
 			break
 		}
@@ -463,4 +507,53 @@ func TestWorkspaceSync(t *testing.T) {
 	if got := resourceMessage(t, browser); "logs" != got.Stream {
 		t.Fatal("workspace sync detached logs", got)
 	}
+}
+
+func TestWorkspaceSyncLarge(t *testing.T) {
+	s := testServer(t, nil)
+	for i := range 33 {
+		id := "node-" + strconv.Itoa(i)
+		node, _ := json.Marshal(id)
+		s.runtime[id] = &nodeRuntime{snapshot: map[string]json.RawMessage{
+			"node": node, "health": json.RawMessage(`{"status":"ok"}`), "stacks": json.RawMessage(`[]`),
+		}}
+		s.stateLocked(id, "connected", "")
+	}
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	browser := browserStream(t, app.URL+"/api/events", s)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	readWorkspace := func() {
+		t.Helper()
+		states := make(map[string]bool)
+		for range len(s.runtime) * 2 {
+			var message protocol.ChannelMessage
+			if err := wsjson.Read(ctx, browser, &message); nil != err {
+				t.Fatal(err)
+			}
+			var payload struct{ Node string }
+			if err := json.Unmarshal(message.Payload, &payload); nil != err || nil == s.runtime[payload.Node] {
+				t.Fatal("unexpected node", message, err)
+			}
+			snapshot, seen := states[payload.Node]
+			switch message.Event {
+			case "node.snapshot":
+				if seen {
+					t.Fatal("duplicate snapshot", payload.Node)
+				}
+				states[payload.Node] = true
+			case "node.state":
+				if !snapshot {
+					t.Fatal("state without snapshot", payload.Node)
+				}
+				states[payload.Node] = false
+			default:
+				t.Fatal("unexpected event", message.Event)
+			}
+		}
+	}
+	readWorkspace()
+	browserSend(t, browser, protocol.ChannelMessage{Type: "workspace.sync"})
+	readWorkspace()
 }

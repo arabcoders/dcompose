@@ -114,6 +114,16 @@ func (p *Podman) ImageRefs(ctx context.Context, s engine.Stack) (map[string]bool
 	return refs, err
 }
 
+// ContainerLogs streams one stack container through the native Podman CLI,
+// keeping the remote transport when CONTAINER_HOST selects one.
+func (p *Podman) ContainerLogs(ctx context.Context, s engine.Stack, name string) (engine.Command, error) {
+	id, err := p.CLI.ContainerID(ctx, s, name)
+	if nil != err {
+		return engine.Command{}, err
+	}
+	return p.command("", "logs", "--follow", "--tail", "100", id), nil
+}
+
 func (p *Podman) Events(since time.Time) engine.Command {
 	// Podman 4.3 drops all events for label-presence filters. EventStack
 	// filters Compose ownership after decoding the native event labels.

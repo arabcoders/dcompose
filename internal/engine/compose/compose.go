@@ -172,3 +172,23 @@ func (c *CLI) Containers(ctx context.Context, s engine.Stack) ([]engine.Service,
 	}
 	return services, nil
 }
+
+// ContainerID returns the native engine ID of the exactly named container.
+// The --all inventory covers stopped containers and lists every replica
+// separately, without per-container metadata.
+func (c *CLI) ContainerID(ctx context.Context, s engine.Stack, name string) (string, error) {
+	services, err := c.Containers(ctx, s)
+	if nil != err {
+		return "", err
+	}
+	for _, item := range services {
+		if name != item.Name {
+			continue
+		}
+		if "" == item.ID {
+			return "", &engine.Error{Code: 502, Message: "Could not read container information. Try again."}
+		}
+		return item.ID, nil
+	}
+	return "", &engine.Error{Code: 404, Message: "container not found in this stack"}
+}

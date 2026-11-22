@@ -22,14 +22,8 @@ import { useDialog } from '~/composables/useDialog'
 import { useWorkspaceStream } from '~/composables/useWorkspaceStream'
 import { useWorkspaceStore } from '~/store/workspace'
 import { useAuthStore } from '~/store/auth'
-import type {
-  ContainerStats,
-  Service,
-  Stack,
-  StackAction,
-  StackStatsTotals,
-  StatCardProps,
-} from '~/types'
+import { useRealtimeStore } from '~/store/realtime'
+import type { Service, Stack, StackAction, StackStatsTotals, StatCardProps } from '~/types'
 import { notification, parse_api_response, request } from '~/utils'
 import {
   workspaceErrorMessage,
@@ -40,6 +34,7 @@ import {
   containerUptime,
   parseStackStats,
   aggregateStackStats,
+  stackStatsAge,
 } from '~/utils/stacks'
 
 definePageMeta({ layout: 'workspace' })
@@ -50,6 +45,7 @@ const { confirmDialog } = useDialog()
 const workspace = useWorkspaceStore()
 const { nodes } = storeToRefs(workspace)
 const auth = useAuthStore()
+const realtime = useRealtimeStore()
 const now = useNow({ interval: 1000 })
 const node = computed(() => String(route.params.node))
 const name = computed(() => String(route.params.stack))
@@ -154,15 +150,41 @@ const busy = computed(
 const active = computed(() =>
   runtime.value?.services.some((service) => 'running' === service.state),
 )
-const stats = ref<Array<ContainerStats> | null>(null)
+const containerNames = computed(() =>
+  (runtime.value?.services ?? []).map((service) => service.name),
+)
+const statsStopped = computed(() => {
+  const state = selectedRuntime.value
+  return !!state && ('stopped' === state.status || 'draft' === state.status)
+})
+const statsSample = computed(() =>
+  isNew.value || statsStopped.value ? null : realtime.stackStatsSample(node.value, name.value),
+)
+const statsFresh = ref(false)
+const stats = computed(() => statsSample.value?.containers ?? null)
+const statsAge = computed(() =>
+  statsSample.value ? stackStatsAge(statsSample.value.receivedAt, now.value) : '',
+)
 const statsStream = useWorkspaceStream((message) => {
   if ('stack.stats' === message.event) {
-    stats.value = parseStackStats(message.data).containers
+    realtime.rememberStackStats(node.value, name.value, parseStackStats(message.data).containers)
+    statsFresh.value = true
   }
 })
 const statsError = statsStream.error
+const statsStale = computed(
+  () =>
+    !!statsSample.value &&
+    (!statsFresh.value || !active.value || !connected.value || !!statsError.value),
+)
+const statsStatus = computed(() =>
+  statsSample.value && statsStale.value
+    ? `Showing unverified stats sample. Updated ${statsAge.value}.`
+    : '',
+)
 const startStats = () => {
   statsStream.stop()
+  statsFresh.value = false
   if (connected.value && active.value && !isNew.value) {
     statsStream.start({ type: 'stats', node: node.value, resource: name.value })
   }
@@ -174,7 +196,7 @@ const servicesWithStats = computed(() =>
   })),
 )
 const stackTotals = computed(() => {
-  if (connected.value && !active.value) {
+  if (connected.value && statsStopped.value) {
     return aggregateStackStats([])
   }
   return stats.value ? aggregateStackStats(stats.value) : undefined
@@ -570,16 +592,7 @@ watch(
   },
 )
 watch(() => [node.value, name.value], load, { immediate: true })
-watch(
-  [node, name, connected, active, isNew],
-  ([nodeId, stackName, , isActive, draft], previous) => {
-    if (nodeId !== previous?.[0] || stackName !== previous?.[1] || !isActive || draft) {
-      stats.value = null
-    }
-    startStats()
-  },
-  { immediate: true },
-)
+watch([node, name, connected, active, isNew], startStats, { immediate: true })
 const actionCompleted = (action: StackAction | 'delete', exitCode?: number) => {
   if ('delete' === action && 0 === exitCode) {
     void navigateTo('/')
@@ -741,11 +754,20 @@ onBeforeUnmount(() => {
         <UIcon name="i-lucide-chart-no-axes-combined" class="size-4 shrink-0" />
         {{ statsError }}
       </p>
+      <p
+        v-if="statsStatus && !workspace.error && !workspace.streamError"
+        role="status"
+        class="flex items-center gap-2 text-sm text-muted"
+      >
+        <UIcon name="i-lucide-history" class="size-4 shrink-0" />
+        {{ statsStatus }}
+      </p>
       <StackLogs
         v-if="!isNew"
         :key="`${node}/${name}`"
         :node="node"
         :stack="name"
+        :containers="containerNames"
         :connected="connected && !!runtime"
         :paused="'paused' === selectedNode?.connection"
         :draft="'draft' === runtime?.status"

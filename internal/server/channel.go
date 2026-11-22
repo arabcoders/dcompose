@@ -30,6 +30,7 @@ type nodeChannel struct {
 	conn             *websocket.Conn // guarded by hubMu, as are shells
 	shells           map[string]map[chan protocol.ChannelMessage]struct{}
 	streams          map[string]*browserSubscription
+	agentState       map[string]json.RawMessage
 	registryRevision string
 	registryApplied  string
 	registryFailed   bool
@@ -49,6 +50,7 @@ func (s *Server) Start(ctx context.Context) {
 	}
 	s.hubContext, s.hubCancel = context.WithCancel(ctx)
 	s.loadImageCooldowns()
+	s.loadImageObservations()
 	s.reconcileChannelsLocked(s.config, s.nodes)
 	s.hubWorkers.Go(s.watchImages)
 }
@@ -249,6 +251,7 @@ func (s *Server) runChannel(channel *nodeChannel) {
 			channel.imageCancel()
 		}
 		channel.registryApplied = ""
+		channel.agentState = nil
 		wakeRegistryLocked(channel)
 		s.failShellsLocked(channel, false)
 		if s.channels[channel.id] == channel && nil == channel.ctx.Err() {
@@ -263,7 +266,7 @@ func (s *Server) runChannel(channel *nodeChannel) {
 		if nil != channel.ctx.Err() {
 			return
 		}
-		if warnings.allow(time.Now()) {
+		if !(nil != conn && s.selfUpdateDisconnect(channel.id, err)) && warnings.allow(time.Now()) {
 			node, detail := nodeLogLabel(channel.node), safeTransportError(err)
 			slog.Warn(
 				fmt.Sprintf(

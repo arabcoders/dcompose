@@ -107,7 +107,11 @@ func (s *Server) workspaceEvents(w http.ResponseWriter, r *http.Request) {
 			subscription := subscriptions[message.Stream]
 			switch message.Type {
 			case "workspace.sync":
-				s.syncWorkspace(frames)
+				for _, frame := range s.syncWorkspace(frames) {
+					if err := writeSocket(ctx, conn, frame); nil != err {
+						return
+					}
+				}
 			case "stream.detach":
 				if nil != subscription {
 					s.detachBrowser(subscription)
@@ -216,21 +220,19 @@ func (s *Server) subscribeWorkspace() (chan []byte, [][]byte) {
 	return subscriber, s.workspaceFramesLocked()
 }
 
-func (s *Server) syncWorkspace(subscriber chan []byte) {
+func (s *Server) syncWorkspace(subscriber chan []byte) [][]byte {
 	s.hubMu.Lock()
 	defer s.hubMu.Unlock()
 	if _, ok := s.watchers[subscriber]; !ok {
-		return
+		return nil
 	}
-	for _, frame := range s.workspaceFramesLocked() {
-		select {
-		case subscriber <- frame:
-		default:
-			delete(s.watchers, subscriber)
-			close(subscriber)
-			return
-		}
+	// The socket writer is the sole reader of this queue. Send already queued
+	// events first, then the snapshot, then any events published after it.
+	pending := make([][]byte, 0, len(subscriber))
+	for range len(subscriber) {
+		pending = append(pending, <-subscriber)
 	}
+	return append(pending, s.workspaceFramesLocked()...)
 }
 
 func (s *Server) workspaceFramesLocked() [][]byte {
@@ -288,9 +290,6 @@ func (s *Server) runtimeEvent(channel *nodeChannel, event string, data json.RawM
 		return nil
 	case "node.snapshot":
 		runtime.snapshot = payload
-		if ready {
-			s.stateLocked(channel.id, "connected", "")
-		}
 		var health struct {
 			Interval string `json:"image_check_interval"`
 		}
@@ -314,15 +313,11 @@ func (s *Server) runtimeEvent(channel *nodeChannel, event string, data json.RawM
 		}
 		payload["stacks"], _ = json.Marshal(stacks)
 	case "node.state":
-		if !ready {
-			return nil
+		channel.agentState = payload
+		if ready {
+			s.publishAgentStateLocked(channel)
 		}
-		runtime.state = payload
-		if `"connected"` == string(payload["state"]) {
-			s.queueNodeImagesLocked(channel.id)
-		} else {
-			s.pauseNodeImagesLocked(channel.id)
-		}
+		return nil
 	case "stack.runtime", "stack.removed":
 		if "stack.runtime" == event {
 			s.imageRuntimeLocked(channel.id, payload)
@@ -357,6 +352,20 @@ func (s *Server) runtimeEvent(channel *nodeChannel, event string, data json.RawM
 		s.broadcastLocked(runtimeFrame(event, payload))
 	}
 	return nil
+}
+
+func (s *Server) publishAgentStateLocked(channel *nodeChannel) {
+	state := channel.agentState
+	if nil == state {
+		return
+	}
+	s.runtime[channel.id].state = state
+	s.broadcastLocked(runtimeFrame("node.state", state))
+	if `"connected"` == string(state["state"]) {
+		s.queueNodeImagesLocked(channel.id)
+	} else {
+		s.pauseNodeImagesLocked(channel.id)
+	}
 }
 
 func (s *Server) stateLocked(id, state, message string) {

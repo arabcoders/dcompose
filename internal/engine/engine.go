@@ -4,8 +4,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrStatsContainerGone means a container disappeared between discovery and sampling.
+var ErrStatsContainerGone = errors.New("container disappeared while sampling statistics")
 
 type Command struct {
 	Program string
@@ -36,6 +40,8 @@ type DetachedState struct {
 	ExitCode int
 	Output   string
 }
+
+const DetachedHelperPrefix = "svc_dagent-operation-"
 
 // DetachedOperations optionally runs own-stack actions outside the node container.
 type DetachedOperations interface {
@@ -177,6 +183,9 @@ type Driver interface {
 	ImageChanged(context.Context, Service) (bool, error)
 	Action(Stack, string, string) Command
 	Logs(Stack) Command
+	// ContainerLogs resolves an exact container name inside the stack and
+	// returns the native engine logs command for it.
+	ContainerLogs(context.Context, Stack, string) (Command, error)
 	Probe(context.Context) error
 	Events(time.Time) Command
 	EventStack([]byte) string

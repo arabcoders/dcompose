@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,6 +130,25 @@ func TestProxyLogs(t *testing.T) {
 				t.Fatal("transport URL leaked", output.String())
 			}
 		})
+	}
+}
+
+func TestProxyCancel(t *testing.T) {
+	output := captureNodeLogs(t, slog.LevelWarn)
+	s := testServer(t, nil)
+	s.config.Nodes["home"] = NodeConfig{Name: "Home", URL: "https://node.invalid"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.nodes["home"] = &http.Client{Transport: logTransport(func(r *http.Request) (*http.Response, error) {
+		cancel()
+		return nil, r.Context().Err()
+	})}
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/nodes/home/info", nil)
+	s.proxy(httptest.NewRecorder(), request, "home/info")
+	select {
+	case line := <-output.lines:
+		t.Fatal("canceled proxy request logged:", string(line))
+	default:
 	}
 }
 

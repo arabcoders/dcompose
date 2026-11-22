@@ -10,6 +10,7 @@ import {
   parseWorkspaceEvent,
   aggregateStackStats,
   parseStackStats,
+  stackStatsAge,
 } from '../app/utils/stacks'
 import type { Service, StackStatus } from '../app/types'
 
@@ -215,6 +216,15 @@ describe('Stack stats', () => {
     { containers: [{ ...container, memory: undefined }] },
   ])('invalid stats %j', (value) => {
     expect(() => parseStackStats(JSON.stringify(value))).toThrow()
+  })
+})
+
+describe('Stack stats age', () => {
+  test('sample age', () => {
+    const now = new Date('2026-11-22T12:00:00Z')
+    expect(stackStatsAge(now.getTime(), now)).not.toContain('ago')
+    expect(stackStatsAge(now.getTime() - 5000, now)).toContain('5')
+    expect(stackStatsAge(now.getTime() - 60000, now)).toContain('1')
   })
 })
 

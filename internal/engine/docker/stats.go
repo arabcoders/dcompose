@@ -3,12 +3,14 @@ package docker
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/arabcoders/dcompose/internal/engine"
 )
 
 func (d *Docker) Stats(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
-	containers, err := d.Containers(ctx, stack)
+	// Stats only needs the IDs and states from Compose, not per-container metadata.
+	containers, err := d.CLI.Containers(ctx, stack)
 	if nil != err {
 		return nil, err
 	}
@@ -30,8 +32,11 @@ func (d *Docker) Stats(ctx context.Context, stack engine.Stack) ([]engine.Contai
 		return []engine.ContainerStats{}, nil
 	}
 	args := append([]string{"stats", "--no-stream", "--no-trunc", "--format", "{{json .}}"}, ids...)
-	stdout, _, err := d.run(ctx, command("", args...))
+	stdout, stderr, err := d.run(ctx, command("", args...))
 	if nil != err {
+		if nil == ctx.Err() && missingStatsContainers(string(stderr)) {
+			return nil, engine.ErrStatsContainerGone
+		}
 		return nil, &engine.Error{Code: 502, Message: "Could not load stack statistics.", Cause: fmt.Errorf("docker stats: %w", err)}
 	}
 	stats, err := parseStats(stdout)
@@ -39,4 +44,14 @@ func (d *Docker) Stats(ctx context.Context, stack engine.Stack) ([]engine.Contai
 		return nil, &engine.Error{Code: 502, Message: "Could not load stack statistics.", Cause: err}
 	}
 	return stats, nil
+}
+
+func missingStatsContainers(stderr string) bool {
+	// Docker can report several errors at once when sampling multiple containers.
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
+		if !strings.HasPrefix(line, "Error response from daemon: No such container: ") {
+			return false
+		}
+	}
+	return true
 }

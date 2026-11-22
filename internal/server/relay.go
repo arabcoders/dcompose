@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -77,6 +79,21 @@ func (s *Server) startRelay(node, id string) {
 		}()
 		s.relaySelfUpdate(s.hubContext, key)
 	})
+}
+
+func (s *Server) selfUpdateDisconnect(node string, err error) bool {
+	if errors.Is(err, errRuntimeEvent) ||
+		(!errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, net.ErrClosed)) {
+		return false
+	}
+	s.hubMu.Lock()
+	defer s.hubMu.Unlock()
+	for key := range s.relays {
+		if node == key.node {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) relaySelfUpdate(ctx context.Context, key relayKey) {

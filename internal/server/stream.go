@@ -17,6 +17,7 @@ type browserSubscription struct {
 	shell      string
 	kind       string
 	resource   string
+	container  string
 	channel    *nodeChannel
 	conn       *websocket.Conn
 	subscriber chan protocol.ChannelMessage
@@ -78,6 +79,10 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 		cancel:     cancel,
 	}
 	command := protocol.ChannelMessage{Type: message.Type, Resource: message.Resource}
+	if "logs.attach" == message.Type {
+		subscription.container = message.Container
+		command.Container = message.Container
+	}
 	if "shell.attach" == message.Type {
 		subscription.shell = message.Shell
 		command.Shell = message.Shell
@@ -92,18 +97,15 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 	}
 	s.hubMu.Unlock()
 	if err := writeChannel(ctx, subscription.conn, command); nil != err {
-		view := fmt.Sprintf("logs for stack %q", subscription.resource)
-		switch subscription.kind {
-		case "stats.attach":
-			view = fmt.Sprintf("stats for stack %q", subscription.resource)
-		case "relay.attach":
-			view = fmt.Sprintf("self-update relay %q", subscription.resource)
-		case "shell.attach":
-			view = fmt.Sprintf("shell %q", subscription.shell)
-		}
 		detail := safeTransportError(err)
-		slog.Error(
-			fmt.Sprintf("Could not open %s on %s: %s", view, nodeLogLabel(channel.node), detail),
+		level := slog.LevelError
+		if context.Canceled == ctx.Err() || ("shell.attach" != subscription.kind && s.selfUpdateDisconnect(message.Node, err)) {
+			level = slog.LevelDebug
+		}
+		slog.Log(
+			ctx,
+			level,
+			fmt.Sprintf("Could not open %s on %s: %s", subscription.view(), nodeLogLabel(channel.node), detail),
 			"node",
 			nodeLogLabel(channel.node),
 			"operation",
@@ -121,6 +123,21 @@ func (s *Server) attachNode(ctx context.Context, message protocol.ChannelMessage
 		return nil, browserError(message.Stream, 502, "Could not open the requested view. Try again.")
 	}
 	return subscription, nil
+}
+
+func (subscription *browserSubscription) view() string {
+	switch subscription.kind {
+	case "stats.attach":
+		return fmt.Sprintf("stats for stack %q", subscription.resource)
+	case "relay.attach":
+		return fmt.Sprintf("self-update relay %q", subscription.resource)
+	case "shell.attach":
+		return fmt.Sprintf("shell %q", subscription.shell)
+	}
+	if "" != subscription.container {
+		return fmt.Sprintf("logs for container %q in stack %q", subscription.container, subscription.resource)
+	}
+	return fmt.Sprintf("logs for stack %q", subscription.resource)
 }
 
 func (s *Server) detachBrowser(subscription *browserSubscription) {
@@ -178,7 +195,7 @@ func (subscription *browserSubscription) forward(outgoing chan<- browserDelivery
 				}
 			}
 			message.Stream = subscription.id
-			if "error" == message.Type && 409 != message.Status && "Connection lost. Try again." != message.Error {
+			if "error" == message.Type && 409 != message.Status && 426 != message.Status && "Connection lost. Try again." != message.Error {
 				message.Error = "Could not load logs. Try again."
 				if "stats.attach" == subscription.kind {
 					message.Error = "Could not load stats. Try again."
@@ -204,19 +221,15 @@ func (s *Server) streamEvent(channel *nodeChannel, message protocol.ChannelMessa
 	if nil == subscription {
 		return
 	}
-	if "stream.error" == message.Type {
+	if "stream.event" == message.Type && "" != subscription.container && subscription.container != message.Container {
+		// Older agents ignore the filter. Do not display their unfiltered logs as container logs.
+		message = protocol.ChannelMessage{Type: "error", Status: 426, Error: "Update the node agent to filter logs by container."}
+	} else if "stream.error" == message.Type {
 		status := message.Status
 		if 400 > status || 599 < status {
 			status = 502
 		}
-		view := fmt.Sprintf("logs for stack %q", subscription.resource)
-		switch subscription.kind {
-		case "stats.attach":
-			view = fmt.Sprintf("stats for stack %q", subscription.resource)
-		case "relay.attach":
-			view = fmt.Sprintf("self-update relay %q", subscription.resource)
-		}
-		detail := fmt.Sprintf("Could not load %s on %s", view, nodeLogLabel(channel.node))
+		detail := fmt.Sprintf("Could not load %s on %s", subscription.view(), nodeLogLabel(channel.node))
 		if 400 <= message.Status && 599 >= message.Status {
 			detail += fmt.Sprintf(" (HTTP %d)", message.Status)
 		}

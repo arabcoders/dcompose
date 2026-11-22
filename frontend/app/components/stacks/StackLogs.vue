@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UCard from '@nuxt/ui/components/Card.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
+import USelect from '@nuxt/ui/components/Select.vue'
 import OutputTerminal from '~/components/stacks/OutputTerminal.vue'
 import { useWorkspaceStream } from '~/composables/useWorkspaceStream'
 import { useWorkspaceStore } from '~/store/workspace'
@@ -18,10 +19,17 @@ const workspace = useWorkspaceStore()
 const emit = defineEmits<{ completed: [action: StackAction | 'delete', exitCode?: number] }>()
 const output = ref<InstanceType<typeof OutputTerminal> | null>(null)
 const error = ref('')
+const ALL_CONTAINERS = '*'
+const selectedContainer = ref(ALL_CONTAINERS)
+const actionRunning = ref(props.busy ?? false)
 let active = false
 let awaitingExit = false
-let actionRunning = props.busy ?? false
 let releaseStackEvents = () => {}
+
+const containerItems = computed(() => [
+  { label: 'All containers', value: ALL_CONTAINERS },
+  ...props.containers.map((name) => ({ label: name, value: name })),
+])
 
 const stream = useWorkspaceStream(
   ({ data }) => {
@@ -84,12 +92,25 @@ const fail = (message: string) => {
 }
 
 const startLogs = () => {
-  if (active || !props.connected || props.paused || props.draft || actionRunning || props.busy) {
+  if (
+    active ||
+    !props.connected ||
+    props.paused ||
+    props.draft ||
+    actionRunning.value ||
+    props.busy
+  ) {
     return
   }
   active = true
   error.value = ''
-  stream.start({ type: 'logs', node: props.node, resource: props.stack })
+  const container = selectedContainer.value
+  stream.start({
+    type: 'logs',
+    node: props.node,
+    resource: props.stack,
+    ...(ALL_CONTAINERS !== container ? { container } : {}),
+  })
 }
 
 watch(
@@ -98,14 +119,20 @@ watch(
     if (undefined === busy) {
       return
     }
-    actionRunning = busy || awaitingExit
-    if (actionRunning && active) {
+    actionRunning.value = busy || awaitingExit
+    if (actionRunning.value && active) {
       stopLogs()
     } else if (!error.value) {
       startLogs()
     }
   },
 )
+watch(selectedContainer, () => {
+  stopLogs()
+  output.value?.reset()
+  error.value = ''
+  startLogs()
+})
 watch(() => props.actionError, appendActionError)
 watch(
   () => props.draft,
@@ -121,7 +148,7 @@ watch(
 watch([() => props.connected, () => props.paused], ([connected, paused]) => {
   if (paused) {
     awaitingExit = false
-    actionRunning = false
+    actionRunning.value = false
     stopLogs()
     error.value = ''
     return
@@ -133,7 +160,7 @@ watch([() => props.connected, () => props.paused], ([connected, paused]) => {
   } else {
     const interrupted = active || awaitingExit
     awaitingExit = false
-    actionRunning = props.busy ?? false
+    actionRunning.value = props.busy ?? false
     if (interrupted) {
       fail('Connection lost. Reconnect to continue.')
     } else {
@@ -151,8 +178,8 @@ onMounted(() => {
       return
     }
     awaitingExit = 'start' === event.phase
-    actionRunning = awaitingExit
-    if (actionRunning) {
+    actionRunning.value = awaitingExit
+    if (actionRunning.value) {
       stopLogs()
       error.value = ''
       output.value?.write(`\r\n[${event.action}]\r\n`)
@@ -174,6 +201,21 @@ onBeforeUnmount(() => {
 
 <template>
   <UCard as="section" class="min-w-0" aria-label="Stack logs" :ui="{ body: 'p-0 sm:p-0' }">
+    <template #header>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold text-highlighted">Logs</h2>
+        <USelect
+          v-model="selectedContainer"
+          :items="containerItems"
+          icon="i-lucide-container"
+          size="sm"
+          class="w-full sm:w-64"
+          aria-label="Filter logs by container"
+          :placeholder="selectedContainer"
+          :disabled="actionRunning"
+        />
+      </div>
+    </template>
     <div
       v-if="outputError"
       role="status"

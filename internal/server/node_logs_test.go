@@ -110,11 +110,13 @@ func TestChannelNodeLogs(t *testing.T) {
 	t.Cleanup(s.Close)
 	startChannels(t, s)
 	conn := nextConnection(t, f)
-	awaitCache(t, s, `"name":"old"`, "")
-	frames, _ := s.subscribeWorkspace()
-	t.Cleanup(func() { s.hubMu.Lock(); delete(s.watchers, frames); s.hubMu.Unlock() })
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	if err := s.awaitRegistries(ctx, "home"); nil != err {
+		t.Fatal(err)
+	}
+	frames, _ := s.subscribeWorkspace()
+	t.Cleanup(func() { s.hubMu.Lock(); delete(s.watchers, frames); s.hubMu.Unlock() })
 	payload := json.RawMessage(
 		`{"entries":[{"time":"2026-10-29T12:00:00.123456789Z","level":"ERROR","msg":"diagnostic","source":{"file":"node.go","function":"node.check","line":42},"attrs":{"image":"example:latest","stderr":"registry denied\nsecond line","node_id":"forged","_node_source":{"file":"forged"}}}]}`,
 	)

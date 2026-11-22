@@ -56,3 +56,44 @@ func (s *Server) saveImageCooldowns() {
 	}
 	c.persisted = data
 }
+
+func (s *Server) loadImageObservations() {
+	if "" == s.config.path {
+		return
+	}
+	c := s.images
+	c.observationsFile = filepath.Join(filepath.Dir(s.config.path), "cache", "registry-images.json")
+	data, err := os.ReadFile(c.observationsFile)
+	if os.IsNotExist(err) {
+		return
+	}
+	if nil == err {
+		err = s.registryClient.RestoreImageObservations(data)
+	}
+	if nil != err {
+		slog.Warn(fmt.Sprintf("Could not restore registry image checks from %q: %v", c.observationsFile, err))
+		return
+	}
+	c.observations = data
+}
+
+func (s *Server) saveImageObservations() {
+	c := s.images
+	c.persistMu.Lock()
+	defer c.persistMu.Unlock()
+	if "" == c.observationsFile {
+		return
+	}
+	data, err := s.registryClient.ImageObservations()
+	if nil == err && bytes.Equal(data, c.observations) {
+		return
+	}
+	if nil == err {
+		err = configutil.Write(c.observationsFile, data)
+	}
+	if nil != err {
+		slog.Warn(fmt.Sprintf("Could not save registry image checks to %q: %v. Results remain in memory.", c.observationsFile, err))
+		return
+	}
+	c.observations = data
+}

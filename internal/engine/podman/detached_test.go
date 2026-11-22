@@ -35,7 +35,7 @@ func TestStartDetached(t *testing.T) {
 			"run",
 			"--detach",
 			"--name",
-			"dagent-operation-test",
+			"svc_dagent-operation-test",
 			"--label",
 			"io.dcompose.operation=test",
 			"--restart=no",
@@ -80,7 +80,7 @@ func TestStartDetached(t *testing.T) {
 	})
 	// The endpoint captured by the driver must also reach the helper environment.
 	t.Setenv("CONTAINER_HOST", "unix:///wrong/podman.sock")
-	if err := p.StartDetached(context.Background(), self, "dagent-operation-test", "/cache/request.json", testStack()); nil != err {
+	if err := p.StartDetached(context.Background(), self, "svc_dagent-operation-test", "/cache/request.json", testStack()); nil != err {
 		t.Fatal(err)
 	}
 }

@@ -3,12 +3,13 @@ package podman
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/arabcoders/dcompose/internal/engine"
 )
 
 func (p *Podman) Stats(ctx context.Context, stack engine.Stack) ([]engine.ContainerStats, error) {
-	containers, err := p.Containers(ctx, stack)
+	containers, err := p.CLI.Containers(ctx, stack)
 	if nil != err {
 		return nil, err
 	}
@@ -30,8 +31,11 @@ func (p *Podman) Stats(ctx context.Context, stack engine.Stack) ([]engine.Contai
 		return []engine.ContainerStats{}, nil
 	}
 	args := append([]string{"stats", "--no-stream", "--no-trunc", "--format", "json"}, ids...)
-	stdout, _, err := p.run(ctx, p.command("", args...))
+	stdout, stderr, err := p.run(ctx, p.command("", args...))
 	if nil != err {
+		if nil == ctx.Err() && strings.HasSuffix(strings.TrimSpace(string(stderr)), ": no such container") {
+			return nil, engine.ErrStatsContainerGone
+		}
 		return nil, &engine.Error{Code: 502, Message: "Could not load stack statistics.", Cause: fmt.Errorf("podman stats: %w", err)}
 	}
 	stats, err := parseStats(stdout)

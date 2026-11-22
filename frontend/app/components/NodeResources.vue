@@ -5,20 +5,24 @@ import UBadge from '@nuxt/ui/components/Badge.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
-import type { NodeInfo, NodeResourceStatus, WorkspaceNode } from '~/types'
-import { parse_api_response, request } from '~/utils'
+import { useWorkspaceStore } from '~/store/workspace'
+import type { NodeResourceStatus, WorkspaceNode } from '~/types'
 import { formatMemoryBytes } from '~/utils/node'
-import { aggregateStackStats, parseStatBytes, workspaceErrorMessage } from '~/utils/stacks'
+import { aggregateStackStats, parseStatBytes } from '~/utils/stacks'
 
 const props = defineProps<{ node: WorkspaceNode }>()
+const workspace = useWorkspaceStore()
 const connected = computed(() => 'connected' === props.node.connection && !props.node.paused)
-const info = ref<NodeInfo | null>(null)
+const cached = computed(() => workspace.nodeInfoCache[props.node.id])
+const info = computed(() =>
+  props.node.paused || 'paused' === props.node.connection ? null : (cached.value?.info ?? null),
+)
 const loading = ref(false)
 const error = ref('')
 const ranking = ref<'cpu' | 'memory'>('cpu')
 let mounted = false
-let controller: AbortController | null = null
 let timer: ReturnType<typeof setInterval> | undefined
+let refreshToken = 0
 
 const connectionLabel = computed(() => {
   if (props.node.paused) {
@@ -43,9 +47,7 @@ const status = computed<NodeResourceStatus | null>(() => {
   }
   if (!connected.value) {
     return {
-      text: props.node.error
-        ? `${props.node.error}${info.value ? ' Showing previous sample.' : ''}`
-        : connectionLabel.value,
+      text: `${props.node.error || connectionLabel.value}${info.value ? ' Showing previous sample.' : ''}`,
       icon: 'i-lucide-wifi-off',
       tone: 'warning',
     }
@@ -70,18 +72,22 @@ const status = computed<NodeResourceStatus | null>(() => {
 const totals = computed(() =>
   aggregateStackStats(info.value?.containers ?? [], info.value?.runtime.cpus ?? 1),
 )
+const sampleUpdated = computed(() =>
+  info.value ? new Date(info.value.checked_at).toLocaleString() : '',
+)
 const consumers = computed(() => {
   const sample = info.value
   if (!sample) {
     return []
   }
   return props.node.stacks
-    .filter((stack) => !stack.loading && !stack.error && 0 < stack.services.length)
+    .filter((stack) => !stack.error && 0 < stack.services.length)
     .map((stack) => {
       const names = new Set(stack.services.map((service) => service.name))
       const containers = sample.containers.filter((container) => names.has(container.name))
       return {
         name: stack.name,
+        stale: stack.loading,
         count: containers.length,
         totals: aggregateStackStats(containers, sample.runtime.cpus),
         cpu:
@@ -98,72 +104,51 @@ const consumers = computed(() => {
     .slice(0, 3)
 })
 
-const refresh = async () => {
-  if (!mounted || !connected.value || document.hidden || controller) {
+const refresh = async (force = false) => {
+  if (!mounted || !connected.value || document.hidden) {
     return
   }
-  const current = new AbortController()
-  controller = current
+  const id = props.node.id
+  const token = ++refreshToken
   loading.value = true
   try {
-    const response = await request(`/api/nodes/${encodeURIComponent(props.node.id)}/info`, {
-      signal: current.signal,
-    })
-    const json = await parse_api_response<NodeInfo>(response)
-    if (current.signal.aborted) {
-      return
-    }
-    if (!response.ok || 'error' in json) {
-      throw new Error(
-        workspaceErrorMessage(
-          response.status,
-          'error' in json ? json.error.message : 'Could not load resource usage.',
-        ),
-      )
-    }
-    info.value = json
-    error.value = ''
-  } catch (cause) {
-    if (!current.signal.aborted) {
-      error.value =
-        cause instanceof Error && !(cause instanceof TypeError)
-          ? cause.message
-          : 'Could not load resource usage.'
+    const result = await workspace.loadNodeInfo(id, force)
+    if (token === refreshToken && id === props.node.id && !result.aborted) {
+      error.value = result.error
     }
   } finally {
-    if (controller === current) {
-      controller = null
+    if (token === refreshToken) {
       loading.value = false
     }
   }
 }
 
 const stop = () => {
+  refreshToken++
+  loading.value = false
   clearInterval(timer)
   timer = undefined
-  controller?.abort()
-  controller = null
-  loading.value = false
 }
 
 const resume = () => {
-  clearInterval(timer)
-  timer = undefined
+  stop()
   if (!mounted || !connected.value || document.hidden) {
     return
   }
   void refresh()
-  timer = setInterval(() => void refresh(), 30_000)
+  timer = setInterval(() => void refresh(true), 30_000)
 }
 
 watch([() => props.node.id, connected, () => props.node.paused], ([id], [previousId]) => {
-  const reset = id !== previousId || props.node.paused || 'paused' === props.node.connection
-  stop()
-  if (reset) {
-    info.value = null
+  if (id !== previousId || props.node.paused || 'paused' === props.node.connection) {
     error.value = ''
   }
   resume()
+})
+watch(info, (sample) => {
+  if (sample) {
+    error.value = ''
+  }
 })
 
 onMounted(() => {
@@ -288,11 +273,22 @@ onBeforeUnmount(() => {
               :key="stack.name"
               class="flex flex-wrap items-center justify-between gap-2 text-sm"
             >
-              <NuxtLink
-                :to="`/stacks/${encodeURIComponent(node.id)}/${encodeURIComponent(stack.name)}`"
-                class="truncate hover:text-primary"
-                >{{ stack.name }}</NuxtLink
-              >
+              <span class="inline-flex min-w-0 items-center gap-1.5">
+                <NuxtLink
+                  :to="`/stacks/${encodeURIComponent(node.id)}/${encodeURIComponent(stack.name)}`"
+                  class="truncate hover:text-primary"
+                  >{{ stack.name }}</NuxtLink
+                >
+                <UTooltip v-if="stack.stale" :text="`Showing last sample from ${sampleUpdated}.`">
+                  <UIcon
+                    name="i-lucide-history"
+                    class="size-3.5 shrink-0 text-muted"
+                    role="img"
+                    aria-label="Stale sample"
+                    tabindex="0"
+                  />
+                </UTooltip>
+              </span>
               <div class="flex shrink-0 gap-1.5">
                 <UTooltip text="Share of node CPU capacity"
                   ><UBadge
@@ -320,6 +316,10 @@ onBeforeUnmount(() => {
             </li>
           </ol>
         </div>
+        <p class="text-xs text-muted">
+          Updated
+          <time :datetime="info.checked_at">{{ new Date(info.checked_at).toLocaleString() }}</time>
+        </p>
       </template>
     </div>
   </article>

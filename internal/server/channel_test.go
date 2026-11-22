@@ -78,10 +78,6 @@ func fakeChannel(t *testing.T) *channelFixture {
 		defer func() { _ = conn.CloseNow() }()
 		conn.SetReadLimit(8 << 20)
 		f.count.Add(1)
-		if !ackRegistrySync(t, r.Context(), conn) {
-			return
-		}
-		f.active.Store(conn)
 		if err := wsjson.Write(
 			r.Context(),
 			conn,
@@ -89,6 +85,15 @@ func fakeChannel(t *testing.T) *channelFixture {
 		); nil != err {
 			return
 		}
+		if err := wsjson.Write(r.Context(), conn, protocol.ChannelMessage{
+			Type: "event", Event: "node.state", Payload: json.RawMessage(`{"state":"connected"}`),
+		}); nil != err {
+			return
+		}
+		if !ackRegistrySync(t, r.Context(), conn) {
+			return
+		}
+		f.active.Store(conn)
 		f.connections <- conn
 		for {
 			var message protocol.ChannelMessage

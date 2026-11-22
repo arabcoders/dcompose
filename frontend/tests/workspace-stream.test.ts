@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
-import { effectScope, nextTick } from 'vue'
+import { computed, effectScope, nextTick } from 'vue'
 import type { Pinia } from 'pinia'
 import type { EffectScope } from 'vue'
 import type { StackEvent } from '../app/types'
@@ -287,6 +287,37 @@ describe('Shared connection', () => {
     expect(requests).toEqual([])
   })
 
+  test('container logs', () => {
+    const realtime = useRealtimeStore()
+    const all = callbacks()
+    const filtered = callbacks()
+    const stats = callbacks()
+    realtime.subscribe({ type: 'logs', node: 'n', resource: 'app' }, all)
+    realtime.subscribe(
+      { type: 'logs', node: 'n', resource: 'app', container: 'app-web-1' },
+      filtered,
+    )
+    realtime.subscribe({ type: 'stats', node: 'n', resource: 'app' }, stats)
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    expect(socket.sent).toEqual([
+      { type: 'logs.attach', stream: 'reader-1', node: 'n', resource: 'app' },
+      {
+        type: 'logs.attach',
+        stream: 'reader-2',
+        node: 'n',
+        resource: 'app',
+        container: 'app-web-1',
+      },
+      { type: 'stats.attach', stream: 'reader-3', node: 'n', resource: 'app' },
+    ])
+    const message = 'agent-version-refusal-sentinel'
+    socket.message({ type: 'error', stream: 'reader-2', status: 426, error: message })
+    expect(filtered.onDisconnect).toHaveBeenCalledWith(message)
+    expect(filtered.onRejected).toHaveBeenCalledWith(426)
+    expect(all.onDisconnect).not.toHaveBeenCalled()
+  })
+
   test('stats reader', () => {
     const realtime = useRealtimeStore()
     const runtime = callbacks()
@@ -364,6 +395,126 @@ describe('Shared connection', () => {
     expect(statsAttachments()).toBe(3)
   })
 
+  test('stats cache methods', () => {
+    const realtime = useRealtimeStore()
+    const current = computed(() => realtime.stackStatsSample('n', 'app')?.receivedAt ?? null)
+    expect(current.value).toBeNull()
+    const sample = realtime.rememberStackStats('n', 'app', [], 1000)
+    expect(current.value).toBe(1000)
+    realtime.rememberStackStats('n', 'worker', [], 2000)
+    realtime.rememberStackStats('m', 'app', [], 3000)
+
+    expect(realtime.stackStatsSample('n', 'app')).toEqual(sample)
+    expect(realtime.stackStatsSample('n', 'missing')).toBeNull()
+    realtime.forgetStackStats('n', 'app')
+    expect(current.value).toBeNull()
+    expect(realtime.stackStatsSample('n', 'app')).toBeNull()
+    expect(realtime.stackStatsSample('n', 'worker')?.receivedAt).toBe(2000)
+    realtime.forgetNodeStackStats('n')
+    expect(realtime.stackStatsSample('n', 'worker')).toBeNull()
+    expect(realtime.stackStatsSample('m', 'app')?.receivedAt).toBe(3000)
+    realtime.retainStackStats(['m'])
+    expect(realtime.stackStatsSample('m', 'app')).not.toBeNull()
+    realtime.retainStackStats([])
+    expect(realtime.stackStatsSample('m', 'app')).toBeNull()
+    realtime.rememberStackStats('m', 'app', [], 1000)
+    realtime.rememberStackStats('m', 'worker', [], 1000)
+    realtime.retainNodeStackStats('m', ['app'])
+    expect(realtime.stackStatsSample('m', 'app')).not.toBeNull()
+    expect(realtime.stackStatsSample('m', 'worker')).toBeNull()
+  })
+
+  test('stats cache workspace events', async () => {
+    let nodes = [
+      { id: 'n', name: 'Node', public_host: '' },
+      { id: 'm', name: 'Other', public_host: '' },
+    ]
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const path = String(input)
+        if ('/api/nodes' === path) {
+          return Response.json({ nodes })
+        }
+        throw new Error(`Unexpected request: ${path}`)
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    const realtime = useRealtimeStore()
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    realtime.rememberStackStats('n', 'app', [], 1000)
+    realtime.rememberStackStats('n', 'worker', [], 1000)
+    realtime.rememberStackStats('m', 'app', [], 1000)
+
+    socket.message({
+      type: 'event',
+      event: 'stack.runtime',
+      payload: { node: 'n', name: 'app', status: 'running', services: [] },
+    })
+    expect(realtime.stackStatsSample('n', 'app')).not.toBeNull()
+    socket.message({
+      type: 'event',
+      event: 'stack.runtime',
+      payload: { node: 'n', name: 'app', status: 'stopped', services: [] },
+    })
+    expect(realtime.stackStatsSample('n', 'app')).toBeNull()
+    expect(realtime.stackStatsSample('n', 'worker')).not.toBeNull()
+
+    realtime.rememberStackStats('n', 'app', [], 1000)
+    realtime.rememberStackStats('n', 'old', [], 1000)
+    socket.message({
+      type: 'event',
+      event: 'node.snapshot',
+      payload: {
+        node: 'n',
+        health: { status: 'ok', version: '1', api_version: 1 },
+        stacks: [
+          { name: 'app', status: 'running', services: [], loading: true },
+          { name: 'old', status: 'stopped', services: [], loading: false },
+        ],
+      },
+    })
+    expect(realtime.stackStatsSample('n', 'app')).not.toBeNull()
+    expect(realtime.stackStatsSample('n', 'worker')).toBeNull()
+    expect(realtime.stackStatsSample('n', 'old')).toBeNull()
+
+    socket.message({
+      type: 'event',
+      event: 'stack.removed',
+      payload: { node: 'n', name: 'app' },
+    })
+    expect(realtime.stackStatsSample('n', 'app')).toBeNull()
+
+    realtime.rememberStackStats('n', 'worker', [], 1000)
+    socket.message({ type: 'event', event: 'node.state', payload: { node: 'n', state: 'paused' } })
+    expect(realtime.stackStatsSample('n', 'worker')).toBeNull()
+    expect(realtime.stackStatsSample('m', 'app')).not.toBeNull()
+
+    realtime.rememberStackStats('n', 'app', [], 1000)
+    nodes = [{ id: 'm', name: 'Other', public_host: '' }]
+    await workspace.load()
+    expect(realtime.stackStatsSample('n', 'app')).toBeNull()
+    expect(realtime.stackStatsSample('m', 'app')).not.toBeNull()
+
+    nodes = [
+      { id: 'm', name: 'Other', public_host: 'renamed.example' },
+      { id: 'n', name: 'Node', public_host: '' },
+    ]
+    await workspace.load()
+    expect(realtime.stackStatsSample('m', 'app')).not.toBeNull()
+  })
+
+  test('stats cache sign out', async () => {
+    const realtime = useRealtimeStore()
+    realtime.subscribe({ type: 'runtime' }, callbacks())
+    realtime.rememberStackStats('n', 'app', [], 1000)
+    useAuthStore().authenticated = false
+    await nextTick()
+    expect(realtime.stackStatsSample('n', 'app')).toBeNull()
+  })
+
   test('logs transient error', () => {
     const realtime = useRealtimeStore()
     const logs = callbacks()
@@ -431,6 +582,13 @@ describe('Shared connection', () => {
     expect(workspace.error).not.toBe('')
     socket.message(snapshot)
     expect(workspace.error).toBe('')
+    expect(workspace.nodes[0]?.connection).toBe('loading')
+    socket.message({
+      type: 'event',
+      event: 'node.state',
+      payload: { node: 'n', state: 'connected' },
+    })
+    expect(workspace.nodes[0]?.connection).toBe('connected')
 
     socket.onerror?.()
     expect(workspace.streamError).not.toBe('')
@@ -439,6 +597,13 @@ describe('Shared connection', () => {
     replacement.open()
     replacement.message(snapshot)
     expect(workspace.streamError).toBe('')
+    expect(workspace.nodes[0]?.connection).toBe('reconnecting')
+    replacement.message({
+      type: 'event',
+      event: 'node.state',
+      payload: { node: 'n', state: 'unavailable' },
+    })
+    expect(workspace.nodes[0]?.connection).toBe('unavailable')
   })
 
   test('navigation', async () => {

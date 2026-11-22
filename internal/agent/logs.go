@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"github.com/arabcoders/dcompose/internal/engine"
 )
 
-func (a *agent) streamLogs(parent context.Context, name string, send func(streamEvent) bool) error {
+func (a *agent) streamLogs(parent context.Context, name, container string, send func(streamEvent) bool) error {
 	dir, err := a.stackPath(name, false)
 	if nil != err {
 		code := 502
@@ -26,8 +28,24 @@ func (a *agent) streamLogs(parent context.Context, name string, send func(stream
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	var spec engine.Command
+	if "" == container {
+		spec = a.engine.Logs(stack)
+	} else {
+		// The driver resolves the container inside this stack and returns the
+		// native engine logs command for it.
+		filtered, err := a.engine.ContainerLogs(ctx, stack, container)
+		if nil != err {
+			code, message := 502, "container logs unavailable"
+			if engineErr, ok := errors.AsType[*engine.Error](err); ok {
+				code, message = engineErr.Code, engineErr.Message
+			}
+			return fault(code, message)
+		}
+		spec = filtered
+	}
 	reader, writer := io.Pipe()
-	cmd := command(ctx, a.engine.Logs(stack))
+	cmd := command(ctx, spec)
 	cmd.Stdout, cmd.Stderr = writer, writer
 	finished := make(chan struct{})
 	var commandErr error
