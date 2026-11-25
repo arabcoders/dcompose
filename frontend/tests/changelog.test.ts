@@ -67,7 +67,7 @@ test('groups dev commits using release tags on master merges', () => {
   }
 
   try {
-    expect(readChangelog('HEAD', directory)).toEqual([])
+    expect(readChangelog(['HEAD'], directory)).toEqual([])
 
     git('init', '-b', 'master')
     const first = commit('Initial commit')
@@ -81,8 +81,8 @@ test('groups dev commits using release tags on master merges', () => {
     git('switch', 'dev')
     const unreleased = commit('Dev-only change')
 
-    const groups = (ref: string) =>
-      readChangelog(ref, directory).map(({ tag, commits }) => [tag, commits.map(({ sha }) => sha)])
+    const groups = (...refs: Array<string>) =>
+      readChangelog(refs, directory).map(({ tag, commits }) => [tag, commits.map(({ sha }) => sha)])
     expect(groups('HEAD')).toEqual([
       ['Unreleased', [unreleased]],
       ['v0.1.1', [released]],
@@ -97,7 +97,14 @@ test('groups dev commits using release tags on master merges', () => {
       ['v0.1.1', [released]],
       ['v0.1.0', [first]],
     ])
-    expect(readChangelog('HEAD', directory)[1]?.commits[0]?.subject).toBe('Add π support')
+    const combined = groups('master', 'dev')
+    expect(combined).toEqual([
+      ['Unreleased', expect.arrayContaining([master, unreleased])],
+      ['v0.1.1', [released]],
+      ['v0.1.0', [first]],
+    ])
+    expect(combined[0]?.[1]).toHaveLength(2)
+    expect(readChangelog(['HEAD'], directory)[1]?.commits[0]?.subject).toBe('Add π support')
   } finally {
     rmSync(dir, { recursive: true })
   }

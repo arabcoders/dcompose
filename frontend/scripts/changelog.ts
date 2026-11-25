@@ -7,7 +7,10 @@ import type { ChangelogCommit, ChangelogRelease } from '../app/types'
 const root = new URL('../../', import.meta.url)
 const releaseTag = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
-export function readChangelog(ref = 'HEAD', directory = root): Array<ChangelogRelease> {
+export function readChangelog(
+  refs: ReadonlyArray<string> = ['HEAD'],
+  directory = root,
+): Array<ChangelogRelease> {
   if (!existsSync(new URL('.git', directory))) {
     return []
   }
@@ -28,7 +31,7 @@ export function readChangelog(ref = 'HEAD', directory = root): Array<ChangelogRe
     '--no-show-signature',
     '-z',
     '--format=%H%x00%as%x00%s',
-    ref,
+    ...refs,
     '--',
   ).split('\0')
   const commits = new Map<string, ChangelogCommit>()
@@ -69,9 +72,9 @@ export function readChangelog(ref = 'HEAD', directory = root): Array<ChangelogRe
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [output, ref] = process.argv.slice(2)
+  const [output, ...refs] = process.argv.slice(2)
   if (!output || !existsSync(new URL('.git', root))) {
-    throw new Error('Usage from a Git checkout: changelog.ts <output path> [ref]')
+    throw new Error('Usage from a Git checkout: changelog.ts <output path> [refs...]')
   }
-  writeFileSync(output, `${JSON.stringify(readChangelog(ref))}\n`)
+  writeFileSync(output, `${JSON.stringify(readChangelog(0 < refs.length ? refs : undefined))}\n`)
 }

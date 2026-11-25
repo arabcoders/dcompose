@@ -3,7 +3,7 @@ name: Publish changelog
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [dev, master]
     tags: ['v*']
 
 permissions:
@@ -27,7 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: master
           fetch-depth: 0
 
       - uses: jdx/mise-action@v5
@@ -37,7 +36,7 @@ jobs:
       - name: Generate changelog
         run: |
           mkdir -p "$RUNNER_TEMP/changelog"
-          bun --cwd=$PWD/frontend/ scripts/changelog.ts "$RUNNER_TEMP/changelog/CHANGELOG.json"
+          bun --cwd=$PWD/frontend/ scripts/changelog.ts "$RUNNER_TEMP/changelog/CHANGELOG.json" origin/master origin/dev
 
       - uses: actions/upload-pages-artifact@v5
         with:
