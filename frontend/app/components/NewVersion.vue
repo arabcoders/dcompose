@@ -14,7 +14,7 @@ const reloadPage = () => window.location.reload()
 
 <template>
   <div
-    v-if="frontendUpdated || true"
+    v-if="frontendUpdated"
     class="app-card flex flex-wrap items-center gap-x-4 gap-y-3 border-success/35 bg-success/10 px-3 py-2.5 sm:px-4"
   >
     <div class="flex min-w-0 items-center gap-3" role="status">
