@@ -109,6 +109,22 @@ export interface AppVersion {
   agent_api_version: number
 }
 
+export interface ChangelogCommit {
+  sha: string
+  date: string
+  subject: string
+}
+
+export interface ChangelogRelease {
+  tag: string
+  commits: Array<ChangelogCommit>
+}
+
+export interface Changelog {
+  source: 'live' | 'bundled' | 'unavailable'
+  history: Array<ChangelogRelease>
+}
+
 export interface StatCardProps {
   label: string
   value: string | number

@@ -67,6 +67,7 @@ const selectedNode = computed(() => nodes.value.find((node) => route.params.node
 const breadcrumbs = computed(() => [
   { label: 'Overview', to: '/' },
   ...('/logs' === route.path ? [{ label: 'Logs' }] : []),
+  ...('/changelog' === route.path ? [{ label: 'Changelog' }] : []),
   ...(route.params.node
     ? [
         {

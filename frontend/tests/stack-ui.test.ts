@@ -3663,12 +3663,12 @@ test('footer metadata', async () => {
     branch: 'master',
   })
   const elements = flatten(root)
-  expect(
-    elements.filter((element) => 'a' === element.type).map((element) => element.props.to),
-  ).toEqual([
-    'https://github.com/arabcoders/dcompose',
-    `https://github.com/arabcoders/dcompose/commit/${sha}`,
-  ])
+  const links = elements
+    .filter((element) => 'a' === element.type)
+    .map((element) => element.props.to)
+  expect(links).toContain('https://github.com/arabcoders/dcompose')
+  expect(links).toContain(`https://github.com/arabcoders/dcompose/commit/${sha}`)
+  expect(links).toContain('/changelog')
   const texts = elements.map((element) => element.text)
   expect(texts).toContain('v0.1.4')
   expect(texts).toContain('2026-11-16')
@@ -3686,9 +3686,9 @@ test('footer unknown commit', async () => {
   })
   const elements = flatten(root)
   const links = elements.filter((element) => 'a' === element.type)
-  expect(links.map((element) => element.props.to)).toEqual([
-    'https://github.com/arabcoders/dcompose',
-  ])
+  expect(links.some((element) => String(element.props.to).includes('/dcompose/commit/'))).toBe(
+    false,
+  )
   expect(elements.some((element) => 'tooltip' === element.type)).toBe(false)
   const texts = elements.map((element) => element.text)
   expect(texts).toContain('dev')

@@ -51,6 +51,8 @@ jobs:
       version: ${{ steps.build-info.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Read build metadata
         id: build-info

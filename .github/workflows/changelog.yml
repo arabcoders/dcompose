@@ -1,0 +1,52 @@
+name: Publish changelog
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: bun
+
+      - name: Generate changelog
+        run: |
+          mkdir -p "$RUNNER_TEMP/changelog"
+          bun --cwd=$PWD/frontend/ scripts/changelog.ts "$RUNNER_TEMP/changelog/CHANGELOG.json"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/changelog
+
+      # GitHub Pages may not see the artifact immediately after upload.
+      - name: Wait before deploying to Pages
+        run: sleep 5
+
+      - name: Deploy changelog
+        id: deployment
+        uses: actions/deploy-pages@v5
