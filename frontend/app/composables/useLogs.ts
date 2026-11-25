@@ -80,6 +80,8 @@ export const useLogs = (options: { summary?: boolean } = {}) => {
     params.set('limit', options.summary ? '5' : '100')
     if (options.summary) {
       params.set('summary', 'true')
+    } else if (!older) {
+      params.set('active', 'true')
     }
     if (older && null !== olderCursor.value) {
       params.set('before', String(olderCursor.value))

@@ -467,6 +467,7 @@ test('overview attention', async () => {
     '@nuxt/ui/components/Badge.vue': { default: stub('badge') },
     '@nuxt/ui/components/Button.vue': { default: stub('button') },
     '@nuxt/ui/components/Icon.vue': { default: stub('icon') },
+    '~/components/ClearLogsButton.vue': { default: stub('clear-logs') },
     '~/components/StatCard.vue': { default: stub('stat') },
     '~/components/NodeResources.vue': {
       default: vue.defineComponent({

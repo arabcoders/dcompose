@@ -85,7 +85,7 @@ func openLogHistory(path string) (*logHistory, error) {
 		return nil, err
 	}
 	h := &logHistory{path: path, maxBytes: logHistoryMaxBytes, done: make(chan struct{}), subscribers: make(map[chan logEntry]struct{})}
-	if err := h.walkLocked(func(entry logEntry) { h.latestID = max(h.latestID, entry.ID) }); nil != err {
+	if err := h.walkLocked(false, func(entry logEntry, _ bool) { h.latestID = max(h.latestID, entry.ID) }); nil != err {
 		return nil, err
 	}
 	if err := h.openFile(); nil != err {
@@ -127,6 +127,41 @@ func (h *logHistory) openFile() error {
 	return nil
 }
 
+func (h *logHistory) archiveActive() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if 0 == h.size {
+		return nil
+	}
+
+	path := h.path + ".1"
+	backup, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return h.rotateLocked()
+	}
+	if nil != err {
+		return err
+	}
+	if h.maxBytes < backup.Size()+h.size {
+		return h.rotateLocked()
+	}
+
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+	if nil != err {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	if _, err := io.Copy(file, io.NewSectionReader(h.file, 0, h.size)); nil != err {
+		return errors.Join(err, file.Truncate(backup.Size()))
+	}
+	if err := h.file.Truncate(0); nil != err {
+		return errors.Join(err, file.Truncate(backup.Size()))
+	}
+	// Keep the latest ID so existing stream cursors remain valid.
+	h.size = 0
+	return nil
+}
+
 func (h *logHistory) rotateLocked() error {
 	if err := h.file.Close(); nil != err {
 		return err
@@ -144,8 +179,12 @@ func (h *logHistory) rotateLocked() error {
 }
 
 // walkLocked visits retained files in append order without caching the history.
-func (h *logHistory) walkLocked(visit func(logEntry)) error {
-	for index := logHistoryBackups; 0 <= index; index-- {
+func (h *logHistory) walkLocked(activeOnly bool, visit func(entry logEntry, archived bool)) error {
+	start := logHistoryBackups
+	if activeOnly {
+		start = 0
+	}
+	for index := start; 0 <= index; index-- {
 		path := h.path
 		if 0 < index {
 			path += "." + strconv.Itoa(index)
@@ -169,7 +208,7 @@ func (h *logHistory) walkLocked(visit func(logEntry)) error {
 				if "" == entry.Rendered {
 					entry.Rendered = renderStoredLog(entry)
 				}
-				visit(entry)
+				visit(entry, 0 < index)
 			}
 			if nil != err {
 				_ = file.Close()
@@ -391,6 +430,7 @@ type logFilter struct {
 	logger  string
 	search  string
 	summary bool
+	active  bool
 }
 
 func (f logFilter) matches(entry logEntry) bool {
@@ -446,12 +486,17 @@ func (h *logHistory) query(filter logFilter) (logPage, error) {
 	page := logPage{Entries: make([]logEntry, 0), LatestID: h.latestID}
 	// Only retain a page, even when scanning a large retained history.
 	olderMatch := false
-	err := h.walkLocked(func(entry logEntry) {
+	var newestArchivedID int64
+	err := h.walkLocked(filter.summary, func(entry logEntry, archived bool) {
 		if nil == page.OldestID {
 			id := entry.ID
 			page.OldestID = &id
 		}
 		if !filter.matches(entry) || (0 < filter.before && filter.before <= entry.ID) || (0 < filter.after && entry.ID <= filter.after) {
+			return
+		}
+		if filter.active && archived {
+			newestArchivedID = entry.ID
 			return
 		}
 		if 0 < filter.after {
@@ -467,8 +512,12 @@ func (h *logHistory) query(filter logFilter) (logPage, error) {
 		}
 		page.Entries = append(page.Entries, entry)
 	})
-	if olderMatch && 0 < len(page.Entries) {
+	if (olderMatch || 0 < newestArchivedID) && 0 < len(page.Entries) {
 		id := page.Entries[0].ID
+		page.NextBefore = &id
+	} else if 0 < newestArchivedID {
+		// Start the older page at the newest matching archive entry.
+		id := newestArchivedID + 1
 		page.NextBefore = &id
 	}
 	if nil != page.OldestID {
@@ -486,7 +535,7 @@ func (h *logHistory) subscribe(filter logFilter) (chan logEntry, []logEntry, log
 		return nil, nil, status, fmt.Errorf("log history is closed")
 	}
 	backlog := make([]logEntry, 0)
-	if err := h.walkLocked(func(entry logEntry) {
+	if err := h.walkLocked(filter.summary, func(entry logEntry, _ bool) {
 		if nil == status.OldestID {
 			id := entry.ID
 			status.OldestID = &id

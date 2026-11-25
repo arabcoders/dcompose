@@ -296,6 +296,19 @@ describe('log history', () => {
       expect(next.logs.entries.value.map(({ id }) => id)).toEqual([23, 24, 25, 26, 27])
       next.scope.stop()
 
+      useLogSummaryStore().reset()
+      history = async () => page([], { latest_id: 27 })
+      const afterClear = mount()
+      expect(afterClear.logs.entries.value).toEqual([])
+      await afterClear.logs.start()
+      await flush()
+      expect(requests.at(-2)?.url.searchParams.get('summary')).toBe('true')
+      expect(afterClear.logs.entries.value).toEqual([])
+      emit(2, entry(28))
+      await flush()
+      expect(afterClear.logs.entries.value.map(({ id }) => id)).toEqual([28])
+      afterClear.scope.stop()
+
       auth.authenticated = false
       auth.authenticated = true
       expect(mount().logs.entries.value).toEqual([])
@@ -365,6 +378,29 @@ describe('log history', () => {
       expect(url.searchParams.get('search')).toBe('retry')
       expect(url.searchParams.has('logger')).toBe(false)
     }
+  })
+
+  test('archive pagination', async () => {
+    const logs = createLogs()
+    await logs.search(filters())
+    expect(logs.entries.value.map(({ id }) => id)).toEqual([10])
+
+    history = async ({ searchParams }) =>
+      searchParams.has('active') ? page([], { latest_id: 10, next_before: 11 }) : page([entry(10)])
+    await logs.search(filters())
+    await flush()
+    expect(logs.entries.value).toEqual([])
+    expect(logs.hasOlder.value).toBe(true)
+    expect(requests.at(-1)?.url.searchParams.get('after')).toBe('10')
+    emit(1, entry(11))
+    await flush()
+    expect(logs.entries.value.map(({ id }) => id)).toEqual([11])
+
+    await logs.loadOlder()
+    const older = requests.at(-1)?.url.searchParams
+    expect(older?.get('before')).toBe('11')
+    expect(older?.has('active')).toBe(false)
+    expect(logs.entries.value.map(({ id }) => id)).toEqual([10, 11])
   })
 
   test('retention reconnect', async () => {

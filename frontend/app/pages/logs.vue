@@ -40,6 +40,7 @@
               Refresh
             </UButton>
           </UDropdownMenu>
+          <ClearLogsButton @cleared="applyFilters" />
         </div>
       </template>
     </PageHeader>
@@ -222,6 +223,7 @@ import UInput from '@nuxt/ui/components/Input.vue'
 import USelect from '@nuxt/ui/components/Select.vue'
 import USelectMenu from '@nuxt/ui/components/SelectMenu.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
+import ClearLogsButton from '~/components/ClearLogsButton.vue'
 import PageHeader from '~/components/PageHeader.vue'
 import LogDetailModal from '~/components/LogDetailModal.vue'
 import { useLogs } from '~/composables/useLogs'

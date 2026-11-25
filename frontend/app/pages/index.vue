@@ -9,6 +9,7 @@ import UBadge from '@nuxt/ui/components/Badge.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
+import ClearLogsButton from '~/components/ClearLogsButton.vue'
 import StatCard from '~/components/StatCard.vue'
 import NodeResources from '~/components/NodeResources.vue'
 import { useDialog } from '~/composables/useDialog'
@@ -535,6 +536,7 @@ useHead({ title: 'Overview' })
           <UIcon name="i-lucide-scroll-text" class="size-4 text-warning" />
           <NuxtLink :to="logsLink()" class="hover:text-primary">Recent logs</NuxtLink>
         </h2>
+        <ClearLogsButton @cleared="refreshLogs" />
       </div>
       <UAlert v-if="logsError" color="warning" :title="logsError" class="m-3">
         <template #actions

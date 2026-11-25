@@ -157,6 +157,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case "/api/logs" == path && "GET" == r.Method:
 		s.logs(w, r)
+	case "/api/logs/active" == path && "DELETE" == r.Method:
+		s.clearActiveLog(w)
 	case "/api/logs/stream" == path && "GET" == r.Method:
 		s.streamLogs(w, r)
 	case "/api/auth/tickets" == path && "POST" == r.Method:
