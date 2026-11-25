@@ -149,9 +149,9 @@ func newFakeOIDC(t *testing.T) *fakeOIDC {
 	return f
 }
 
-func startOIDC(t *testing.T, s *Server, f *fakeOIDC) (*http.Cookie, string) {
+func startOIDC(t *testing.T, s *Server, f *fakeOIDC, rememberMe bool) (*http.Cookie, string) {
 	t.Helper()
-	w := perform(t, s, "GET", "/api/auth/oidc/login", "")
+	w := perform(t, s, "GET", fmt.Sprintf("/api/auth/oidc/login?remember_me=%t", rememberMe), "")
 	if 302 != w.Code {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -192,7 +192,8 @@ func TestOIDC(t *testing.T) {
 				s.config.Global.Origin = "https://public.example"
 				s.config.Global.SecureCookie = true
 			}
-			cookie, state := startOIDC(t, s, f)
+			rememberMe := "success" == mode
+			cookie, state := startOIDC(t, s, f, rememberMe)
 			if "timeout" == mode {
 				pending := s.oidcPending[state]
 				pending.expires = time.Now().Add(-time.Second)
@@ -207,7 +208,7 @@ func TestOIDC(t *testing.T) {
 			if "replay" == mode {
 				delete(s.oidcPending, state)
 			}
-			path := "/api/auth/oidc/callback?state=" + url.QueryEscape(state) + "&code=test-code"
+			path := fmt.Sprintf("/api/auth/oidc/callback?state=%s&code=test-code&remember_me=%t", url.QueryEscape(state), !rememberMe)
 			if "provider_error" == mode {
 				path += "&error=access_denied"
 			}
@@ -242,6 +243,11 @@ func TestOIDC(t *testing.T) {
 			}
 			r = httptest.NewRequest("GET", "/api/auth/user", nil)
 			r.AddCookie(session)
+			claims, ok := readSession(r, s.config.Auth)
+			if !ok || (rememberMe && (!session.Expires.Equal(claims.Expiry.Time()) || 0 >= session.MaxAge)) ||
+				(!rememberMe && (!session.Expires.IsZero() || 0 != session.MaxAge)) {
+				t.Fatal("session persistence did not match the sign-in choice")
+			}
 			w = httptest.NewRecorder()
 			s.ServeHTTP(w, r)
 			if 200 != w.Code || !strings.Contains(w.Body.String(), `"username":"admin"`) ||
@@ -282,17 +288,17 @@ func TestOIDCCache(t *testing.T) {
 		RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
 	}
 	before := time.Now()
-	startOIDC(t, s, f)
+	startOIDC(t, s, f, false)
 	cache := s.oidcCache
 	if cache.expires.Before(before.Add(time.Minute)) || cache.expires.After(time.Now().Add(time.Minute)) {
 		t.Fatal("provider cache does not expire after one minute")
 	}
-	startOIDC(t, s, f)
+	startOIDC(t, s, f, false)
 	if 1 != f.discovery.Load() || !cache.expires.Equal(s.oidcCache.expires) {
 		t.Fatal("provider and verifier were not reused within cache TTL")
 	}
 	s.oidcCache.expires = time.Now().Add(-time.Second)
-	startOIDC(t, s, f)
+	startOIDC(t, s, f, false)
 	if 2 != f.discovery.Load() || !time.Now().Before(s.oidcCache.expires) {
 		t.Fatal("expired provider cache was not refreshed")
 	}
@@ -307,9 +313,9 @@ func TestOIDCLoginValues(t *testing.T) {
 		clientSecret: "client-secret",
 		RedirectURI:  "http://localhost:8082/api/auth/oidc/callback",
 	}
-	_, first := startOIDC(t, s, f)
+	_, first := startOIDC(t, s, f, false)
 	firstNonce, firstChallenge := f.nonce, f.challenge
-	_, second := startOIDC(t, s, f)
+	_, second := startOIDC(t, s, f, false)
 	if first == second || firstNonce == f.nonce || firstChallenge == f.challenge ||
 		s.oidcPending[first].verifier == s.oidcPending[second].verifier {
 		t.Fatal("cached discovery reused login state, nonce or PKCE verifier")
@@ -343,7 +349,7 @@ func TestOIDCCacheContext(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	cancel()
-	cookie, state := startOIDC(t, s, f)
+	cookie, state := startOIDC(t, s, f, false)
 	r = httptest.NewRequest("GET", "/api/auth/oidc/callback?state="+url.QueryEscape(state)+"&code=test-code", nil)
 	r.AddCookie(cookie)
 	w = httptest.NewRecorder()

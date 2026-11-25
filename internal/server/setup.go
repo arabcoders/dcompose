@@ -17,10 +17,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var input signInInput
 	if !decodeBody(w, r, &input, 16<<10) {
 		return
 	}
@@ -49,7 +46,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.applyConfig(c)
-	if s.createSession(w, r, c, c.Global.SecureCookie) {
+	if createSession(w, r, c.Auth, c.Global.SecureCookie, input.RememberMe) {
 		jsonResponse(w, 201, map[string]bool{"authenticated": true})
 	}
 }

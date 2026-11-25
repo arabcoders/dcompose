@@ -94,8 +94,10 @@ func TestSetupInvalidConfig(t *testing.T) {
 	defer up.Close()
 	hash, _ := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
 	for name, data := range map[string]string{
-		"malformed":     "[auth",
-		"username_only": "[auth]\nusername = 'admin'", "password_only": fmt.Sprintf("[auth]\npassword = %q", hash),
+		"zero_remember_days": "[auth]\nremember_me_days = 0",
+		"long_remember_days": fmt.Sprintf("[auth]\nremember_me_days = %d", maxRememberMeDays+1),
+		"malformed":          "[auth",
+		"username_only":      "[auth]\nusername = 'admin'", "password_only": fmt.Sprintf("[auth]\npassword = %q", hash),
 		"invalid_hash":        "[auth]\nusername = 'admin'\npassword = 'invalid'",
 		"missing_password":    "[auth]\nusername = 'admin'\npassword = 'file:missing'",
 		"invalid_hash_file":   "[auth]\nusername = 'admin'\npassword = 'file:invalid.hash'",
@@ -187,7 +189,7 @@ func TestSetupKeepsConfig(t *testing.T) {
 	defer up.Close()
 	path := filepath.Join(t.TempDir(), "dcompose.toml")
 	data := fmt.Sprintf(
-		"[global]\nlisten = '127.0.0.1:8085'\norigin = 'https://app.example'\nsecure_cookie = true\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'node-secret'\n",
+		"[global]\nlisten = '127.0.0.1:8085'\norigin = 'https://app.example'\nsecure_cookie = true\n[auth]\nremember_me_days = 2\n[nodes.home]\nurl = '%s'\nfingerprint = '%s'\ntoken = 'node-secret'\n",
 		up.URL,
 		testFingerprint(up),
 	)
@@ -198,13 +200,14 @@ func TestSetupKeepsConfig(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-	w := perform(t, New(c, nil), "POST", "/api/auth/setup", `{"username":"admin","password":"password"}`)
-	if 201 != w.Code || !w.Result().Cookies()[0].Secure {
+	w := perform(t, New(c, nil), "POST", "/api/auth/setup", `{"username":"admin","password":"password","remember_me":true}`)
+	cookies := w.Result().Cookies()
+	if 201 != w.Code || 1 != len(cookies) || !cookies[0].Secure || 172800 != cookies[0].MaxAge {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	c, err = LoadConfig(path)
 	if nil != err || "127.0.0.1:8085" != c.Global.Listen || "https://app.example" != c.Global.Origin ||
-		"node-secret" != c.Nodes["home"].token {
+		"node-secret" != c.Nodes["home"].token || 2 != c.Auth.RememberMeDays {
 		t.Fatal("setup lost existing configuration", err)
 	}
 }

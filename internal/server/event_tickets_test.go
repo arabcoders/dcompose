@@ -307,7 +307,7 @@ func TestTicketRevocation(t *testing.T) {
 func TestTicketSessionExpiry(t *testing.T) {
 	s := testServer(t, nil)
 	s.config.Global.WebsocketOrigins = []string{eventTicketOrigin}
-	token, err := sessionToken(s.config.Auth, time.Now().Add(3*time.Second))
+	token, err := sessionToken(s.config.Auth, time.Now().Add(3*time.Second), true)
 	if nil != err {
 		t.Fatal(err)
 	}

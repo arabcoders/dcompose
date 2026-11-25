@@ -46,9 +46,8 @@ Every accepted OIDC identity signs in as that administrator. Provider roles, gro
 can do in DCompose. Restrict who can use the client at your identity provider.
 
 OIDC creates a local session. Disabling the identity or ending its provider session doesn't revoke it. DCompose logout
-removes the browser's cookie; it doesn't sign out of the provider or invalidate a copied cookie. Local sessions expire
-after 24 hours. Changing the local account credentials or signing key invalidates them. Restart the server after changing
-the key externally.
+removes the browser's cookie. It doesn't sign out of the provider or invalidate a copied cookie. A copied cookie
+remains valid until the session expires or the account credentials or signing key change.
 
 ## Reports we close
 

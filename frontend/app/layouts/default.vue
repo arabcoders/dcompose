@@ -2,10 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStorage } from '@vueuse/core'
-import { useRoute, useRuntimeHook } from '#app'
+import { useRoute } from '#app'
 import { useColorMode } from '#imports'
 import { NuxtLink, NuxtLoadingIndicator } from '#components'
-import UAlert from '@nuxt/ui/components/Alert.vue'
 import UBreadcrumb from '@nuxt/ui/components/Breadcrumb.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UDashboardGroup from '@nuxt/ui/components/DashboardGroup.vue'
@@ -23,6 +22,7 @@ import AppFooter from '~/components/AppFooter.vue'
 import BackupModal from '~/components/BackupModal.vue'
 import CreateStackModal from '~/components/CreateStackModal.vue'
 import Dialog from '~/components/Dialog.vue'
+import NewVersion from '~/components/NewVersion.vue'
 import SettingsModal from '~/components/SettingsModal.vue'
 import StackList from '~/components/stacks/StackList.vue'
 import { useDialog } from '~/composables/useDialog'
@@ -39,13 +39,6 @@ const { nodes, loading, load } = useWorkspace()
 const { stackSearch, stackFilter, sidebarOpen, settingsOpen, settingsSection } =
   storeToRefs(workspace)
 const { confirmDialog } = useDialog()
-const frontendUpdated = ref(false)
-
-useRuntimeHook('app:manifest:update', () => {
-  frontendUpdated.value = true
-})
-
-const reloadPage = () => window.location.reload()
 
 const showCreate = ref(false)
 const showBackup = ref(false)
@@ -309,31 +302,11 @@ onMounted(load)
               </UDropdownMenu>
             </template>
           </UDashboardNavbar>
-          <UAlert
-            v-if="frontendUpdated"
-            color="success"
-            variant="soft"
-            icon="i-lucide-info"
-            title="DCompose has been updated. Click reload apply changes."
-            orientation="horizontal"
-            class="rounded-none"
-          >
-            <template #actions>
-              <UButton
-                color="neutral"
-                variant="outline"
-                size="sm"
-                @click="reloadPage"
-                icon="i-lucide-refresh-cw"
-              >
-                Reload
-              </UButton>
-            </template>
-          </UAlert>
         </template>
         <template #body>
           <NuxtLoadingIndicator />
           <div class="mx-auto flex w-full max-w-400 min-w-0 flex-1 flex-col gap-6">
+            <NewVersion />
             <div class="min-w-0 flex-1"><slot /></div>
             <AppFooter />
           </div>

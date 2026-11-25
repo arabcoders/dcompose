@@ -13,11 +13,12 @@ import (
 )
 
 type oidcLogin struct {
-	nonce    string
-	verifier string
-	expires  time.Time
-	oauth    oauth2.Config
-	idToken  *oidc.IDTokenVerifier
+	nonce      string
+	verifier   string
+	expires    time.Time
+	rememberMe bool
+	oauth      oauth2.Config
+	idToken    *oidc.IDTokenVerifier
 }
 
 type oidcProviderCache struct {
@@ -62,9 +63,10 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pending := oidcLogin{
-		nonce:    oauth2.GenerateVerifier(),
-		verifier: oauth2.GenerateVerifier(),
-		expires:  time.Now().Add(5 * time.Minute),
+		nonce:      oauth2.GenerateVerifier(),
+		verifier:   oauth2.GenerateVerifier(),
+		expires:    time.Now().Add(5 * time.Minute),
+		rememberMe: "true" == r.URL.Query().Get("remember_me"),
 		oauth: oauth2.Config{
 			ClientID: c.Auth.OIDC.ClientID, ClientSecret: c.Auth.OIDC.clientSecret,
 			RedirectURL: c.Auth.OIDC.RedirectURI, Endpoint: provider.Endpoint(),
@@ -167,7 +169,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Provider-authorized identities all sign in as the single local administrator.
-	if !s.createSession(w, r, c, secure) {
+	if !createSession(w, r, c.Auth, secure, pending.rememberMe) {
 		return
 	}
 	origin := c.Global.Origin

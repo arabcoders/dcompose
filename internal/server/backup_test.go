@@ -38,6 +38,7 @@ func TestBackupExport(t *testing.T) {
 	s.config.Auth.SessionKey = "file:session-key"
 	s.config.Auth.APIKey = "file:api-key"
 	s.config.Auth.apiKey = strings.Repeat("cd", 32)
+	s.config.Auth.RememberMeDays = 14
 	s.config.Auth.OIDC = &OIDCConfig{ClientSecret: "file:oidc-secret", clientSecret: "oidc-secret"}
 	s.config.Registries = []RegistryConfig{
 		{
@@ -112,6 +113,9 @@ func TestBackupExport(t *testing.T) {
 		}
 		if s.config.Auth.apiKey != config.Auth.APIKey {
 			t.Fatal("backup did not resolve API key")
+		}
+		if 14 != config.Auth.RememberMeDays {
+			t.Fatal("backup did not preserve the remembered session duration")
 		}
 		if 2 != len(config.Registries) || !reflect.DeepEqual(s.config.Registries[0].auth, config.Registries[0].Auth) ||
 			"" != config.Registries[0].AuthFile ||

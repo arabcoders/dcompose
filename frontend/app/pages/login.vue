@@ -104,6 +104,8 @@
               />
             </UFormField>
 
+            <UCheckbox v-model="rememberMe" name="remember_me" label="Remember me" />
+
             <div
               class="grid gap-3"
               :class="!setupRequired && oidcAvailable ? 'grid-cols-2' : 'grid-cols-1'"
@@ -121,7 +123,7 @@
               </UButton>
               <UButton
                 v-if="!setupRequired && oidcAvailable"
-                :to="resolveApiUrl('/api/auth/oidc/login')"
+                :to="resolveApiUrl(`/api/auth/oidc/login?remember_me=${rememberMe}`)"
                 external
                 color="neutral"
                 variant="outline"
@@ -181,6 +183,7 @@ import UFormField from '@nuxt/ui/components/FormField.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UCard from '@nuxt/ui/components/Card.vue'
+import UCheckbox from '@nuxt/ui/components/Checkbox.vue'
 import UModal from '@nuxt/ui/components/Modal.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
 import { useAuthStore } from '~/store/auth'
@@ -210,6 +213,7 @@ useHead({ title: computed(() => (setupRequired.value ? 'Create account' : 'Sign 
 const error: Ref<string> = ref('')
 const user = ref<LoginCredentials>({ username: '', password: '' })
 const confirmation = ref('')
+const rememberMe = ref(false)
 const showPassword = ref(false)
 const recoveryOpen = ref(false)
 
@@ -226,7 +230,7 @@ const login = async () => {
       error.value = "Passwords don't match."
       return
     }
-    await authenticateUser(user.value)
+    await authenticateUser(user.value, rememberMe.value)
 
     if (authenticated.value) {
       await router.push('/')
