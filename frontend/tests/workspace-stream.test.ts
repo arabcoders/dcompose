@@ -3,7 +3,8 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { computed, effectScope, nextTick } from 'vue'
 import type { Pinia } from 'pinia'
 import type { EffectScope } from 'vue'
-import type { StackEvent } from '../app/types'
+import type { StackEvent, StackStatus } from '../app/types'
+import { compareStacks } from '../app/utils/stacks'
 import { addToast, navigate } from './mocks/nuxt'
 
 const { useWorkspaceStream } = await import('../app/composables/useWorkspaceStream')
@@ -949,6 +950,46 @@ describe('Workspace bootstrap', () => {
 })
 
 describe('Live stack actions', () => {
+  test('stack order during update', async () => {
+    const workspace = useWorkspaceStore()
+    await workspace.load()
+    const node = workspace.nodes[0]!
+    node.stacks = [
+      { name: 'app', status: 'running', services: [], loading: false },
+      { name: 'worker', status: 'running', services: [], loading: false },
+    ]
+    const socket = TestSocket.instances[0]!
+    socket.open()
+    const runtime = (status: StackStatus, busy: boolean) =>
+      socket.message({
+        type: 'event',
+        event: 'stack.runtime',
+        payload: { node: node.id, name: 'app', status, busy, services: [] },
+      })
+    const update = (phase: 'start' | 'exit') =>
+      socket.message({
+        type: 'event',
+        event: 'stack.action',
+        payload: { node: node.id, name: 'app', action: 'update', phase, exit_code: 0 },
+      })
+    const order = () => [...node.stacks].sort(compareStacks).map(({ name }) => name)
+    const initial = ['app', 'worker']
+
+    runtime('running', true)
+    update('start')
+    runtime('partial', true)
+    expect(node.stacks[0]?.status).toBe('partial')
+    expect(order()).toEqual(initial)
+
+    runtime('partial', false)
+    expect(order()).toEqual(initial)
+    update('exit')
+    expect(order()).toEqual(initial)
+
+    runtime('stopped', false)
+    expect(order()).toEqual(['worker', 'app'])
+  })
+
   test('forbidden workspace', async () => {
     const workspace = useWorkspaceStore()
     await workspace.load()

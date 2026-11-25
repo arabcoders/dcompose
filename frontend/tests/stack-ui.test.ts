@@ -237,19 +237,19 @@ test('node header', async () => {
 })
 
 test('compact stacks', async () => {
-  const item: WorkspaceNode = {
+  const item = vue.reactive<WorkspaceNode>({
     id: 'node',
     name: 'Node',
     public_host: '',
     stacks: [
+      { name: 'worker', status: 'running', loading: false, services: [] },
       { name: 'app', status: 'running', loading: false, services: [] },
-      { name: 'worker', status: 'stopped', loading: false, services: [] },
     ],
     health: null,
     connection: 'connected',
     error: '',
     loading: false,
-  }
+  })
   const route = vue.reactive({
     path: '/stacks/node/app',
     params: { node: 'node', stack: 'app' },
@@ -291,20 +291,34 @@ test('compact stacks', async () => {
 
   expect(collapsed.node).toBe(true)
   const links = () => flatten(root).filter((element) => 'a' === element.type)
-  expect(links().map((element) => element.props.to)).toEqual([
-    '/stacks/node/app',
-    '/stacks/node/worker',
-  ])
+  const paths = () => links().map((element) => element.props.to)
+  const ordered = ['/stacks/node/app', '/stacks/node/worker']
+  expect(paths()).toEqual(ordered)
   expect(links()[0]?.props['aria-current']).toBe('page')
+  const stack = item.stacks[1]!
+  stack.updateSort = { status: 'running', finished: false }
+  stack.status = 'partial'
+  await vue.nextTick()
+  expect(paths()).toEqual(ordered)
+  filters.status = 'running'
+  await vue.nextTick()
+  expect(paths()).toEqual(ordered)
+  delete stack.updateSort
+  filters.status = 'all'
+  await vue.nextTick()
+  expect(paths()).toEqual(['/stacks/node/worker', '/stacks/node/app'])
+
+  stack.status = 'running'
+  item.stacks[0]!.status = 'stopped'
   filters.search = 'work'
   await vue.nextTick()
-  expect(links().map((element) => element.props.to)).toEqual(['/stacks/node/worker'])
+  expect(paths()).toEqual(['/stacks/node/worker'])
   filters.status = 'running'
   await vue.nextTick()
   expect(links()).toHaveLength(0)
   filters.search = ''
   await vue.nextTick()
-  expect(links().map((element) => element.props.to)).toEqual(['/stacks/node/app'])
+  expect(paths()).toEqual(['/stacks/node/app'])
 
   const link = links()[0]
   if ('function' !== typeof link?.props.onClick) {

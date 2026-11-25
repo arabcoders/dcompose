@@ -10,7 +10,7 @@ import UIcon from '@nuxt/ui/components/Icon.vue'
 import UPopover from '@nuxt/ui/components/Popover.vue'
 import UTooltip from '@nuxt/ui/components/Tooltip.vue'
 import type { StackListProps, StackRuntime, StackStatus, WorkspaceNode } from '~/types'
-import { compareStacks, stackStatusLabel } from '~/utils/stacks'
+import { compareStacks, stackSortStatus, stackStatusLabel } from '~/utils/stacks'
 
 const props = withDefaults(defineProps<StackListProps>(), { compact: false })
 const emit = defineEmits<{ selected: [] }>()
@@ -31,7 +31,9 @@ const filteredNodes = computed(() =>
         (stack) =>
           stack.name.includes(props.search.trim().toLowerCase()) &&
           ('all' === props.status ||
-            ('updates' === props.status ? hasImageUpdates(stack) : stack.status === props.status)),
+            ('updates' === props.status
+              ? hasImageUpdates(stack)
+              : stackSortStatus(stack) === props.status)),
       )
       .sort(compareStacks)
 

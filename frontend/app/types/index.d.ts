@@ -335,6 +335,7 @@ export interface WorkspaceNode extends Node {
 export interface WorkspaceStack extends StackRuntime {
   loading: boolean
   error?: string
+  updateSort?: { status: StackStatus; finished: boolean }
 }
 
 export type WorkspaceEvent =
