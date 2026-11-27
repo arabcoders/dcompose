@@ -85,6 +85,10 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    prerender: {
+      // The `/` route already writes `index.html`.
+      ignore: ['/index.html'],
+    },
     output: { publicDir: new URL('./exported', import.meta.url).pathname },
   },
   vite: {
