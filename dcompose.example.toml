@@ -31,6 +31,9 @@ secure_cookie = false
 username = ""
 # Otherwise, supply a bcrypt hash, never plaintext. file:secrets/password.hash also works.
 password = ""
+# How many days new sign-ins with Remember me stay signed in. Defaults to 30.
+# Sign-ins without Remember me use a browser-session cookie and expire after 24 hours.
+# remember_me_days = 30
 # The server generates this key if absent. Keep it private and stable with the configuration.
 # Use a 32-byte key encoded as 64 hexadecimal characters. Rotation signs out all sessions.
 # session_key = "file:secrets/session-key"

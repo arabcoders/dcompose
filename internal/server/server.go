@@ -157,6 +157,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case "/api/logs" == path && "GET" == r.Method:
 		s.logs(w, r)
+	case "/api/logs/active" == path && "DELETE" == r.Method:
+		s.clearActiveLog(w)
 	case "/api/logs/stream" == path && "GET" == r.Method:
 		s.streamLogs(w, r)
 	case "/api/auth/tickets" == path && "POST" == r.Method:
@@ -209,29 +211,39 @@ func (s *Server) authenticated(r *http.Request) bool {
 		}
 		return 1 == subtle.ConstantTimeCompare([]byte(parts[1]), []byte(config.Auth.apiKey))
 	}
+	_, ok := readSession(r, config.Auth)
+	return ok
+}
+
+func readSession(r *http.Request, auth AuthConfig) (sessionClaims, bool) {
 	cookie, err := r.Cookie("session")
-	if nil != err || 32 != len(config.Auth.sessionKey) {
-		return false
+	if nil != err || 32 != len(auth.sessionKey) {
+		return sessionClaims{}, false
 	}
 	token, err := jwt.ParseSigned(cookie.Value, []jose.SignatureAlgorithm{jose.HS256})
 	if nil != err {
-		return false
+		return sessionClaims{}, false
 	}
 	var claims sessionClaims
-	if err := token.Claims([]byte(config.Auth.sessionKey), &claims); nil != err {
-		return false
+	if err := token.Claims([]byte(auth.sessionKey), &claims); nil != err {
+		return sessionClaims{}, false
 	}
-	if nil == claims.Expiry || nil != claims.ValidateWithLeeway(jwt.Expected{Time: time.Now()}, 0) {
-		return false
+	now := time.Now()
+	// RFC 7519 requires the current time to be before exp. ValidateWithLeeway also accepts equality.
+	if nil == claims.Expiry || !now.Before(claims.Expiry.Time()) || nil != claims.ValidateWithLeeway(jwt.Expected{Time: now}, 0) {
+		return sessionClaims{}, false
 	}
-	return hmac.Equal([]byte(claims.CredentialRevision), []byte(credentialRevision(config.Auth)))
+	return claims, hmac.Equal([]byte(claims.CredentialRevision), []byte(credentialRevision(auth)))
+}
+
+type signInInput struct {
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var input signInInput
 	if !decodeBody(w, r, &input, 16<<10) {
 		return
 	}
@@ -252,7 +264,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 401, "Invalid username or password.")
 		return
 	}
-	if !s.createSession(w, r, s.config, s.config.Global.SecureCookie) {
+	if !createSession(w, r, s.config.Auth, s.config.Global.SecureCookie, input.RememberMe) {
 		return
 	}
 	jsonResponse(w, 200, map[string]bool{"authenticated": true})
@@ -261,6 +273,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 type sessionClaims struct {
 	jwt.Claims
 	CredentialRevision string `json:"credential_revision"`
+	BrowserOnly        bool   `json:"browser_only,omitempty"` // Older signed sessions used persistent cookies.
 }
 
 func credentialRevision(auth AuthConfig) string {
@@ -269,7 +282,7 @@ func credentialRevision(auth AuthConfig) string {
 	return base64.RawURLEncoding.EncodeToString(revision.Sum(nil))
 }
 
-func sessionToken(auth AuthConfig, expires time.Time) (string, error) {
+func sessionToken(auth AuthConfig, expires time.Time, browserOnly bool) (string, error) {
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.HS256, Key: []byte(auth.sessionKey)},
 		(&jose.SignerOptions{}).WithType("JWT"),
@@ -280,33 +293,49 @@ func sessionToken(auth AuthConfig, expires time.Time) (string, error) {
 	return jwt.Signed(signer).Claims(sessionClaims{
 		Expiry:             jwt.NewNumericDate(expires),
 		CredentialRevision: credentialRevision(auth),
+		BrowserOnly:        browserOnly,
 	}).Serialize()
 }
 
-func (s *Server) createSession(w http.ResponseWriter, r *http.Request, config Config, secure bool) bool {
-	if 32 != len(config.Auth.sessionKey) {
+func createSession(w http.ResponseWriter, r *http.Request, auth AuthConfig, secure, remember bool) bool {
+	ttl := browserSessionTTL
+	if remember {
+		days := auth.RememberMeDays
+		if 0 == days {
+			days = defaultRememberMeDays
+		}
+		ttl = time.Duration(days) * browserSessionTTL
+	}
+	now := time.Now().Truncate(time.Second)
+	return issueSession(w, r, auth, secure, !remember, now, now.Add(ttl))
+}
+
+func issueSession(w http.ResponseWriter, r *http.Request, auth AuthConfig, secure, browserOnly bool, now, expires time.Time) bool {
+	if 32 != len(auth.sessionKey) {
 		apiError(w, 500, "Could not sign you in. Try again.")
 		return false
 	}
-	expires := time.Now().Add(24 * time.Hour)
-	token, err := sessionToken(config.Auth, expires)
+	token, err := sessionToken(auth, expires, browserOnly)
 	if nil != err {
 		apiError(w, 500, "Could not sign you in. Try again.")
 		return false
 	}
-	http.SetCookie(
-		w,
-		&http.Cookie{
-			Name:     "session",
-			Value:    token,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   secure || nil != r.TLS,
-			SameSite: http.SameSiteStrictMode,
-			MaxAge:   86400,
-			Expires:  expires,
-		},
-	)
+	cookie := &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure || nil != r.TLS,
+		SameSite: http.SameSiteStrictMode,
+	}
+	if !browserOnly {
+		cookie.Expires = expires
+		cookie.MaxAge = -1
+		if remaining := expires.Unix() - now.Unix(); 0 < remaining {
+			cookie.MaxAge = int(remaining)
+		}
+	}
+	http.SetCookie(w, cookie)
 	return true
 }
 

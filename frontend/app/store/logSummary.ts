@@ -7,12 +7,15 @@ export const useLogSummaryStore = defineStore('logSummary', () => {
   const auth = useAuthStore()
   const entries = ref<Array<LogEntry>>([])
   const cursor = ref(0)
+  const reset = () => {
+    entries.value = []
+    cursor.value = 0
+  }
   watch(
     () => auth.authenticated,
     (authenticated) => {
       if (!authenticated) {
-        entries.value = []
-        cursor.value = 0
+        reset()
       }
     },
     { flush: 'sync' },
@@ -34,5 +37,5 @@ export const useLogSummaryStore = defineStore('logSummary', () => {
     cursor.value = Math.max(cursor.value, entry.id)
   }
 
-  return { entries, cursor, set, append }
+  return { entries, cursor, set, append, reset }
 })

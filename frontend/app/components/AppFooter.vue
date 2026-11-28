@@ -47,6 +47,13 @@ const commitUrl = computed(() => `${projectUrl}/commit/${commitSha.value}`)
         <span aria-hidden="true">·</span>
         <span>{{ branch }}</span>
       </span>
+      <NuxtLink
+        to="/changelog"
+        class="inline-flex items-center gap-1.5 hover:text-primary hover:underline"
+      >
+        <UIcon name="i-lucide-history" class="size-3.5" />
+        Changelog
+      </NuxtLink>
     </div>
   </footer>
 </template>

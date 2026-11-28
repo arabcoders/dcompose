@@ -99,12 +99,15 @@ export const useAuthStore = defineStore('auth', () => {
     return refreshStatus()
   }
 
-  const authenticateUser = async (credentials: { username: string; password: string }) => {
+  const authenticateUser = async (
+    credentials: { username: string; password: string },
+    rememberMe = false,
+  ) => {
     loading.value = true
     try {
       const response = await request(setupRequired.value ? '/api/auth/setup' : '/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({ ...credentials, remember_me: rememberMe }),
       })
       const json = await parse_api_response<{ authenticated: boolean }>(response)
       if ('error' in json) {

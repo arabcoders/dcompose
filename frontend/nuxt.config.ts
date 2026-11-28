@@ -1,9 +1,12 @@
 import { defineNuxtConfig } from 'nuxt/config'
+import { writeFile } from 'node:fs/promises'
 import process from 'node:process'
 import type { IncomingMessage, Server } from 'node:http'
+import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import type { Buffer } from 'node:buffer'
 import { apiProxyTarget } from './api-proxy'
+import { readChangelog } from './scripts/changelog'
 
 const apiUrl = process.env.NUXT_API_URL
 let devServer: Server | undefined
@@ -45,6 +48,21 @@ export default defineNuxtConfig({
   css: ['~/assets/css/tailwind.css'],
   modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint'],
   hooks: {
+    'nitro:config'(config) {
+      if (config.dev) {
+        const history = readChangelog()
+        config.devHandlers = [
+          ...(config.devHandlers ?? []),
+          { route: '/CHANGELOG.json', handler: () => history },
+        ]
+      }
+    },
+    'nitro:build:public-assets'(nitro) {
+      return writeFile(
+        join(nitro.options.output.publicDir, 'CHANGELOG.json'),
+        `${JSON.stringify(readChangelog())}\n`,
+      )
+    },
     listen(server) {
       devServer = server
     },
@@ -67,6 +85,10 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    prerender: {
+      // The `/` route already writes `index.html`.
+      ignore: ['/index.html'],
+    },
     output: { publicDir: new URL('./exported', import.meta.url).pathname },
   },
   vite: {

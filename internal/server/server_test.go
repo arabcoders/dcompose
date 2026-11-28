@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"testing/synctest"
 	"time"
 
 	"github.com/arabcoders/dcompose/internal/engine/registry"
@@ -68,7 +69,7 @@ func testServer(t *testing.T, upstream *httptest.Server) *Server {
 func testSession(t *testing.T, s *Server) *http.Cookie {
 	t.Helper()
 	c, _ := s.snapshot()
-	token, err := sessionToken(c.Auth, time.Now().Add(time.Hour))
+	token, err := sessionToken(c.Auth, time.Now().Add(time.Hour), false)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -141,6 +142,59 @@ func TestAuthFailure(t *testing.T) {
 	w = perform(t, s, "POST", "/api/auth/login", `{"username":"admin","password":"wrong"}`)
 	if 429 != w.Code {
 		t.Fatal("login attempts not paced")
+	}
+}
+
+func TestSessionLifetime(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		days     int
+		remember bool
+		ttl      time.Duration
+	}{
+		{"browser", 3, false, 24 * time.Hour},
+		{"remembered", 3, true, 72 * time.Hour},
+		{"default", 0, true, 30 * 24 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := testServer(t, nil)
+				s.config.Auth.RememberMeDays = tc.days
+				body := fmt.Sprintf(`{"username":"admin","password":"test-password","remember_me":%t}`, tc.remember)
+				w := httptest.NewRecorder()
+				s.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body)))
+				cookies := w.Result().Cookies()
+				if http.StatusOK != w.Code || 1 != len(cookies) {
+					t.Fatal("login did not issue a session", w.Code)
+				}
+				cookie := cookies[0]
+				if tc.remember {
+					if !cookie.Expires.Equal(time.Now().Add(tc.ttl)) || int(tc.ttl/time.Second) != cookie.MaxAge {
+						t.Fatal("persistent cookie did not use the expected deadline", cookie.Expires, cookie.MaxAge)
+					}
+				} else if !cookie.Expires.IsZero() || 0 != cookie.MaxAge {
+					t.Fatal("browser-session cookie was persistent")
+				}
+
+				s.config.Auth.RememberMeDays = 1
+				check := func() *httptest.ResponseRecorder {
+					r := httptest.NewRequest(http.MethodGet, "/api/auth/user", nil)
+					r.AddCookie(cookie)
+					w := httptest.NewRecorder()
+					s.ServeHTTP(w, r)
+					return w
+				}
+				time.Sleep(tc.ttl - time.Second)
+				w = check()
+				if http.StatusOK != w.Code || 0 != len(w.Result().Cookies()) {
+					t.Fatal("existing session was shortened or reissued", w.Code)
+				}
+				time.Sleep(time.Second)
+				if w = check(); http.StatusUnauthorized != w.Code {
+					t.Fatal("session outlived its original deadline", w.Code)
+				}
+			})
+		})
 	}
 }
 

@@ -18,3 +18,7 @@ run = """
 mkdir -p ./dist/dev/agent
 exec air -c .air.dagent.toml --
 """
+
+[tasks."dev:ui"]
+description = "Run frontend dev"
+run = "exec bun --cwd=$PWD/frontend/ run dev"

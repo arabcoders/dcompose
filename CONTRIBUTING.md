@@ -149,3 +149,6 @@ the command with `dagent` for a node. To build it:
 ```sh
 docker build -t ghcr.io/arabcoders/dcompose .
 ```
+
+To include the offline changelog in a local image, run `bun --cwd=$PWD/frontend/ generate` from a Git checkout
+before `docker build`. The Docker build reuses the exported frontend because its context excludes `.git`.

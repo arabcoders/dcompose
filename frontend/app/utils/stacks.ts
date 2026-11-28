@@ -116,10 +116,16 @@ const stackStatusOrder: Record<StackStatus, number> = {
   unknown: 4,
 }
 
+export const stackSortStatus = (
+  stack: Pick<WorkspaceStack, 'status' | 'updateSort'>,
+): StackStatus => stack.updateSort?.status ?? stack.status
+
 export const compareStacks = (
-  a: Pick<StackRuntime, 'name' | 'status'>,
-  b: Pick<StackRuntime, 'name' | 'status'>,
-): number => stackStatusOrder[a.status] - stackStatusOrder[b.status] || a.name.localeCompare(b.name)
+  a: Pick<WorkspaceStack, 'name' | 'status' | 'updateSort'>,
+  b: Pick<WorkspaceStack, 'name' | 'status' | 'updateSort'>,
+): number =>
+  stackStatusOrder[stackSortStatus(a)] - stackStatusOrder[stackSortStatus(b)] ||
+  a.name.localeCompare(b.name)
 
 export const workspaceErrorMessage = (status: number, fallback: string): string => {
   if (401 === status) {

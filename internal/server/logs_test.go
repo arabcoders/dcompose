@@ -2,12 +2,16 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,6 +48,159 @@ func TestLogsAPI(t *testing.T) {
 		if http.StatusUnauthorized != w.Code {
 			t.Fatal(path, w.Code)
 		}
+	}
+}
+
+func TestClearActiveLog(t *testing.T) {
+	const path = "/api/logs/active"
+	s := testServer(t, nil)
+	startLogHistory(t, s)
+	slog.Warn("active fixture")
+	for _, tc := range []struct {
+		withSession bool
+		origin      string
+		status      int
+	}{
+		{status: http.StatusUnauthorized},
+		{withSession: true, origin: "https://other.example", status: http.StatusForbidden},
+	} {
+		r := httptest.NewRequest("DELETE", path, nil)
+		if tc.withSession {
+			r.AddCookie(testSession(t, s))
+			r.Header.Set("Origin", tc.origin)
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if tc.status != w.Code {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if page := historyPage(t, s.logHistory, logFilter{summary: true}); 1 != len(page.Entries) {
+		t.Fatal("unauthorized request cleared the active file", page)
+	}
+
+	response := perform(t, s, "DELETE", path, "")
+	var result struct {
+		Status string `json:"status"`
+	}
+	if http.StatusOK != response.Code || nil != json.Unmarshal(response.Body.Bytes(), &result) || "ok" != result.Status {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if active, err := os.ReadFile(s.logHistory.path); nil != err || 0 != len(active) {
+		t.Fatal("active file was not emptied", len(active), err)
+	}
+	full := historyPage(t, s.logHistory, logFilter{})
+	summary := historyPage(t, s.logHistory, logFilter{summary: true})
+	if 1 != len(full.Entries) || 0 != len(summary.Entries) || full.LatestID != summary.LatestID {
+		t.Fatal("archived logs should only appear in full history", full, summary)
+	}
+
+	app := httptest.NewServer(s)
+	t.Cleanup(app.Close)
+	stream, cancel := openLogStream(t, app, s, "?summary=true&limit=5", "")
+	defer cancel()
+	reader := bufio.NewReader(stream.Body)
+	if status := nextLogStatus(t, reader); nil != status.OldestID {
+		t.Fatal("summary backlog included archived logs", status)
+	}
+	slog.Warn("new fixture")
+	if entry := nextLogEvent(t, reader); full.LatestID >= entry.ID {
+		t.Fatal("new logs did not follow the previous cursor", entry)
+	}
+}
+
+func TestPackLogBackups(t *testing.T) {
+	s := testServer(t, nil)
+	startLogHistory(t, s)
+	history := s.logHistory
+	archive := func() {
+		t.Helper()
+		if err := history.archiveActive(); nil != err {
+			t.Fatal(err)
+		}
+	}
+	read := func(suffix string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(history.path + suffix)
+		if nil != err {
+			t.Fatal(err)
+		}
+		return data
+	}
+	var expectedIDs []int64
+	write := func() {
+		t.Helper()
+		slog.Warn("fixture")
+		expectedIDs = append(expectedIDs, historyPage(t, history, logFilter{}).LatestID)
+	}
+
+	write()
+	first := read("")
+	archive()
+	write()
+	second := read("")
+	history.maxBytes = int64(len(first) + len(second))
+	archive()
+	archive()
+	packed := read(".1")
+	if !bytes.Equal(append(first, second...), packed) || 0 != len(read("")) {
+		t.Fatal("clears did not pack both batches in the newest backup")
+	}
+	if _, err := os.Stat(history.path + ".2"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a fitting or empty clear used a backup slot", err)
+	}
+
+	write()
+	third := read("")
+	archive()
+	if !bytes.Equal(packed, read(".2")) || !bytes.Equal(third, read(".1")) || 0 != len(read("")) {
+		t.Fatal("a full backup did not rotate")
+	}
+	page := historyPage(t, history, logFilter{})
+	ids := make([]int64, 0, len(page.Entries))
+	for _, entry := range page.Entries {
+		ids = append(ids, entry.ID)
+	}
+	if !slices.Equal(ids, expectedIDs) {
+		t.Fatal("archived entries are out of order", ids, expectedIDs)
+	}
+}
+
+func TestActiveLogPage(t *testing.T) {
+	s := testServer(t, nil)
+	startLogHistory(t, s)
+	get := func(query string) logPage {
+		t.Helper()
+		response := perform(t, s, "GET", "/api/logs?"+query, "")
+		var page logPage
+		if http.StatusOK != response.Code || nil != json.Unmarshal(response.Body.Bytes(), &page) {
+			t.Fatal(response.Code, response.Body.String())
+		}
+		return page
+	}
+
+	slog.Warn("archive fixture")
+	archivedID := get("active=true").LatestID
+	if response := perform(t, s, "DELETE", "/api/logs/active", ""); http.StatusOK != response.Code {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	empty := get("active=true")
+	if 0 != len(empty.Entries) || nil == empty.NextBefore || archivedID != empty.LatestID {
+		t.Fatal("empty active page lost access to archived logs", empty)
+	}
+	older := get("before=" + strconv.FormatInt(*empty.NextBefore, 10))
+	if 1 != len(older.Entries) || archivedID != older.Entries[0].ID || nil != older.NextBefore {
+		t.Fatal("older page did not return the archive", older)
+	}
+
+	slog.Info("active fixture")
+	active := get("active=true")
+	if 1 != len(active.Entries) || active.LatestID != active.Entries[0].ID ||
+		nil == active.NextBefore || active.Entries[0].ID != *active.NextBefore {
+		t.Fatal("active page mixed active and archived entries", active)
+	}
+	if filtered := get("active=true&levels=info"); nil != filtered.NextBefore {
+		t.Fatal("archive cursor ignored the active filter", filtered)
 	}
 }
 

@@ -90,6 +90,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           const stack = node?.stacks.find((stack) => event.name === stack.name)
           if (stack) {
             stack.busy = 'start' === event.phase
+            if ('update' === event.action) {
+              if ('start' === event.phase) {
+                stack.updateSort = {
+                  status: stack.updateSort?.status ?? stack.status,
+                  finished: false,
+                }
+              } else if (stack.updateSort) {
+                // The agent clears busy on its cached status before exit, then refreshes runtime.
+                stack.updateSort.finished = true
+              }
+            }
           }
           if ('exit' === event.phase && undefined !== event.exit_code && 0 !== event.exit_code) {
             notification(
@@ -126,7 +137,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           if (-1 === index) {
             node.stacks.push(runtime)
           } else {
-            node.stacks[index] = runtime
+            const updateSort = node.stacks[index]?.updateSort
+            node.stacks[index] =
+              updateSort && !updateSort.finished ? { ...runtime, updateSort } : runtime
           }
           node.loading = node.stacks.some((stack) => stack.loading)
           if ('stopped' === runtime.status || 'draft' === runtime.status) {

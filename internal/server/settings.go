@@ -419,13 +419,19 @@ func (s *Server) account(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 401, "Current password is incorrect.")
 		return
 	}
+	session, hasSession := readSession(r, s.config.Auth)
 	c, err := changeCredentials(cloneConfig(s.config), input.Username, input.Password)
 	if nil != err {
 		apiError(w, 500, "Could not save account details. Check the configuration directory's permissions.")
 		return
 	}
 	s.applyConfig(c)
-	if s.createSession(w, r, c, c.Global.SecureCookie) {
-		jsonResponse(w, 200, map[string]string{"status": "ok"})
+	if hasSession {
+		if !issueSession(w, r, c.Auth, c.Global.SecureCookie, session.BrowserOnly, time.Now(), session.Expiry.Time()) {
+			return
+		}
+	} else if !createSession(w, r, c.Auth, c.Global.SecureCookie, false) {
+		return
 	}
+	jsonResponse(w, 200, map[string]string{"status": "ok"})
 }

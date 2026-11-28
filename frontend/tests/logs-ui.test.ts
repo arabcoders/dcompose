@@ -176,6 +176,11 @@ const mountLogs = async (
     loadOlder: mock(async () => {}),
   }
   const copied = mock(async (_text: string) => {})
+  const confirmDialog = mock(async () => ({ status: false }))
+  const request = mock(async (_path: string, _options: RequestInit) =>
+    Response.json({ status: 'ok' }),
+  )
+  const resetSummary = mock(() => {})
   const dependencies: Record<string, unknown> = {
     '#app': { useHead: () => {}, useRoute: () => route },
     '@vueuse/core': {
@@ -185,12 +190,19 @@ const mountLogs = async (
         return stored
       },
     },
-    '~/utils': { copyText: copied, notification: mock(() => {}) },
+    '~/utils': {
+      copyText: copied,
+      notification: mock(() => {}),
+      parse_api_response: (response: Response) => response.json(),
+      request,
+    },
     '~/utils/logs': logs,
+    '~/composables/useDialog': { useDialog: () => ({ confirmDialog }) },
     '~/composables/useLogs': { useLogs: () => state },
     '~/composables/useWorkspace': {
       useWorkspace: () => ({ nodes: vue.ref([{ id: 'garage', name: 'Garage' }]) }),
     },
+    '~/store/logSummary': { useLogSummaryStore: () => ({ reset: resetSummary }) },
   }
   for (const [component, tag] of Object.entries({
     Alert: 'alert',
@@ -209,8 +221,10 @@ const mountLogs = async (
   dependencies['~/components/StatCard.vue'] = { default: statCard }
   const details = await loadComponent('components/LogDetailModal', dependencies)
   const pageHeader = await loadComponent('components/PageHeader', dependencies)
+  const clearLogs = await loadComponent('components/ClearLogsButton', dependencies)
   const page = await loadComponent('pages/logs', {
     ...dependencies,
+    '~/components/ClearLogsButton.vue': { default: clearLogs },
     '~/components/LogDetailModal.vue': { default: details },
     '~/components/PageHeader.vue': { default: pageHeader },
   })
@@ -219,7 +233,7 @@ const mountLogs = async (
   app.mount(root)
   apps.push(app)
   await vue.nextTick()
-  return { root, state, copied, storage, app, route }
+  return { root, state, copied, storage, app, route, confirmDialog, request, resetSummary }
 }
 const find = (root: TestNode, predicate: (element: TestNode) => boolean): TestNode => {
   const result = flatten(root).find(predicate)
@@ -369,6 +383,27 @@ test('refresh pending filters', async () => {
   jest.advanceTimersByTime(300)
   expect(state.search).toHaveBeenCalledTimes(2)
   expect(state.refresh).not.toHaveBeenCalled()
+})
+
+test('rotation resets summary', async () => {
+  const { root, state, confirmDialog, request, resetSummary } = await mountLogs()
+  const rotate = () => trigger(control(root, 'i-lucide-rotate-cw'), 'onClick')
+
+  await rotate()
+  expect(request).not.toHaveBeenCalled()
+  expect(resetSummary).not.toHaveBeenCalled()
+
+  confirmDialog.mockResolvedValue({ status: true })
+  request.mockResolvedValueOnce(
+    Response.json({ error: { code: 500, message: 'failure' } }, { status: 500 }),
+  )
+  await rotate()
+  expect(resetSummary).not.toHaveBeenCalled()
+
+  await rotate()
+  expect(request).toHaveBeenLastCalledWith('/api/logs/active', { method: 'DELETE' })
+  expect(resetSummary).toHaveBeenCalledTimes(1)
+  expect(state.search).toHaveBeenCalledTimes(2)
 })
 
 test('query filters', async () => {

@@ -194,6 +194,7 @@ describe('Authentication', () => {
     expect(JSON.parse(String(calls[1]?.options.body))).toEqual({
       username: 'admin',
       password: 'password',
+      remember_me: false,
     })
     expect(auth.authenticated).toBe(true)
     expect(auth.setupRequired).toBe(false)
@@ -207,8 +208,9 @@ describe('Authentication', () => {
     await auth.ensureStatus()
     expect(auth.oidcAvailable).toBe(true)
     responses.push(Response.json({ authenticated: true }), status(false, true, true), user())
-    await auth.authenticateUser({ username: 'admin', password: 'password' })
+    await auth.authenticateUser({ username: 'admin', password: 'password' }, true)
     expect(calls[1]?.path).toBe('/api/auth/login')
+    expect(JSON.parse(String(calls[1]?.options.body)).remember_me).toBe(true)
     expect(auth.authenticated).toBe(true)
     expect(auth.setupRequired).toBe(false)
     expect(await auth.ensureStatus()).toBe(true)

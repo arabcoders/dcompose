@@ -297,18 +297,24 @@ func TestSettingsWriteFailure(t *testing.T) {
 
 func TestAccount(t *testing.T) {
 	s := persistedServer(t, nil)
-	oldSession := testSession(t, s)
+	deadline := time.Now().Truncate(time.Second).Add(time.Hour)
+	token, err := sessionToken(s.config.Auth, deadline, true)
+	if nil != err {
+		t.Fatal(err)
+	}
+	oldSession := &http.Cookie{Name: "session", Value: token}
 	w := perform(t, s, "POST", "/api/settings/account", `{"username":"new-admin","password":"new-password","current_password":"wrong"}`)
 	if 401 != w.Code {
 		t.Fatal(w.Code)
 	}
-	w = perform(
-		t,
-		s,
+	r := httptest.NewRequest(
 		"POST",
 		"/api/settings/account",
-		`{"username":"new-admin","password":"new-password","current_password":"test-password"}`,
+		strings.NewReader(`{"username":"new-admin","password":"new-password","current_password":"test-password"}`),
 	)
+	r.AddCookie(oldSession)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
 	if 200 != w.Code || 1 != len(w.Result().Cookies()) {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -318,7 +324,7 @@ func TestAccount(t *testing.T) {
 		nil != bcrypt.CompareHashAndPassword([]byte(c.Auth.passwordHash), []byte("new-password")) {
 		t.Fatal("credentials not persisted", err)
 	}
-	r := httptest.NewRequest("GET", "/api/auth/user", nil)
+	r = httptest.NewRequest("GET", "/api/auth/user", nil)
 	r.AddCookie(oldSession)
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, r)
@@ -331,6 +337,10 @@ func TestAccount(t *testing.T) {
 	s.ServeHTTP(w, r)
 	if 200 != w.Code {
 		t.Fatal("current session lost")
+	}
+	claims, ok := readSession(r, c.Auth)
+	if !ok || !claims.Expiry.Time().Equal(deadline) || !currentSession.Expires.IsZero() || 0 != currentSession.MaxAge {
+		t.Fatal("changing credentials renewed or persisted a browser-session cookie")
 	}
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"username":"new-admin","password":"new-password"}`)))

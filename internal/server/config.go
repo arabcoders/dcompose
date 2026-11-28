@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/arabcoders/dcompose/internal/configutil"
@@ -40,15 +42,24 @@ type GlobalConfig struct {
 }
 
 type AuthConfig struct {
-	Username     string      `toml:"username"`
-	Password     string      `toml:"password"              json:"-"`
-	SessionKey   string      `toml:"session_key,omitempty" json:"-"`
-	APIKey       string      `toml:"api_key,omitempty"     json:"-"`
-	OIDC         *OIDCConfig `toml:"oidc,omitempty"        json:"-"`
-	passwordHash string
-	sessionKey   string
-	apiKey       string
+	Username       string      `toml:"username"`
+	Password       string      `toml:"password"                  json:"-"`
+	SessionKey     string      `toml:"session_key,omitempty"     json:"-"`
+	APIKey         string      `toml:"api_key,omitempty"         json:"-"`
+	OIDC           *OIDCConfig `toml:"oidc,omitempty"            json:"-"`
+	RememberMeDays int         `toml:"remember_me_days,omitzero"`
+	passwordHash   string
+	sessionKey     string
+	apiKey         string
 }
+
+const (
+	defaultRememberMeDays = 30
+	browserSessionTTL     = 24 * time.Hour
+	// The lifetime must fit time.Duration and the cookie's MaxAge (int seconds),
+	// including on 32-bit systems.
+	maxRememberMeDays = min(math.MaxInt64/int64(browserSessionTTL), math.MaxInt/int64(browserSessionTTL/time.Second))
+)
 
 type OIDCConfig struct {
 	Issuer       string `toml:"issuer"`
@@ -154,6 +165,10 @@ func readConfig(path string) (Config, error) {
 	}
 	if meta.IsDefined("auth", "api_key") && "" == c.Auth.APIKey {
 		return c, fmt.Errorf("auth.api_key must be 32 bytes encoded as 64 hexadecimal characters or a file reference")
+	}
+	// When set, the lifetime must be positive so it doesn't expire at sign-in.
+	if meta.IsDefined("auth", "remember_me_days") && (1 > c.Auth.RememberMeDays || int(maxRememberMeDays) < c.Auth.RememberMeDays) {
+		return c, fmt.Errorf("auth.remember_me_days must be between 1 and %d", maxRememberMeDays)
 	}
 	return c, nil
 }

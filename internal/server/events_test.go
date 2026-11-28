@@ -320,7 +320,7 @@ func TestBrowserExpiry(t *testing.T) {
 	app := httptest.NewServer(s)
 	t.Cleanup(app.Close)
 	config, _ := s.snapshot()
-	token, err := sessionToken(config.Auth, time.Now().Add(3*time.Second))
+	token, err := sessionToken(config.Auth, time.Now().Add(3*time.Second), true)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestAuthChallenge(t *testing.T) {
 		}
 	}
 	config, _ := s.snapshot()
-	token, err := sessionToken(config.Auth, time.Now().Add(-time.Second))
+	token, err := sessionToken(config.Auth, time.Now().Add(-time.Second), true)
 	if nil != err {
 		t.Fatal(err)
 	}

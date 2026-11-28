@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,10 +19,11 @@ func parseLogFilter(r *http.Request, stream bool) (logFilter, error) {
 		search:  strings.ToLower(query.Get("search")),
 		levels:  make(map[string]bool),
 		summary: "true" == query.Get("summary"),
+		active:  !stream && !query.Has("before") && !query.Has("after") && "true" == query.Get("active"),
 	}
 	for key, values := range query {
 		switch key {
-		case "limit", "before", "after", "levels", "node", "logger", "search", "summary":
+		case "limit", "before", "after", "levels", "node", "logger", "search", "summary", "active":
 		default:
 			return filter, fmt.Errorf("unknown log query parameter: %s", key)
 		}
@@ -85,6 +87,19 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, page)
+}
+
+func (s *Server) clearActiveLog(w http.ResponseWriter) {
+	if nil == s.logHistory {
+		apiError(w, http.StatusServiceUnavailable, "Operational log history is not enabled.")
+		return
+	}
+	if err := s.logHistory.archiveActive(); nil != err {
+		slog.Error(fmt.Sprintf("Could not archive the active log file %q: %v", s.logHistory.path, err))
+		apiError(w, http.StatusInternalServerError, "Could not clear the active log file.")
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
